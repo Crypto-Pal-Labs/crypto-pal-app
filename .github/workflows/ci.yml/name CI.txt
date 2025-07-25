@@ -19,3 +19,5 @@ jobs:
       - run: npm run tsc --noEmit
       # later, when you have tests:
       # - run: npm test
+# first CI run
++# triggered on <25july2025>
