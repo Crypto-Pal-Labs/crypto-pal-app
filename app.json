@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Crypto Pal",
+    "slug": "crypto-pal-app",
+    "version": "1.0.0",
+    "runtimeVersion": "1.0.0",
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/6c753f76-cdce-4f42-8301-4b22267269c4"
+    },
+    "sdkVersion": "53.0.0",
+    "platforms": [
+      "android"
+    ],
+    "android": {
+      "package": "com.yourcompany.cryptopal",
+      "versionCode": 1
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6c753f76-cdce-4f42-8301-4b22267269c4"
+      }
+    },
+    "ios": {}
+  }
+}
