@@ -5,22 +5,34 @@
     "version": "1.0.0",
     "runtimeVersion": "1.0.0",
     "updates": {
-      "enabled": true,
-      "url": "https://u.expo.dev/6c753f76-cdce-4f42-8301-4b22267269c4"
+      "enabled": false
     },
     "sdkVersion": "53.0.0",
-    "platforms": [
-      "android"
-    ],
+    "platforms": ["android"],
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "userInterfaceStyle": "light",
+    "orientation": "portrait",
     "android": {
       "package": "com.yourcompany.cryptopal",
-      "versionCode": 1
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true
     },
     "extra": {
       "eas": {
         "projectId": "6c753f76-cdce-4f42-8301-4b22267269c4"
       }
     },
-    "ios": {}
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
   }
 }

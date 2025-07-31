@@ -7,7 +7,7 @@ export default function App() {
     <View style={styles.container}>
       <Text style={styles.title}>💰 Welcome to Crypto Pal!</Text>
       <Text style={styles.subtitle}>
-        Your one–stop app to buy, hold, and swap crypto.
+        Your one-stop app to buy, hold, and swap crypto.
       </Text>
       <Button
         title="Get Started"
