@@ -1,0 +1,8 @@
+# netlify.toml
+[build]
+  # Change into docs/ first—so Netlify sees only index.html, no package.json
+  base    = "docs"
+  # No build command needed
+  command = ""
+  # Publish the contents of docs/ (now your root)
+  publish = "."
