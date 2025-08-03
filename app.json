@@ -3,22 +3,29 @@
     "name": "Crypto Pal",
     "slug": "crypto-pal-app",
     "version": "1.0.0",
-    "runtimeVersion": "1.0.0",
-    "updates": {
-      "enabled": false
-    },
     "sdkVersion": "53.0.0",
+
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+
     "platforms": ["android"],
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "userInterfaceStyle": "light",
-    "orientation": "portrait",
+
+    "updates": {
+      "enabled": false
+    },
+
     "android": {
-      "package": "com.yourcompany.cryptopal",
+      "package": "com.crwmlw.cryptopalapp",
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -26,13 +33,24 @@
       },
       "edgeToEdgeEnabled": true
     },
+
     "extra": {
       "eas": {
         "projectId": "6c753f76-cdce-4f42-8301-4b22267269c4"
       }
     },
+
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+
+    "plugins": ["expo-secure-store"],
+
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "listUnknownPackages": false
+      }
     }
   }
 }
+
