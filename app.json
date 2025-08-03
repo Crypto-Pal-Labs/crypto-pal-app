@@ -28,8 +28,9 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "eas": { // Add this from remote if new
-      "projectId": "your-eas-project-id-if-any"
+    "runtimeVersion": "1.0.0", // Add this from remote if new
+    "doctor": { // Add this from remote if new
+      "ignoredWarnings": ["EXPO_DOCTOR_WARNING"]
     }
   }
 }
