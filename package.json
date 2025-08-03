@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@ethersproject/shims": "^5.8.0",
+    "@react-native-community/netinfo": "11.4.1",
+    "@transak/react-native-sdk": "^2.1.0",
     "ethers": "^6.15.0",
     "expo": "53.0.20",
     "expo-clipboard": "~7.1.5",
@@ -21,12 +23,15 @@
     "react-native": "0.79.5",
     "react-native-gesture-handler": "~2.24.0",
     "react-native-get-random-values": "~1.11.0",
+    "react-native-inappbrowser-reborn": "^3.7.0",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "5.4.0",
-    "react-native-screens": "~4.11.1"
+    "react-native-screens": "~4.11.1",
+    "react-native-webview": "13.13.5"
   },
   "devDependencies": {
-    "@babel/core": "^7.20.0"
+    "@babel/core": "^7.20.0",
+    "@types/react": "^19.1.9"
   },
   "expo": {
     "name": "CRYPTO PAL",
