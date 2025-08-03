@@ -2,27 +2,49 @@
   "name": "crypto-pal-app",
   "version": "1.0.0",
   "main": "index.js",
+  "private": true,
+
   "scripts": {
     "start": "expo start",
     "android": "expo run:android",
-    "web": "expo start --web",
-    "ios": "expo run:ios"
+    "ios": "expo run:ios",
+    "web": "expo start --web"
   },
+
   "dependencies": {
     "@ethersproject/shims": "^5.8.0",
     "ethers": "^6.15.0",
+
     "expo": "53.0.20",
+    "react": "19.0.0",
+    "react-native": "0.79.5",
+
     "expo-clipboard": "~7.1.5",
     "expo-secure-store": "~14.2.3",
     "expo-status-bar": "~2.2.3",
     "expo-system-ui": "~5.0.10",
-    "react": "19.0.0",
-    "react-native": "0.79.5",
-    "react-native-get-random-values": "~1.11.0"
+    "react-native-get-random-values": "~1.11.0",
+
+    "react-native-gesture-handler": "~2.24.0",
+    "react-native-reanimated": "~3.17.4",
+    "react-native-safe-area-context": "5.4.0",
+    "react-native-screens": "~4.11.1"
   },
+
   "devDependencies": {
     "@babel/core": "^7.20.0"
   },
-  "private": true,
-  "packageManager": "yarn@4.9.2+sha512.1fc009bc09d13cfd0e19efa44cbfc2b9cf6ca61482725eb35bbc5e257e093ebf4130db6dfe15d604ff4b79efd8e1e8e99b25fa7d0a6197c9f9826358d4d65c3c"
+
+  "expo": {
+    "name": "CRYPTO PAL",
+    "slug": "crypto-pal",
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "listUnknownPackages": false
+      }
+    }
+  },
+
+  "packageManager": "yarn@4.9.2"
 }
+
