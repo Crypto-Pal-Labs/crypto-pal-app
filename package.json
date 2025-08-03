@@ -16,16 +16,16 @@
     "ethers": "^6.15.0",
 
     "expo": "53.0.20",
-    "react": "19.0.0",
-    "react-native": "0.79.5",
-
     "expo-clipboard": "~7.1.5",
     "expo-secure-store": "~14.2.3",
     "expo-status-bar": "~2.2.3",
     "expo-system-ui": "~5.0.10",
-    "react-native-get-random-values": "~1.11.0",
+
+    "react": "19.0.0",
+    "react-native": "0.79.5",
 
     "react-native-gesture-handler": "~2.24.0",
+    "react-native-get-random-values": "~1.11.0",
     "react-native-reanimated": "~3.17.4",
     "react-native-safe-area-context": "5.4.0",
     "react-native-screens": "~4.11.1"
@@ -38,6 +38,11 @@
   "expo": {
     "name": "CRYPTO PAL",
     "slug": "crypto-pal",
+
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+
     "doctor": {
       "reactNativeDirectoryCheck": {
         "listUnknownPackages": false
@@ -47,4 +52,3 @@
 
   "packageManager": "yarn@4.9.2"
 }
-
