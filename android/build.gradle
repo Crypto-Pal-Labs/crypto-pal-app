@@ -1,37 +1,77 @@
-// Top-level build file where you can add configuration options common to all sub-projects/modules.
+// Top-level build file where you can add configuration options
+// common to all sub-projects / modules.
 
 buildscript {
-  repositories {
-    google()
-    mavenCentral()
-  }
-  dependencies {
-    classpath('com.android.tools.build:gradle')
-    classpath('com.facebook.react:react-native-gradle-plugin')
-    classpath('org.jetbrains.kotlin:kotlin-gradle-plugin')
-  }
+    // ✱✱  SDK & tool-chain versions used across modules  ✱✱
+    ext {
+        compileSdkVersion = 36
+        targetSdkVersion  = 36
+    }
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        // Android-Gradle-Plugin 8.9.1  (was 8.8.2)
+        classpath("com.android.tools.build:gradle:8.9.1")
+
+        // React-Native & Kotlin plugins (Expo writes the versions)
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.24")
+    }
 }
 
+// ──────────────────────────────────────────────────────────────
+// React-Native local Maven repo (installed via npm)
+
 def reactNativeAndroidDir = new File(
-  providers.exec {
-    workingDir(rootDir)
-    commandLine("node", "--print", "require.resolve('react-native/package.json')")
-  }.standardOutput.asText.get().trim(),
-  "../android"
+        providers.exec {
+            workingDir(rootDir)
+            commandLine("node", "--print", "require.resolve('react-native/package.json')")
+        }.standardOutput.asText.get().trim(),
+        "../android"
 )
 
 allprojects {
-  repositories {
-    maven {
-      // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
-      url(reactNativeAndroidDir)
-    }
+    repositories {
+        // RN sources & binaries
+        maven { url(reactNativeAndroidDir) }
 
-    google()
-    mavenCentral()
-    maven { url 'https://www.jitpack.io' }
-  }
+        google()
+        mavenCentral()
+        maven { url 'https://www.jitpack.io' }
+    }
 }
 
+// Expo & React-Native root-project plugins
 apply plugin: "expo-root-project"
 apply plugin: "com.facebook.react.rootproject"
+
+// ── Force a browser version compatible with expo-barcode-scanner ────────────
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.browser:browser:1.8.0'
+        }
+    }
+}
+
+// ── Ensure every module targets Java 17 and Kotlin JVM-17 ───────────────────
+subprojects {
+    // Kotlin sources
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions { jvmTarget = "17" }
+    }
+
+    // Java sources inside Android modules
+    plugins.withType(com.android.build.gradle.BasePlugin).configureEach {
+        android {
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_17
+                targetCompatibility JavaVersion.VERSION_17
+            }
+        }
+    }
+}
