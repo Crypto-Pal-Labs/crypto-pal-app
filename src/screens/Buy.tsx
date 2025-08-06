@@ -1,19 +1,15 @@
-// src/screens/Buy.tsx
+import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { TransakWebView } from '@transak/react-native-sdk';   // ← named export ✅
-
-import { TRANSAK_API_KEY, TRANSAK_ENV } from '../config/TransakKeys';
+import { WebView } from 'react-native-webview';
 
 export default function Buy() {
   return (
     <View style={styles.container}>
-      <TransakWebView
-        transakConfig={{
-          apiKey: TRANSAK_API_KEY,
-          environment: TRANSAK_ENV,   // 'STAGING' for sandbox
-          defaultFiatCurrency: 'NZD'
+      <WebView
+        source={{
+          uri: `https://global.transak.com?apiKey=YOUR_API_KEY&defaultFiatCurrency=NZD`
         }}
-        containerStyle={{ flex: 1 }}
+        style={{ flex: 1 }}
       />
     </View>
   );
@@ -22,5 +18,6 @@ export default function Buy() {
 const styles = StyleSheet.create({
   container: { flex: 1 }
 });
+
 
 
