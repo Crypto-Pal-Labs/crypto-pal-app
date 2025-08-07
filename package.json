@@ -12,6 +12,7 @@
   "dependencies": {
     "@ethersproject/shims": "^5.8.0",
     "@react-native-community/netinfo": "11.4.1",
+    "@react-native-picker/picker": "2.11.1",
     "@react-navigation/bottom-tabs": "^7.4.5",
     "@react-navigation/material-top-tabs": "^7.3.5",
     "@react-navigation/native": "^7.1.17",
@@ -22,6 +23,7 @@
     "expo-camera": "~16.1.11",
     "expo-clipboard": "~7.1.5",
     "expo-dev-client": "~5.2.4",
+    "expo-localization": "~16.1.6",
     "expo-secure-store": "~14.2.3",
     "expo-status-bar": "~2.2.3",
     "expo-system-ui": "~5.0.10",
@@ -39,8 +41,7 @@
     "react-native-tab-view": "^4.1.2",
     "react-native-vector-icons": "^10.3.0",
     "react-native-webview": "13.13.5",
-    "zustand": "^5.0.7",
-    "@react-native-picker/picker": "2.11.1"
+    "zustand": "^5.0.7"
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
