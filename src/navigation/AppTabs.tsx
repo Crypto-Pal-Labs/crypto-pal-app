@@ -3,6 +3,8 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator }   from '@react-navigation/bottom-tabs';
 import Icon                           from 'react-native-vector-icons/Ionicons';
+import 'react-native-get-random-values';
+import '@ethersproject/shims';
 
 import Wallet   from '../screens/Wallet';
 import Buy      from '../screens/Buy';

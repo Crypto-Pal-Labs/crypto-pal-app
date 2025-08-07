@@ -33,7 +33,9 @@
     "extra": {
       "eas": {
         "projectId": "6c753f76-cdce-4f42-8301-4b22267269c4"
-      }
+      },
+      "infuraKey": "YOUR_INFURA_PROJECT_ID",
+      "transakKey": "YOUR_TRANSAK_SANDBOX_KEY"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -48,3 +50,4 @@
     }
   }
 }
+
