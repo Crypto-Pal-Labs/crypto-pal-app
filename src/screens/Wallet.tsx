@@ -1,166 +1,93 @@
-// src/screens/Wallet.tsx
-import 'react-native-get-random-values';
-import React, { useEffect, useState } from 'react';
+// src/screens/WalletScreen.tsx
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
+  FlatList,
+  Image,
   StyleSheet,
-  Button,
-  TextInput,
-  ScrollView,
-  Alert,
+  TouchableOpacity,
 } from 'react-native';
-import {
-  createWallet,
-  restoreWallet,
-  getSavedMnemonic,
-} from '../utils/wallet';
-
-// NEW: Balance hook and store
 import { useBalances } from '../hooks/useBalances';
 import { useWalletStore } from '../store/useWalletStore';
 
-type Step = 'loading' | 'welcome' | 'backup' | 'restore' | 'home';
+export default function WalletScreen() {
+  // 1️⃣ Fetch balances from Covalent
+  const balances = useBalances();
 
-export default function Wallet() {
-  const [step, setStep] = useState<Step>('loading');
-  const [address, setAddress] = useState<string>('');
-  const [mnemonic, setMnemonic] = useState<string>('');
-  const [inputPhrase, setInputPhrase] = useState<string>('');
+  // 2️⃣ Global store setters & values
+  const setBalances = useWalletStore((s) => s.setBalances);
+  const chainId     = useWalletStore((s) => s.chainId);
+  const setChainId  = useWalletStore((s) => s.setChainId);
 
-  // 1️⃣ On mount: check for existing mnemonic
+  // 3️⃣ Push balances into the store
   useEffect(() => {
-    (async () => {
-      try {
-        const saved = await getSavedMnemonic();
-        if (saved) {
-          const { address } = await restoreWallet(saved);
-          setAddress(address);
-          setStep('home');
-        } else {
-          setStep('welcome');
-        }
-      } catch (e: any) {
-        Alert.alert('Error', e.message);
-        setStep('welcome');
-      }
-    })();
-  }, []);
+    setBalances(balances);
+  }, [balances]);
 
-  // 2️⃣ When entering backup step, load the phrase
-  useEffect(() => {
-    if (step === 'backup') {
-      (async () => {
-        const saved = await getSavedMnemonic();
-        setMnemonic(saved ?? '');
-      })();
-    }
-  }, [step]);
-
-  // 3️⃣ Fetch balances when address is set
-  useBalances();
-  const { ethBalance, usdcBalance } = useWalletStore();
-
-  // --- UI for each step ---
-  if (step === 'loading') {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.subtitle}>Loading…</Text>
-      </View>
-    );
-  }
-
-  if (step === 'welcome') {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.title}>Welcome to Crypto Pal</Text>
-        <Button
-          title="Create New Wallet"
-          onPress={async () => {
-            try {
-              const { address } = await createWallet();
-              setAddress(address);
-              setStep('backup');
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            }
-          }}
-        />
-        <View style={{ height: 12 }} />
-        <Button
-          title="Restore From Backup"
-          onPress={() => setStep('restore')}
-        />
-      </View>
-    );
-  }
-
-  if (step === 'backup') {
-    return (
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Backup Phrase</Text>
-        <Text selectable style={styles.phrase}>
-          {mnemonic}
-        </Text>
-        <Text style={styles.subtitle}>
-          Write down these 12 words in order and keep them safe.
-        </Text>
-        <Button
-          title="I’ve backed it up — show my address"
-          onPress={() => setStep('home')}
-        />
-      </ScrollView>
-    );
-  }
-
-  if (step === 'restore') {
-    return (
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Restore Wallet</Text>
-        <Text style={styles.subtitle}>
-          Paste your 12-word backup phrase below.
-        </Text>
-        <TextInput
-          style={styles.input}
-          multiline
-          placeholder="word1 word2 … word12"
-          value={inputPhrase}
-          onChangeText={setInputPhrase}
-        />
-        <Button
-          title="Restore Wallet"
-          onPress={async () => {
-            try {
-              const words = inputPhrase.trim().split(/\s+/);
-              if (words.length !== 12) {
-                throw new Error('Please enter exactly 12 words.');
-              }
-              const { address } = await restoreWallet(inputPhrase);
-              setAddress(address);
-              setStep('home');
-            } catch (e: any) {
-              Alert.alert('Error', e.message);
-            }
-          }}
-        />
-      </ScrollView>
-    );
-  }
-
-  // step === 'home'
+  // 4️⃣ UI
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Your wallet address:</Text>
-      <Text selectable style={styles.address}>
-        {address}
-      </Text>
+      <Text style={styles.header}>My Portfolio</Text>
 
-      {/* Display live balances */}
-      <Text style={styles.balanceLabel}>ETH Balance:</Text>
-      <Text style={styles.balanceValue}>{ethBalance ?? '—'}</Text>
+      {/* Chain selector */}
+      <View style={styles.chainToggleContainer}>
+        {[
+          { id: 1,  label: 'Ethereum' },
+          { id: 56, label: 'BSC'      },
+        ].map((chain) => {
+          const selected = chainId === chain.id;
+          return (
+            <TouchableOpacity
+              key={chain.id}
+              style={[
+                styles.chainButton,
+                selected
+                  ? styles.chainButtonActive
+                  : styles.chainButtonInactive,
+              ]}
+              onPress={() => setChainId(chain.id)}
+              activeOpacity={0.7}
+            >
+              <Text
+                style={[
+                  styles.chainButtonText,
+                  selected
+                    ? styles.chainButtonTextActive
+                    : styles.chainButtonTextInactive,
+                ]}
+              >
+                {chain.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
 
-      <Text style={styles.balanceLabel}>USDC Balance:</Text>
-      <Text style={styles.balanceValue}>{usdcBalance ?? '—'}</Text>
+      {/* Balances list */}
+      <FlatList
+        data={balances}
+        keyExtractor={(item) => item.contract_ticker_symbol}
+        renderItem={({ item }) => (
+          <View style={styles.row}>
+            <Image
+              source={{ uri: item.logo_url }}
+              style={styles.logo}
+            />
+            <Text style={styles.symbol}>
+              {item.contract_ticker_symbol}
+            </Text>
+            <Text style={styles.quote}>
+              NZ${item.quote.toFixed(2)}
+            </Text>
+          </View>
+        )}
+        ListEmptyComponent={
+          <Text style={styles.empty}>
+            No balances to display.
+          </Text>
+        }
+      />
     </View>
   );
 }
@@ -168,15 +95,70 @@ export default function Wallet() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    padding: 16,
+    backgroundColor: '#fff',
   },
-  title:        { fontSize: 24, fontWeight: 'bold', marginBottom: 12 },
-  subtitle:     { fontSize: 16, textAlign: 'center', marginBottom: 20 },
-  phrase:       { fontSize: 18, lineHeight: 28, textAlign: 'center', marginVertical: 20 },
-  address:      { fontSize: 14, marginTop: 8, textAlign: 'center' },
-  input:        { width: '100%', minHeight: 80, borderColor: '#ccc', borderWidth: 1, padding: 10, marginBottom: 20 },
-  balanceLabel: { marginTop: 20, fontSize: 16, fontWeight: 'bold' },
-  balanceValue: { fontSize: 18, marginBottom: 8 },
+  header: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+
+  chainToggleContainer: {
+    flexDirection: 'row',
+    alignSelf: 'center',
+    borderRadius: 8,
+    overflow: 'hidden',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#0A84FF',
+  },
+  chainButton: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  chainButtonActive: {
+    backgroundColor: '#0A84FF',
+  },
+  chainButtonInactive: {
+    backgroundColor: '#fff',
+  },
+  chainButtonText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  chainButtonTextActive: {
+    color: '#fff',
+  },
+  chainButtonTextInactive: {
+    color: '#0A84FF',
+  },
+
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomColor: '#eee',
+    borderBottomWidth: 1,
+  },
+  logo: {
+    width: 32,
+    height: 32,
+    marginRight: 12,
+  },
+  symbol: {
+    flex: 1,
+    fontSize: 16,
+  },
+  quote: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  empty: {
+    textAlign: 'center',
+    marginTop: 32,
+    color: '#888',
+  },
 });
