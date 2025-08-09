@@ -1,9 +1,4 @@
-// App.js — entry point for Crypto Pal
-
-// 1. Log Covalent API key from .env
-import { COVALENT_KEY } from '@env';
-console.log('⛓️ Covalent key is:', COVALENT_KEY);
-
+// App.js — single entry point for Crypto Pal
 import 'react-native-get-random-values';
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';

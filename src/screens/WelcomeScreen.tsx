@@ -1,25 +1,69 @@
 // src/screens/WelcomeScreen.tsx
-
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import {
+  SafeAreaView,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 
 export default function WelcomeScreen() {
   const navigation = useNavigation();
 
   return (
-    <View className="flex-1 justify-center items-center bg-white p-4">
-      <Text className="text-3xl font-bold mb-6">Welcome to Crypto Pal</Text>
-      <Text className="text-center mb-8">
-        Crypto Pal is your self-custody wallet. Secure your PIN, then back up your recovery phrase.
-      </Text>
+    <SafeAreaView style={styles.safe}>
+      <View style={styles.container}>
+        <Text style={styles.title}>Welcome to Crypto Pal</Text>
 
-      <TouchableOpacity
-        onPress={() => navigation.replace('PinSetup')}
-        className="bg-teal-600 rounded-lg py-3 px-6"
-      >
-        <Text className="text-white font-medium text-lg">Get Started</Text>
-      </TouchableOpacity>
-    </View>
+        <Text style={styles.subtitle}>
+          Crypto Pal is your self-custody wallet. Secure your PIN, then back up
+          your recovery phrase.
+        </Text>
+
+        <TouchableOpacity
+          style={styles.button}
+          activeOpacity={0.8}
+          onPress={() => navigation.replace('PinSetup')}
+        >
+          <Text style={styles.buttonText}>Get Started</Text>
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: '#fff' },
+  container: {
+    flex: 1,
+    padding: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#0A84FF',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 40,
+  },
+  button: {
+    backgroundColor: '#0A84FF',
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+  },
+  buttonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '600',
+  },
+});

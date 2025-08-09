@@ -1,36 +1,69 @@
-import React from 'react';
-import { View, Button, StyleSheet } from 'react-native';
-import ScanTab    from './ScanTab';
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import ReceiveTab from './ReceiveTab';
+// (Scanner/Send can come later)
+
+type Mode = 'send' | 'receive';
 
 export default function PayTabs() {
-  const [activeTab, setActiveTab] = React.useState<'Scan' | 'Receive'>('Scan');
+  const [mode, setMode] = useState<Mode>('receive');
 
   return (
     <View style={styles.container}>
-      <View style={styles.tabBar}>
-        <Button
-          title="Scan"
-          onPress={() => setActiveTab('Scan')}
-          color={activeTab === 'Scan' ? '#007AFF' : '#888'}
-        />
-        <Button
-          title="Receive"
-          onPress={() => setActiveTab('Receive')}
-          color={activeTab === 'Receive' ? '#007AFF' : '#888'}
-        />
+      <Text style={styles.title}>Pay or Receive</Text>
+
+      <View style={styles.toggleRow}>
+        <TouchableOpacity
+          style={[styles.toggleBtn, mode === 'send' ? styles.btnActive : styles.btnInactive]}
+          onPress={() => setMode('send')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.btnText, mode === 'send' ? styles.textActive : styles.textInactive]}>
+            SEND
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.toggleBtn, mode === 'receive' ? styles.btnActive : styles.btnInactive]}
+          onPress={() => setMode('receive')}
+          activeOpacity={0.8}
+        >
+          <Text style={[styles.btnText, mode === 'receive' ? styles.textActive : styles.textInactive]}>
+            RECEIVE
+          </Text>
+        </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
-        {activeTab === 'Scan' ? <ScanTab /> : <ReceiveTab />}
+      <View style={{ flex: 1 }}>
+        {mode === 'receive' ? (
+          <ReceiveTab />
+        ) : (
+          <View style={styles.placeholder}>
+            <Text style={styles.placeholderText}>Send will be added next.</Text>
+          </View>
+        )}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  tabBar:    { flexDirection: 'row', justifyContent: 'space-around', padding: 10 },
-  content:   { flex: 1 },
+  container: { flex: 1, backgroundColor: '#fff', padding: 16 },
+  title: { fontSize: 28, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
+  toggleRow: {
+    flexDirection: 'row',
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#0A84FF',
+    marginBottom: 16,
+  },
+  toggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
+  btnActive: { backgroundColor: '#0A84FF' },
+  btnInactive: { backgroundColor: '#fff' },
+  btnText: { fontSize: 16, fontWeight: '700' },
+  textActive: { color: '#fff' },
+  textInactive: { color: '#0A84FF' },
+  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  placeholderText: { color: '#666' },
 });
-
