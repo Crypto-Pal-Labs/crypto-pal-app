@@ -1,40 +1,75 @@
-// src/screens/Pay/ReceiveTab.tsx
-import React from 'react';
-import { View, Text, StyleSheet, Button, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import * as Clipboard from 'expo-clipboard';
-import { getStoredAddress } from '../../services/WalletService';
+import { Wallet } from 'ethers';            // ✅ v6 API
+import { getSavedMnemonic } from '../../utils/wallet';
 
 export default function ReceiveTab() {
-  const [address, setAddress] = React.useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [address, setAddress] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  React.useEffect(() => {
-    getStoredAddress().then(setAddress);
+  useEffect(() => {
+    (async () => {
+      try {
+        const mnemonic = await getSavedMnemonic();
+        if (!mnemonic) {
+          setError('No wallet found. Create or restore a wallet first.');
+          setAddress(null);
+          return;
+        }
+        // ✅ ethers v6 uses fromPhrase (not fromMnemonic)
+        const wallet = Wallet.fromPhrase(mnemonic);
+        setAddress(wallet.address);
+      } catch (e) {
+        console.error('ReceiveTab derive address failed:', e);
+        setError('Could not load your address.');
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  const handleCopy = () => {
-    if (address) {
-      Clipboard.setStringAsync(address);
-      Alert.alert('Copied!', 'Wallet address copied to clipboard.');
-    }
-  };
+  if (loading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator />
+        <Text style={styles.muted}>Loading address…</Text>
+      </View>
+    );
+  }
 
-  if (!address) return <Text style={styles.loading}>Loading…</Text>;
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.muted}>{error}</Text>
+      </View>
+    );
+  }
+
+  if (!address) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.muted}>No address available.</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <QRCode value={address} size={220} />
-      <Text style={styles.address}>{address}</Text>
-      <View style={{ marginTop: 20, width: '80%' }}>
-        <Button title="Copy Address" onPress={handleCopy} />
-      </View>
+      <Text style={styles.header}>Your Receiving Address</Text>
+      <QRCode value={address} size={200} />
+      <Text selectable style={styles.address}>{address}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20 },
-  address:   { marginTop: 20, textAlign: 'center', fontWeight: 'bold' },
-  loading:   { flex: 1, textAlign: 'center', textAlignVertical: 'center' }
+  container: { flex: 1, backgroundColor: '#fff', padding: 16, alignItems: 'center' },
+  center:    { flex: 1, backgroundColor: '#fff', padding: 16, alignItems: 'center', justifyContent: 'center' },
+  header:    { fontSize: 22, fontWeight: '600', marginBottom: 24 },
+  address:   { marginTop: 16, fontSize: 16, color: '#333', textAlign: 'center' },
+  muted:     { marginTop: 8, color: '#666' },
 });
+
 

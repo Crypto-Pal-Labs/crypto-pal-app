@@ -43,7 +43,8 @@
     },
     "plugins": [
       "expo-secure-store",
-      "expo-localization"
+      "expo-localization",
+      "expo-barcode-scanner"
     ],
     "doctor": {
       "reactNativeDirectoryCheck": {

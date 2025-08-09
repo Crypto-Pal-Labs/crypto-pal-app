@@ -1,51 +1,55 @@
 // src/screens/CreateWalletScreen.tsx
-
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ethers } from 'ethers';
 
+import { saveMnemonic } from '../utils/wallet';
+import { useWalletStore } from '../store/useWalletStore';
+
 export default function CreateWalletScreen() {
   const navigation = useNavigation();
+  const setAddress = useWalletStore((s) => s.setAddress);
 
-  const handleCreate = () => {
-    const wallet = ethers.Wallet.createRandom();
-    navigation.replace('MnemonicBackup', {
-      mnemonic: wallet.mnemonic.phrase,
-    });
+  const handleCreate = async () => {
+    try {
+      const wallet = ethers.Wallet.createRandom();   // v6
+      const phrase = wallet.mnemonic.phrase;
+
+      await saveMnemonic(phrase);                    // write to secure store
+      setAddress(wallet.address);                    // push to global store
+
+      // go to backup screen; it reads from SecureStore itself
+      // (we renamed the stack screen to "Main" earlier)
+      navigation.replace('MnemonicBackup');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'Failed to create wallet.');
+    }
   };
 
+  // keep this as a placeholder for a future restore flow
   const handleRestore = () => {
-    // Placeholder for future restore flow
-    navigation.replace('MnemonicBackup', {
-      mnemonic: 'restore-flow-not-implemented-yet',
-    });
+    Alert.alert('Restore', 'Restore flow not implemented yet.');
   };
 
   return (
-    <View className="flex-1 bg-white px-6 pt-16">
-      <Text className="text-center text-3xl font-bold text-teal-600 mb-12">
-        Welcome to Crypto Pal
-      </Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>Welcome to Crypto Pal</Text>
 
-      {/* Two blue (teal) buttons */}
-      <TouchableOpacity
-        onPress={handleCreate}
-        className="bg-teal-600 rounded-2xl py-4 mb-4"
-      >
-        <Text className="text-center text-white text-lg font-semibold">
-          Create New Wallet
-        </Text>
+      <TouchableOpacity style={styles.button} activeOpacity={0.8} onPress={handleCreate}>
+        <Text style={styles.buttonText}>Create New Wallet</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        onPress={handleRestore}
-        className="bg-teal-600 rounded-2xl py-4"
-      >
-        <Text className="text-center text-white text-lg font-semibold">
-          Restore From Backup
-        </Text>
+      <TouchableOpacity style={styles.button} activeOpacity={0.8} onPress={handleRestore}>
+        <Text style={styles.buttonText}>Restore From Backup</Text>
       </TouchableOpacity>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 24, backgroundColor: '#fff', justifyContent: 'center' },
+  title: { textAlign: 'center', fontSize: 28, fontWeight: '700', color: '#0A84FF', marginBottom: 32 },
+  button: { backgroundColor: '#0A84FF', paddingVertical: 16, borderRadius: 12, marginBottom: 16 },
+  buttonText: { textAlign: 'center', color: 'white', fontSize: 18, fontWeight: '600' },
+});
