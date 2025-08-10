@@ -1,68 +1,54 @@
-// src/screens/HistoryTab.tsx
+// src/screens/History.tsx
 import React from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-} from 'react-native';
-import { useTransactions, Transaction } from '../hooks/useTransactions';
+import { View, Text, FlatList, TouchableOpacity, RefreshControl, StyleSheet, Linking } from 'react-native';
+import { useWalletStore } from '../store/useWalletStore';
+import { useHistory } from '../hooks/useHistory';
+import { ChainId } from '../utils/eth';
 
-export default function HistoryTab() {
-  const txns = useTransactions();
-
-  const renderItem = ({ item }: { item: Transaction }) => {
-    const date = new Date(item.block_signed_at).toLocaleString();
-    const eth  = Number(item.value) / 1e18;
-    const direction = item.from_address.toLowerCase() === item.to_address.toLowerCase()
-      ? 'Self'
-      : item.from_address.toLowerCase() === item.from_address.toLowerCase()
-        ? 'Out'
-        : 'In';
-
-    return (
-      <View style={styles.item}>
-        <Text style={styles.date}>{date}</Text>
-        <Text numberOfLines={1} style={styles.hash}>{item.tx_hash}</Text>
-        <Text style={styles.amount}>
-          {direction} {eth.toFixed(6)} ETH
-        </Text>
-        <Text style={styles.status}>
-          {item.successful ? '✅ Success' : '❌ Failed'}
-        </Text>
-      </View>
-    );
-  };
+export default function History() {
+  const chainId = useWalletStore(s => s.chainId) as ChainId;
+  const { loading, items, error, refetch } = useHistory(chainId);
 
   return (
-    <FlatList
-      data={txns}
-      keyExtractor={item => item.tx_hash}
-      renderItem={renderItem}
-      contentContainerStyle={txns.length ? styles.list : styles.emptyContainer}
-      ListEmptyComponent={<Text style={styles.empty}>No transactions yet.</Text>}
-    />
+    <View style={{ flex:1, padding:16 }}>
+      <Text style={styles.h1}>History</Text>
+
+      {error ? (
+        <View><Text style={styles.error}>Failed to load: {error}</Text>
+          <TouchableOpacity onPress={refetch}><Text style={styles.link}>Retry</Text></TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          data={items}
+          keyExtractor={(it) => it.hash}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} />}
+          ListEmptyComponent={!loading ? <Text style={styles.empty}>No transactions yet.</Text> : null}
+          renderItem={({ item }) => (
+            <TouchableOpacity onPress={() => Linking.openURL(item.link)} style={styles.row}>
+              <Text style={[styles.dir, item.direction === 'out' ? styles.out : styles.in]}>
+                {item.direction.toUpperCase()}
+              </Text>
+              <View style={{ flex:1 }}>
+                <Text style={styles.primary}>{item.value} {item.symbol}</Text>
+                <Text style={styles.sub}>{new Date(item.timestamp).toLocaleString()}</Text>
+              </View>
+              <Text style={[styles.status, item.status !== 'success' && styles.pending]}>{item.status}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  list: {
-    padding: 20,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  item: {
-    marginBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    paddingBottom: 12,
-  },
-  date: { fontSize: 12, color: '#666' },
-  hash: { fontSize: 14, fontFamily: 'monospace', marginVertical: 4 },
-  amount: { fontSize: 16, fontWeight: 'bold' },
-  status: { fontSize: 14, marginTop: 4 },
-  empty: { color: '#888' },
+  h1:{ fontSize:28, fontWeight:'800', marginBottom:8 },
+  empty:{ color:'#777', marginTop:20 },
+  error:{ color:'#b00020' },
+  link:{ color:'#1976f6', marginTop:8, fontWeight:'700' },
+  row:{ paddingVertical:12, borderBottomWidth:1, borderColor:'#eee', flexDirection:'row', alignItems:'center', gap:12 },
+  dir:{ fontWeight:'800' }, out:{ color:'#b00020' }, in:{ color:'#1b8a2f' },
+  primary:{ fontWeight:'700' }, sub:{ color:'#666', fontSize:12 },
+  status:{ textTransform:'capitalize', color:'#1b8a2f' },
+  pending:{ color:'#996800' }
 });
