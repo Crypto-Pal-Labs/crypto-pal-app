@@ -20,7 +20,7 @@ export default function CreateWalletScreen() {
       setAddress(wallet.address);                    // push to global store
 
       // go to backup screen; it reads from SecureStore itself
-      // (we renamed the stack screen to "Main" earlier)
+      // (we renamed the stack screen to "WalletRoot" earlier)
       navigation.replace('MnemonicBackup');
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Failed to create wallet.');
@@ -29,7 +29,7 @@ export default function CreateWalletScreen() {
 
   // keep this as a placeholder for a future restore flow
   const handleRestore = () => {
-    Alert.alert('Restore', 'Restore flow not implemented yet.');
+    navigation.navigate('RestoreWallet');
   };
 
   return (

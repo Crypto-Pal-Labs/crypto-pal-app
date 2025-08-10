@@ -21,7 +21,7 @@ export default function MnemonicBackupScreen() {
         <Text selectable style={styles.phraseText}>{mnemonic}</Text>
       </ScrollView>
 
-      <TouchableOpacity style={styles.button} onPress={() => navigation.replace('Main')}>
+      <TouchableOpacity style={styles.button} onPress={() => navigation.replace('WalletRoot')}>
         <Text style={styles.buttonText}>I’ve backed it up — Go to Wallet</Text>
       </TouchableOpacity>
     </View>

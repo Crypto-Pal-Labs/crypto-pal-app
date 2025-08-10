@@ -1,7 +1,8 @@
+// src/screens/Pay/PayTabs.tsx
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import ReceiveTab from './ReceiveTab';
-// (Scanner/Send can come later)
+import SendTab from './SendTab';
 
 type Mode = 'send' | 'receive';
 
@@ -12,11 +13,14 @@ export default function PayTabs() {
     <View style={styles.container}>
       <Text style={styles.title}>Pay or Receive</Text>
 
+      {/* Toggle */}
       <View style={styles.toggleRow}>
         <TouchableOpacity
           style={[styles.toggleBtn, mode === 'send' ? styles.btnActive : styles.btnInactive]}
           onPress={() => setMode('send')}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Send"
         >
           <Text style={[styles.btnText, mode === 'send' ? styles.textActive : styles.textInactive]}>
             SEND
@@ -27,6 +31,8 @@ export default function PayTabs() {
           style={[styles.toggleBtn, mode === 'receive' ? styles.btnActive : styles.btnInactive]}
           onPress={() => setMode('receive')}
           activeOpacity={0.8}
+          accessibilityRole="button"
+          accessibilityLabel="Receive"
         >
           <Text style={[styles.btnText, mode === 'receive' ? styles.textActive : styles.textInactive]}>
             RECEIVE
@@ -34,14 +40,9 @@ export default function PayTabs() {
         </TouchableOpacity>
       </View>
 
+      {/* Body */}
       <View style={{ flex: 1 }}>
-        {mode === 'receive' ? (
-          <ReceiveTab />
-        ) : (
-          <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>Send will be added next.</Text>
-          </View>
-        )}
+        {mode === 'receive' ? <ReceiveTab /> : <SendTab />}
       </View>
     </View>
   );
@@ -64,6 +65,4 @@ const styles = StyleSheet.create({
   btnText: { fontSize: 16, fontWeight: '700' },
   textActive: { color: '#fff' },
   textInactive: { color: '#0A84FF' },
-  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  placeholderText: { color: '#666' },
 });

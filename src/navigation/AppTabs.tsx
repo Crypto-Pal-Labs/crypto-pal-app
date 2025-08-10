@@ -11,10 +11,7 @@ const Tab = createBottomTabNavigator();
 
 export default function AppTabs() {
   return (
-    <Tab.Navigator
-      initialRouteName="Wallet"
-      screenOptions={{ headerShown: false }}
-    >
+    <Tab.Navigator initialRouteName="Wallet" screenOptions={{ headerShown: false }}>
       <Tab.Screen name="Wallet"  component={WalletScreen}  />
       <Tab.Screen name="Buy"     component={BuyScreen}     />
       <Tab.Screen name="Pay"     component={PayTabs}       />

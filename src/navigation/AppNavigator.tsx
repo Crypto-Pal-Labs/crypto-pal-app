@@ -8,6 +8,7 @@ import WelcomeScreen        from '../screens/WelcomeScreen';
 import PinSetupScreen       from '../screens/PinSetupScreen';
 import CreateWalletScreen   from '../screens/CreateWalletScreen';
 import MnemonicBackupScreen from '../screens/MnemonicBackupScreen';
+import RestoreWalletScreen from '../screens/RestoreWalletScreen';
 import AppTabs              from './AppTabs';          // bottom tabs
 
 const Stack = createNativeStackNavigator();
@@ -24,9 +25,10 @@ export default function AppNavigator() {
         <Stack.Screen name="PinSetup"       component={PinSetupScreen} />
         <Stack.Screen name="CreateWallet"   component={CreateWalletScreen} />
         <Stack.Screen name="MnemonicBackup" component={MnemonicBackupScreen} />
+        <Stack.Screen name="RestoreWallet" component={RestoreWalletScreen} options={{ headerShown: false }} />
 
         {/* Main app (tabs)*/}
-        <Stack.Screen name="Main" component={AppTabs} />
+        <Stack.Screen name="WalletRoot" component={AppTabs} />
       </Stack.Navigator>
     </NavigationContainer>
   );
