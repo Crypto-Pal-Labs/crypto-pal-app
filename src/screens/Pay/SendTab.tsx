@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
 import { useBalances } from '../../hooks/useBalances';
@@ -46,43 +46,52 @@ const SendTab = () => {
       sendAmount = (parseFloat(amount) / tokenPrice).toString();
     }
 
-    Alert.alert(
-      'Confirm Send',
-      `Sending ${sendAmount} ${selectedToken === 'native' ? (chainId === 1 ? 'ETH' : 'BNB') : 'Token'} to ${toAddress}.\n\nWARNING: Transactions are irreversible. Double-check details.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send',
-          onPress: async () => {
-            setLoading(true);
-            try {
-              const mnemonic = await getSavedMnemonic();
-              if (!mnemonic) throw new Error('No wallet');
+    // Add irreversible warning Alert before confirm
+    Alert.alert('Warning', 'Transactions are irreversible. Double-check details.', [
+      { text: 'Cancel' },
+      {
+        text: 'Confirm',
+        onPress: () => {
+          Alert.alert(
+            'Confirm Send',
+            `Sending ${sendAmount} ${selectedToken === 'native' ? (chainId === 1 ? 'ETH' : 'BNB') : 'Token'} to ${toAddress}.`,
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Send',
+                onPress: async () => {
+                  setLoading(true);
+                  try {
+                    const mnemonic = await getSavedMnemonic();
+                    if (!mnemonic) throw new Error('No wallet');
 
-              const rpc = chainId === 1 ? ETH_RPC_URL : BSC_RPC_URL;
-              const provider = new ethers.JsonRpcProvider(rpc);
-              const wallet = ethers.Wallet.fromPhrase(mnemonic).connect(provider);
+                    const rpc = chainId === 1 ? ETH_RPC_URL : BSC_RPC_URL;
+                    const provider = new ethers.JsonRpcProvider(rpc);
+                    const wallet = ethers.Wallet.fromPhrase(mnemonic).connect(provider);
 
-              let tx;
-              if (selectedToken === 'native') {
-                tx = await wallet.sendTransaction({
-                  to: toAddress,
-                  value: ethers.parseEther(sendAmount),
-                });
-              } else {
-                const tokenContract = new ethers.Contract(selectedToken, ['function transfer(address to, uint amount)'], wallet);
-                tx = await tokenContract.transfer(toAddress, ethers.parseUnits(sendAmount, 18));
-              }
-              Alert.alert('Success', `Tx: ${tx.hash}`);
-            } catch (err: any) {
-              Alert.alert('Error', err.message);
-            } finally {
-              setLoading(false);
-            }
-          },
+                    let tx;
+                    if (selectedToken === 'native') {
+                      tx = await wallet.sendTransaction({
+                        to: toAddress,
+                        value: ethers.parseEther(sendAmount),
+                      });
+                    } else {
+                      const tokenContract = new ethers.Contract(selectedToken, ['function transfer(address to, uint amount)'], wallet);
+                      tx = await tokenContract.transfer(toAddress, ethers.parseUnits(sendAmount, 18));
+                    }
+                    Alert.alert('Success', `Tx: ${tx.hash}`);
+                  } catch (err: any) {
+                    Alert.alert('Error', err.message);
+                  } finally {
+                    setLoading(false);
+                  }
+                },
+              },
+            ]
+          );
         },
-      ]
-    );
+      },
+    ]);
   };
 
   const amountPlaceholder = amountUnit === 'token' ? 'Enter Crypto Amount' : amountUnit === 'usd' ? 'Enter USD Amount' : 'Enter NZD Amount';

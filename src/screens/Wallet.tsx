@@ -81,7 +81,7 @@ const Wallet = () => {
       <Text style={styles.total}>Total Balance: NZ${totalNzd}</Text>
       <TextInput
         style={styles.searchInput}
-        placeholder="Search crypto currency..."
+        placeholder="Search..."
         value={searchQuery}
         onChangeText={setSearchQuery}
       />
@@ -89,7 +89,7 @@ const Wallet = () => {
         <Button title="Crypto" onPress={() => setViewMode('crypto')} color={viewMode === 'crypto' ? '#0A84FF' : 'gray'} />
         <Button title="NFTs" onPress={() => setViewMode('nfts')} color={viewMode === 'nfts' ? '#0A84FF' : 'gray'} />
       </View>
-      <Text style={styles.subtitle}>Assets</Text>
+      <Text style={styles.subtitle}>Holdings:</Text>
       {viewMode === 'crypto' ? (
         <FlatList
           data={filteredBalances}
@@ -105,7 +105,7 @@ const Wallet = () => {
             data={nfts}
             renderItem={renderNFTItem}
             keyExtractor={(item) => item.token_id.toString()}
-            ListEmptyComponent={<Text style={styles.empty}>No NFTs found yet.</Text>}
+            ListEmptyComponent={<Text style={styles.empty}>You don't hold any NFT's yet.</Text>}
           />
         </>
       )}
