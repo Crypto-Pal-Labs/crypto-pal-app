@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 const COINGECKO_IDS: Record<string, string> = {
   ETH:  'ethereum',
   USDC: 'usd-coin',
+  BNB:  'binancecoin',
   // add more tokens here as needed, e.g. DAI: 'dai'
 };
 
