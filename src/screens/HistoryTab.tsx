@@ -1,54 +1,45 @@
-// src/screens/History.tsx
 import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, RefreshControl, StyleSheet, Linking } from 'react-native';
-import { useWalletStore } from '../store/useWalletStore';
+import { View, Text, ActivityIndicator, FlatList, StyleSheet, Linking, TouchableOpacity } from 'react-native';
 import { useHistory } from '../hooks/useHistory';
-import { ChainId } from '../utils/eth';
 
-export default function History() {
-  const chainId = useWalletStore(s => s.chainId) as ChainId;
-  const { loading, items, error, refetch } = useHistory(chainId);
+const History = () => {
+  const { transactions, loading, error } = useHistory();
 
-  return (
-    <View style={{ flex:1, padding:16 }}>
-      <Text style={styles.h1}>History</Text>
+  const explorerBase = 'https://etherscan.io/tx/'; // Update for BSC if needed
 
-      {error ? (
-        <View><Text style={styles.error}>Failed to load: {error}</Text>
-          <TouchableOpacity onPress={refetch}><Text style={styles.link}>Retry</Text></TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={items}
-          keyExtractor={(it) => it.hash}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} />}
-          ListEmptyComponent={!loading ? <Text style={styles.empty}>No transactions yet.</Text> : null}
-          renderItem={({ item }) => (
-            <TouchableOpacity onPress={() => Linking.openURL(item.link)} style={styles.row}>
-              <Text style={[styles.dir, item.direction === 'out' ? styles.out : styles.in]}>
-                {item.direction.toUpperCase()}
-              </Text>
-              <View style={{ flex:1 }}>
-                <Text style={styles.primary}>{item.value} {item.symbol}</Text>
-                <Text style={styles.sub}>{new Date(item.timestamp).toLocaleString()}</Text>
-              </View>
-              <Text style={[styles.status, item.status !== 'success' && styles.pending]}>{item.status}</Text>
-            </TouchableOpacity>
-          )}
-        />
-      )}
+  const renderTxItem = ({ item }: { item: { tx_hash: string; block_signed_at: string; value: string; successful: boolean } }) => (
+    <View style={styles.txItem}>
+      <Text style={styles.txDate}>{new Date(item.block_signed_at).toLocaleString()}</Text>
+      <Text>Value: {ethers.formatEther(item.value)}</Text>
+      <Text>Status: {item.successful ? 'Success' : 'Failed'}</Text>
+      <TouchableOpacity onPress={() => Linking.openURL(`${explorerBase}${item.tx_hash}`)}>
+        <Text style={styles.link}>View on Explorer</Text>
+      </TouchableOpacity>
     </View>
   );
-}
+
+  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>;
+  if (error) return <Text style={styles.errorText}>{error}</Text>;
+
+  return (
+    <FlatList
+      data={transactions}
+      renderItem={renderTxItem}
+      keyExtractor={(item) => item.tx_hash}
+      ListEmptyComponent={<Text style={styles.empty}>No transaction history yet. Your transactions will show here once completed...</Text>}
+      contentContainerStyle={styles.listContainer}
+    />
+  );
+};
 
 const styles = StyleSheet.create({
-  h1:{ fontSize:28, fontWeight:'800', marginBottom:8 },
-  empty:{ color:'#777', marginTop:20 },
-  error:{ color:'#b00020' },
-  link:{ color:'#1976f6', marginTop:8, fontWeight:'700' },
-  row:{ paddingVertical:12, borderBottomWidth:1, borderColor:'#eee', flexDirection:'row', alignItems:'center', gap:12 },
-  dir:{ fontWeight:'800' }, out:{ color:'#b00020' }, in:{ color:'#1b8a2f' },
-  primary:{ fontWeight:'700' }, sub:{ color:'#666', fontSize:12 },
-  status:{ textTransform:'capitalize', color:'#1b8a2f' },
-  pending:{ color:'#996800' }
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  listContainer: { padding: 16 },
+  txItem: { padding: 12, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
+  txDate: { fontWeight: 'bold' },
+  link: { color: 'blue', marginTop: 4 },
+  empty: { textAlign: 'center', color: '#888', marginTop: 20 },
+  errorText: { color: 'red', textAlign: 'center', marginTop: 20 },
 });
+
+export default History;

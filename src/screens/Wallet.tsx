@@ -1,107 +1,76 @@
-// src/screens/Wallet.tsx
-import React, { useEffect } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  Image,
-  StyleSheet,
-  TouchableOpacity,
-  Button,
-} from 'react-native';
-import { resetRoot } from '../navigation/RootNavigation';
+import React, { useState } from 'react';
+import { View, Text, ActivityIndicator, Button, FlatList, TextInput, StyleSheet } from 'react-native';
 import { useBalances } from '../hooks/useBalances';
-import { useWalletStore } from '../store/useWalletStore';
-import { clearMnemonic } from '../utils/wallet';
+import { resetRoot } from '../navigation/RootNavigation';
 
-export default function WalletScreen() {
-  const balances    = useBalances();
-  const setBalances = useWalletStore((s) => s.setBalances);
-  const chainId     = useWalletStore((s) => s.chainId);
-  const setChainId  = useWalletStore((s) => s.setChainId);
+const Wallet = () => {
+  const { balances, loading, error } = useBalances();
+  const [searchQuery, setSearchQuery] = useState('');
 
-  useEffect(() => {
-    setBalances(balances);
-  }, [balances]);
-
-  const handleLogout = async () => {
-    await clearMnemonic();
-    resetRoot([{ name: 'Welcome' }]);        // ← jump to onboarding
+  const handleLogout = () => {
+    resetRoot([{ name: 'Welcome' }]);
   };
+
+  const totalNzd = balances.reduce((sum, item) => sum + (item.quote_nzd || 0), 0).toFixed(2);
+
+  // Filter and sort: by value descending, filter by search
+  const filteredBalances = balances
+    .filter(item => item.contract_address.toLowerCase().includes(searchQuery.toLowerCase()))
+    .sort((a, b) => (b.quote_nzd || 0) - (a.quote_nzd || 0));
+
+  const renderBalanceItem = ({ item }: { item: { contract_address: string; balance: string; quote_nzd: number; chain_id: number } }) => (
+    <View style={styles.balanceItem}>
+      <Text style={styles.assetName}>{item.contract_address} (Chain: {item.chain_id === 1 ? 'ETH' : 'BSC'})</Text>
+      <Text>{item.balance} (NZ${(item.quote_nzd || 0).toFixed(2)})</Text>
+    </View>
+  );
+
+  if (loading) {
+    return <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>;
+  }
+
+  if (error) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.errorText}>{error}</Text>
+        <Button title="Retry" onPress={() => { /* Refetch trigger if needed */ }} />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>My Portfolio</Text>
-
-      {/* Chain toggle */}
-      <View style={styles.chainToggleContainer}>
-        {[{ id: 1, label: 'Ethereum' }, { id: 56, label: 'BSC' }].map((c) => {
-          const selected = chainId === c.id;
-          return (
-            <TouchableOpacity
-              key={c.id}
-              style={[
-                styles.chainButton,
-                selected ? styles.chainButtonActive : styles.chainButtonInactive,
-              ]}
-              onPress={() => setChainId(c.id)}
-              activeOpacity={0.7}
-            >
-              <Text
-                style={
-                  selected ? styles.chainButtonTextActive : styles.chainButtonTextInactive
-                }
-              >
-                {c.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Balances */}
-      <FlatList
-        data={balances}
-        keyExtractor={(it) => it.contract_ticker_symbol}
-        renderItem={({ item }) => (
-          <View style={styles.row}>
-            <Image source={{ uri: item.logo_url }} style={styles.logo} />
-            <Text style={styles.symbol}>{item.contract_ticker_symbol}</Text>
-            <Text style={styles.quote}>NZ${item.quote.toFixed(2)}</Text>
-          </View>
-        )}
-        ListEmptyComponent={
-          <Text style={styles.empty}>No balances to display.</Text>
-        }
+      <Text style={styles.homeTitle}>Home</Text>
+      <Text style={styles.total}>Total Balance: NZ${totalNzd}</Text>
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search crypto currency..."
+        value={searchQuery}
+        onChangeText={setSearchQuery}
       />
-
-      {/* Logout */}
-      <View style={styles.logoutContainer}>
-        <Button
-          title="Logout / Reset Wallet"
-          color="#D32F2F"
-          onPress={handleLogout}
-        />
-      </View>
+      <Text style={styles.subtitle}>Assets</Text>
+      <FlatList
+        data={filteredBalances}
+        renderItem={renderBalanceItem}
+        keyExtractor={(item) => `${item.contract_address}-${item.chain_id}`}
+        ListEmptyComponent={<Text style={styles.empty}>No assets match your search or holdings yet.</Text>}
+      />
+      <Button title="Logout" onPress={handleLogout} color="red" />
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container:            { flex: 1, padding: 16, backgroundColor: '#fff' },
-  header:               { fontSize: 24, fontWeight: 'bold', marginBottom: 12, textAlign: 'center' },
-  chainToggleContainer: { flexDirection: 'row', alignSelf: 'center', borderRadius: 8,
-                          overflow: 'hidden', marginBottom: 16, borderWidth: 1, borderColor: '#0A84FF' },
-  chainButton:          { flex: 1, paddingVertical: 8, alignItems: 'center' },
-  chainButtonActive:    { backgroundColor: '#0A84FF' },
-  chainButtonInactive:  { backgroundColor: '#fff' },
-  chainButtonTextActive:{ color: '#fff', fontWeight: '600' },
-  chainButtonTextInactive:{ color: '#0A84FF', fontWeight: '600' },
-  row:                  { flexDirection: 'row', alignItems: 'center', paddingVertical: 8,
-                          borderBottomColor: '#eee', borderBottomWidth: 1 },
-  logo:                 { width: 32, height: 32, marginRight: 12 },
-  symbol:               { flex: 1, fontSize: 16 },
-  quote:                { fontSize: 16, fontWeight: '600' },
-  empty:                { textAlign: 'center', marginTop: 32, color: '#888' },
-  logoutContainer:      { marginTop: 24 },
+  container: { flex: 1, padding: 16, backgroundColor: '#f8f8f8' },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  homeTitle: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 16 },
+  total: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginBottom: 16 },
+  searchInput: { borderWidth: 1, borderColor: '#ddd', padding: 8, borderRadius: 8, marginBottom: 16 },
+  subtitle: { fontSize: 18, marginBottom: 8 },
+  balanceItem: { padding: 12, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
+  assetName: { fontWeight: 'bold' },
+  empty: { textAlign: 'center', color: '#888' },
+  errorText: { color: 'red', marginBottom: 16 },
 });
+
+export default Wallet;
