@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Dimensions } from 'react-native';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
-import { WebView } from 'react-native-webview'; // Already in deps from v0.4.0
+import { WebView } from 'react-native-webview'; // Already in deps
 import { TRANSAK_API_KEY } from '@env';
 import { getWalletAddress } from '../utils/wallet'; // From v0.4.0
 
