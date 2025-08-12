@@ -1,54 +1,71 @@
-import React from 'react';
-import { View, Dimensions } from 'react-native';
-import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview'; // Already in deps
-import { TRANSAK_API_KEY } from '@env';
-import { getWalletAddress } from '../utils/wallet'; // From v0.4.0
-
-const initialLayout = { width: Dimensions.get('window').width };
-
-const BuyRoute = () => (
-  <WebView
-    source={{ uri: `https://global-stg.transak.com?apiKey=${TRANSAK_API_KEY}&defaultCryptoCurrency=USDC&defaultFiatCurrency=NZD&walletAddress=${getWalletAddress()}` }}
-    style={{ flex: 1 }}
-  />
-);
-
-const SellRoute = () => (
-  <WebView
-    source={{ uri: `https://global-stg.transak.com?apiKey=${TRANSAK_API_KEY}&defaultCryptoCurrency=USDC&defaultFiatCurrency=NZD&walletAddress=${getWalletAddress()}&isSell=true` }}
-    style={{ flex: 1 }}
-  />
-);
-
-const SwapRoute = () => (
-  <WebView
-    source={{ uri: 'https://app.uniswap.org/swap' }}
-    style={{ flex: 1 }}
-  />
-);
-
-const renderScene = SceneMap({
-  buy: BuyRoute,
-  sell: SellRoute,
-  swap: SwapRoute,
-});
+import { SafeAreaView } from 'react-native-safe-area-context'; // Already in deps
 
 export default function Buy() {
-  const [index, setIndex] = React.useState(0);
-  const [routes] = React.useState([
-    { key: 'buy', title: 'Buy' },
-    { key: 'sell', title: 'Sell' },
-    { key: 'swap', title: 'Swap' },
-  ]);
+  const [selectedTab, setSelectedTab] = useState('buy');
+
+  const renderContent = () => {
+    switch (selectedTab) {
+      case 'buy':
+        return (
+          <View style={styles.content}>
+            <Text>Buy coming soon after Transak key activation</Text>
+          </View>
+        );
+      case 'sell':
+        return (
+          <View style={styles.content}>
+            <Text>Sell coming soon after Transak key activation</Text>
+          </View>
+        );
+      case 'swap':
+        return (
+          <WebView
+            source={{ uri: 'https://app.uniswap.org/swap' }}
+            style={{ flex: 1 }}
+          />
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
-    <TabView
-      navigationState={{ index, routes }}
-      renderScene={renderScene}
-      onIndexChange={setIndex}
-      initialLayout={initialLayout}
-      renderTabBar={props => <TabBar {...props} style={{ backgroundColor: '#fff' }} />}
-    />
+    <SafeAreaView style={styles.container}>
+      <Text style={styles.heading}>Trade</Text>
+      <View style={styles.tabRow}>
+        <View style={[styles.tabButton, selectedTab === 'buy' ? styles.selectedTab : styles.unselectedTab]}>
+          <Text style={[styles.tabText, selectedTab === 'buy' ? styles.selectedText : styles.unselectedText]} onPress={() => setSelectedTab('buy')}>
+            Buy
+          </Text>
+        </View>
+        <View style={[styles.tabButton, selectedTab === 'sell' ? styles.selectedTab : styles.unselectedTab]}>
+          <Text style={[styles.tabText, selectedTab === 'sell' ? styles.selectedText : styles.unselectedText]} onPress={() => setSelectedTab('sell')}>
+            Sell
+          </Text>
+        </View>
+        <View style={[styles.tabButton, selectedTab === 'swap' ? styles.selectedTab : styles.unselectedTab]}>
+          <Text style={[styles.tabText, selectedTab === 'swap' ? styles.selectedText : styles.unselectedText]} onPress={() => setSelectedTab('swap')}>
+            Swap
+          </Text>
+        </View>
+      </View>
+      {renderContent()}
+    </SafeAreaView>
   );
 };
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#fff' },
+  heading: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginVertical: 16 },
+  tabRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16, backgroundColor: '#0A84FF', borderRadius: 25, padding: 4 },
+  tabButton: { flex: 1, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20 },
+  selectedTab: { backgroundColor: '#0A84FF' },
+  unselectedTab: { backgroundColor: '#fff' },
+  tabText: { textAlign: 'center', fontSize: 16, fontWeight: 'bold' },
+  selectedText: { color: '#fff' },
+  unselectedText: { color: '#0A84FF' },
+  content: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+});
