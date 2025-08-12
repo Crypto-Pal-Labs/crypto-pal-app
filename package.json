@@ -11,6 +11,7 @@
     "ios": "expo run:ios"
   },
   "dependencies": {
+    "@babel/runtime": "^7.28.2",
     "@ethersproject/shims": "^5.8.0",
     "@react-native-community/netinfo": "11.4.1",
     "@react-native-picker/picker": "^2.11.1",
