@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
+import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
 import { useBalances } from '../../hooks/useBalances';
@@ -34,11 +34,6 @@ const SendTab = () => {
     estimateFee();
   }, [chainId, selectedToken]);
 
-  const handleScanQR = () => {
-    Alert.alert('QR Scan Coming Soon', 'This will open the camera to scan recipient QR code and auto-fill the address.');
-    // Future implementation: Use expo-barcode-scanner to scan and setToAddress(data)
-  };
-
   const handleSend = async () => {
     if (!toAddress || !amount) return Alert.alert('Error', 'Enter address and amount');
 
@@ -51,7 +46,6 @@ const SendTab = () => {
       sendAmount = (parseFloat(amount) / tokenPrice).toString();
     }
 
-    // Add irreversible warning Alert before confirm
     Alert.alert('Warning', 'Transactions are irreversible. Double-check details.', [
       { text: 'Cancel' },
       {
@@ -104,10 +98,8 @@ const SendTab = () => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Send to ...</Text>
-      <View style={styles.addressRow}>
-        <TextInput style={styles.input} placeholder="Wallet address of recipient" value={toAddress} onChangeText={setToAddress} />
-        <Button title="Scan QR" onPress={handleScanQR} color="#0A84FF" />
-      </View>
+      <TextInput style={styles.input} placeholder="Wallet address of recipient" value={toAddress} onChangeText={setToAddress} />
+      <Text style={styles.label}>What crypto currency would you like to send ...</Text>
       <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
         <Picker.Item label={chainId === 1 ? 'ETH' : 'BNB'} value="native" />
         {balances.map((item) => (
@@ -130,8 +122,8 @@ const SendTab = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   title: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
-  addressRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  input: { flex: 1, borderWidth: 1, padding: 8, borderColor: '#ddd' },
+  label: { fontSize: 16, marginBottom: 8, fontWeight: 'bold' },
+  input: { borderWidth: 1, marginBottom: 16, padding: 8, borderColor: '#ddd' },
   picker: { marginBottom: 16 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 },
 });
