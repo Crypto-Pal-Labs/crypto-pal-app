@@ -100,6 +100,7 @@ const SendTab = () => {
     <View style={styles.container}>
       <Text style={styles.title}>Send to ...</Text>
       <TextInput style={styles.input} placeholder="Wallet address of recipient" value={toAddress} onChangeText={setToAddress} />
+      <Text style={styles.label}>What crypto currency would you like to send ...</Text>
       <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
         <Picker.Item label={chainId === 1 ? 'ETH' : 'BNB'} value="native" />
         {balances.map((item) => (
@@ -122,6 +123,7 @@ const SendTab = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
   title: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
+  label: { fontSize: 16, marginBottom: 8, fontWeight: 'bold' },
   input: { borderWidth: 1, marginBottom: 16, padding: 8, borderColor: '#ddd' },
   picker: { marginBottom: 16 },
   toggleRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 },
