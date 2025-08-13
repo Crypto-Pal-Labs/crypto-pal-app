@@ -1,6 +1,7 @@
 // src/utils/wallet.ts
 import * as SecureStore from 'expo-secure-store';
 import { ethers } from 'ethers';
+import { ETH_RPC_URL, BSC_RPC_URL } from '@env';
 
 const MNEMONIC_KEY = 'mnemonic';
 
@@ -46,12 +47,28 @@ export async function clearMnemonic(): Promise<void> {
  * Derive the wallet address from the stored mnemonic.
  * @returns The derived address (ETH/BSC main account), or empty string if no mnemonic.
  */
-export const getWalletAddress = (): string => {
-  const mnemonic = SecureStore.getItem(MNEMONIC_KEY); // Synchronous get for simplicity; use async if needed
+export async function getWalletAddress(): Promise<string> {
+  const mnemonic = await SecureStore.getItemAsync(MNEMONIC_KEY);
   if (!mnemonic) {
     console.warn('No mnemonic found in SecureStore');
     return ''; // Or throw error if preferred
   }
   const wallet = ethers.Wallet.fromPhrase(mnemonic);
   return wallet.address; // Derives main ETH/BSC address
-};
+}
+
+/**
+ * Get the wallet signer connected to a provider for transactions.
+ * @param chain The chain to use ('ETH' or 'BSC').
+ * @returns The connected wallet signer.
+ */
+export async function getWalletSigner(chain = 'ETH') {
+  const mnemonic = await SecureStore.getItemAsync('mnemonic');
+  if (!mnemonic) {
+    throw new Error('No wallet found. Please create or restore a wallet.');
+  }
+  const wallet = ethers.Wallet.fromPhrase(mnemonic);
+  const rpcUrl = chain === 'BSC' ? BSC_RPC_URL : ETH_RPC_URL;
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  return wallet.connect(provider);
+}
