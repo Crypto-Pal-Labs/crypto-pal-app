@@ -4,8 +4,8 @@ import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
 import { useBalances } from '../../hooks/useBalances';
 import { ethers } from 'ethers';
-import { getSavedMnemonic } from '../../utils/wallet';
-import { ETH_RPC_URL, BSC_RPC_URL } from '@env';
+import { getSavedMnemonic, getWalletSigner } from '../../utils/wallet';
+import { ETH_RPC_URL, BSC_RPC_URL, ETHERSCAN_BASE } from '@env';
 
 const SendTab = () => {
   const { chainId } = useWalletStore();
@@ -17,6 +17,15 @@ const SendTab = () => {
   const [feeEstimate, setFeeEstimate] = useState('Calculating...');
   const [loading, setLoading] = useState(false);
 
+  const convertAmountToToken = (input) => {
+    if (amountUnit === 'token') return parseFloat(input) || 0;
+    const ethPriceUSD = 2000; // Stub; replace with real from useEthPrice.ts later
+    const usdToNzdRate = 1.6;
+    if (amountUnit === 'usd') return input / ethPriceUSD;
+    if (amountUnit === 'nzd') return input / (ethPriceUSD * usdToNzdRate);
+    return 0;
+  };
+
   const handleScanQR = () => {
     Alert.alert('QR Scan Coming Soon', 'This will open the camera to scan recipient QR code and auto-fill the address.');
   };
@@ -24,31 +33,30 @@ const SendTab = () => {
   useEffect(() => {
     const estimateFee = async () => {
       try {
-        const rpc = chainId === 1 ? ETH_RPC_URL : BSC_RPC_URL;
-        const provider = new ethers.JsonRpcProvider(rpc);
-        const gasPrice = await provider.getGasPrice();
-        const gasLimit = 21000;
-        const feeEth = ethers.formatEther(gasPrice * BigInt(gasLimit));
+        const signer = await getWalletSigner(chainId === 1 ? 'ETH' : 'BSC');
+        let tx = { to: toAddress, value: ethers.parseEther(convertAmountToToken(amount).toString()) };
+        if (selectedToken !== 'native') {
+          const erc20Abi = ['function transfer(address,uint256) returns (bool)'];
+          const contract = new ethers.Contract(selectedToken, erc20Abi, signer);
+          tx.data = contract.interface.encodeFunctionData('transfer', [toAddress, ethers.parseUnits(convertAmountToToken(amount).toString(), 18)]);
+          tx.value = 0;
+        }
+        const gasEstimate = await signer.estimateGas(tx);
+        const gasPrice = await signer.provider.getGasPrice();
+        const feeEth = ethers.formatEther(gasEstimate * gasPrice);
         const feeNzd = (parseFloat(feeEth) * 1500 * 1.6).toFixed(2);
         setFeeEstimate(`~NZ$${feeNzd}`);
-      } catch {
-        setFeeEstimate('Unable to estimate');
+      } catch (error) {
+        setFeeEstimate('Unable to estimate: ' + error.message);
       }
     };
-    estimateFee();
-  }, [chainId, selectedToken]);
+    if (toAddress && amount) estimateFee();
+  }, [chainId, selectedToken, toAddress, amount]);
 
   const handleSend = async () => {
     if (!toAddress || !amount) return Alert.alert('Error', 'Enter address and amount');
 
-    let sendAmount = amount;
-    if (amountUnit !== 'token') {
-      // Simplified conversion; add real CoinGecko fetch for accuracy
-      const tokenPriceUsd = selectedToken === 'native' ? 1500 : 1; // ETH ~1500 USD, USDT ~1
-      const usdToNzd = 1.6;
-      const tokenPrice = amountUnit === 'usd' ? tokenPriceUsd : tokenPriceUsd * usdToNzd;
-      sendAmount = (parseFloat(amount) / tokenPrice).toString();
-    }
+    let sendAmount = convertAmountToToken(amount).toString();
 
     Alert.alert('Warning', 'Transactions are irreversible. Double-check details.', [
       { text: 'Cancel' },
@@ -65,24 +73,19 @@ const SendTab = () => {
                 onPress: async () => {
                   setLoading(true);
                   try {
-                    const mnemonic = await getSavedMnemonic();
-                    if (!mnemonic) throw new Error('No wallet');
-
-                    const rpc = chainId === 1 ? ETH_RPC_URL : BSC_RPC_URL;
-                    const provider = new ethers.JsonRpcProvider(rpc);
-                    const wallet = ethers.Wallet.fromPhrase(mnemonic).connect(provider);
+                    const signer = await getWalletSigner(chainId === 1 ? 'ETH' : 'BSC');
 
                     let tx;
                     if (selectedToken === 'native') {
-                      tx = await wallet.sendTransaction({
+                      tx = await signer.sendTransaction({
                         to: toAddress,
                         value: ethers.parseEther(sendAmount),
                       });
                     } else {
-                      const tokenContract = new ethers.Contract(selectedToken, ['function transfer(address to, uint amount)'], wallet);
+                      const tokenContract = new ethers.Contract(selectedToken, ['function transfer(address to, uint amount)'], signer);
                       tx = await tokenContract.transfer(toAddress, ethers.parseUnits(sendAmount, 18));
                     }
-                    Alert.alert('Success', `Tx: ${tx.hash}`);
+                    Alert.alert('Success', `Tx: ${tx.hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${tx.hash}`);
                   } catch (err: any) {
                     Alert.alert('Error', err.message);
                   } finally {
