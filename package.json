@@ -1,7 +1,6 @@
 {
   "name": "crypto-pal-app",
   "version": "1.0.0",
-  "WalletRoot": "index.js",
   "private": true,
   "scripts": {
     "start": "expo start",
@@ -29,6 +28,7 @@
     "expo-dev-client": "~5.2.4",
     "expo-localization": "~16.1.6",
     "expo-secure-store": "~14.2.3",
+    "expo-sharing": "^13.1.5",
     "expo-status-bar": "~2.2.3",
     "expo-system-ui": "~5.0.10",
     "react": "19.0.0",
