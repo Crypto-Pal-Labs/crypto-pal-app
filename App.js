@@ -20,6 +20,7 @@ export default function App() {
     console.log('  BSC_RPC_URL   :', redact(BSC_RPC_URL));
     console.log('  ETHERSCAN_BASE:', ETHERSCAN_BASE || 'undefined');
     console.log('  BSCSCAN_BASE  :', BSCSCAN_BASE || 'undefined');
+    console.log('DEBUG ENV:', process.env.COVALENT_KEY); // Should log your key
 
     // Helpful warnings in dev if something’s missing
     if (!COVALENT_KEY) {
