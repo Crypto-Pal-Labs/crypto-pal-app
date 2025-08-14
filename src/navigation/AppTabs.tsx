@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 
-import WalletScreen  from '../screens/Wallet';
+import Wallet  from '../screens/Wallet';
 import BuyScreen     from '../screens/Buy';
 import PayTabs       from '../screens/Pay/PayTabs';
 import HistoryScreen from '../screens/HistoryTab';
@@ -37,7 +37,7 @@ export default function AppTabs() {
 
   return (
     <Tab.Navigator initialRouteName="Wallet" screenOptions={{ headerShown: false }}>
-      <Tab.Screen name="Wallet"  component={WalletScreen}  />
+      <Tab.Screen name="Wallet"  component={Wallet}  />
       {showBuy && <Tab.Screen name="Buy" component={BuyScreen} />}
       <Tab.Screen name="Pay"     component={PayTabs}       />
       <Tab.Screen name="History" component={HistoryScreen} />

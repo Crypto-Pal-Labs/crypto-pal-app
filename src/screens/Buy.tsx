@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import { useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -8,24 +8,37 @@ import { TRANSAK_API_KEY } from '@env';
 
 const BuyRoute = () => {
   const [address, setAddress] = useState('');
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    getWalletAddress().then(setAddress);
+    getWalletAddress().then((addr) => {
+      setAddress(addr);
+      setLoading(false);
+    });
   }, []);
-  const uri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&walletAddress=${address}&defaultFiatCurrency=NZD&defaultCryptoCurrency=USDC&productsAvailed=BUY&environment=STAGING`;
-  return address ? <WebView source={{ uri }} style={{ flex: 1 }} /> : <Text>Loading...</Text>;
+  const uri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&walletAddress=${address}&defaultFiatCurrency=NZD&defaultFiatAmount=10&defaultCryptoCurrency=USDC&defaultPaymentMethod=credit_card&productsAvailed=BUY&isTestingMode=true&environment=STAGING`;
+  console.log('Buy URI:', uri);
+  if (loading) return <ActivityIndicator />;
+  return <WebView source={{ uri }} style={{ flex: 1 }} />;
 };
 
 const SellRoute = () => {
   const [address, setAddress] = useState('');
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    getWalletAddress().then(setAddress);
+    getWalletAddress().then((addr) => {
+      setAddress(addr);
+      setLoading(false);
+    });
   }, []);
-  const uri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&walletAddress=${address}&defaultFiatCurrency=NZD&defaultCryptoCurrency=USDC&productsAvailed=SELL&environment=STAGING`;
-  return address ? <WebView source={{ uri }} style={{ flex: 1 }} /> : <Text>Loading...</Text>;
+  const uri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&walletAddress=${address}&defaultCryptoCurrency=USDC&defaultCryptoAmount=1&defaultFiatCurrency=NZD&defaultPaymentMethod=bank_transfer&productsAvailed=SELL&disableWalletAddressCheck=true&isTestingMode=true&environment=STAGING`;
+  console.log('Sell URI:', uri);
+  if (loading) return <ActivityIndicator />;
+  return <WebView source={{ uri }} style={{ flex: 1 }} />;
 };
 
 const SwapRoute = () => {
-  const uri = 'https://app.uniswap.org/#/swap'; // Stub; add wallet connect later
+  const uri = 'https://app.uniswap.org/#/swap';
+  console.log('Swap URI:', uri);
   return <WebView source={{ uri }} style={{ flex: 1 }} />;
 };
 

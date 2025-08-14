@@ -63,7 +63,7 @@ export async function getWalletAddress(): Promise<string> {
  * @returns The connected wallet signer.
  */
 export async function getWalletSigner(chain = 'ETH') {
-  const mnemonic = await SecureStore.getItemAsync('mnemonic');
+  const mnemonic = await SecureStore.getItemAsync(MNEMONIC_KEY);
   if (!mnemonic) {
     throw new Error('No wallet found. Please create or restore a wallet.');
   }
