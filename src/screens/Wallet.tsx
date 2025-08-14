@@ -4,6 +4,7 @@ import { useBalances } from '../hooks/useBalances';
 import { resetRoot } from '../navigation/RootNavigation';
 import { COVALENT_KEY } from '@env';
 import { getWalletAddress } from '../utils/wallet'; // From v0.4.0
+import { Ionicons } from '@expo/vector-icons'; // Add for search icon
 
 const Wallet = () => {
   const { balances, loading: cryptoLoading, error: cryptoError, fetchBalances } = useBalances();
@@ -120,17 +121,23 @@ const Wallet = () => {
         }
         ListHeaderComponent={
           <View>
-            <Text style={styles.homeTitle}>Home</Text>
-            <Text style={styles.total}>Total Balance: NZ${totalNzd}</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search..."
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
+            <Text style={styles.homeTitle}>Main Wallet</Text>
+            <View style={styles.totalContainer}>
+              <Text style={styles.totalLabel}>Total Balance</Text>
+              <Text style={styles.totalValue}>NZ${totalNzd}</Text>
+            </View>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={20} color="gray" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search or enter code..."
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
             <View style={styles.switchButtons}>
-              <Button title="Crypto" onPress={() => setViewMode('crypto')} color={viewMode === 'crypto' ? '#0A84FF' : 'gray'} />
-              <Button title="NFTs" onPress={() => setViewMode('nfts')} color={viewMode === 'nfts' ? '#0A84FF' : 'gray'} />
+              <Button title="Crypto" onPress={() => setViewMode('crypto')} color={viewMode === 'crypto' ? '#0A84FF' : 'gray'} style={styles.switchButton} />
+              <Button title="NFTs" onPress={() => setViewMode('nfts')} color={viewMode === 'nfts' ? '#0A84FF' : 'gray'} style={styles.switchButton} />
             </View>
             <Text style={styles.subtitle}>Holdings:</Text>
           </View>
@@ -156,28 +163,49 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   homeTitle: {
-    fontSize: 24,
+    fontSize: 32,
     fontWeight: 'bold',
     marginBottom: 10,
+    color: '#0A84FF', // Blue color
+    textAlign: 'center', // Centered
   },
-  total: {
-    fontSize: 18,
+  totalContainer: {
+    alignItems: 'center',
     marginBottom: 10,
   },
-  searchInput: {
+  totalLabel: {
+    fontSize: 18,
+    color: '#000',
+  },
+  totalValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#000',
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ccc',
-    borderRadius: 5,
-    padding: 10,
+    borderRadius: 20, // Curved edges
+    paddingHorizontal: 10,
     marginBottom: 10,
+  },
+  searchIcon: {
+    marginRight: 5,
+  },
+  searchInput: {
+    flex: 1,
+    padding: 10,
   },
   switchButtons: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginBottom: 10,
-    borderRadius: 25, // Rounded like Trust Wallet toggle
-    overflow: 'hidden', // For toggle effect
-    backgroundColor: 'gray', // Gray background for unselected
+  },
+  switchButton: {
+    borderRadius: 25, // Rounded like Get Started
+    paddingHorizontal: 20,
   },
   subtitle: {
     fontSize: 16,
