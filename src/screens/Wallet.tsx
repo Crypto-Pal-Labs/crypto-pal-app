@@ -47,7 +47,7 @@ const Wallet = () => {
     setNftLoading(true);
     setNftError(null);
     try {
-      const chainId = 5; // Sepolia (ETH testnet); add BSC testnet (97) later if needed
+      const chainId = 11155111; // Sepolia (ETH testnet); add BSC testnet (97) later if needed
       const response = await fetch(`https://api.covalenthq.com/v1/${chainId}/address/${address}/balances_nft/?key=${COVALENT_KEY}`);
       const data = await response.json();
       setNfts(data.data?.items || []);
@@ -70,10 +70,14 @@ const Wallet = () => {
     .filter(item => item.contract_address.toLowerCase().includes(searchQuery.toLowerCase()))
     .sort((a, b) => (b.quote_nzd || 0) - (a.quote_nzd || 0));
 
-  const renderBalanceItem = ({ item }: { item: { contract_address: string; balance: string; quote_nzd: number; chain_id: number } }) => (
+  const renderBalanceItem = ({ item }: { item: { contract_address: string; balance: string; quote_nzd: number; chain_id: number; logo_url: string; contract_ticker_symbol: string; contract_name: string } }) => (
     <View style={styles.balanceItem}>
-      <Text style={styles.assetName}>{item.contract_address} (Chain: {item.chain_id === 5 ? 'Sepolia (ETH)' : 'BSC Testnet'})</Text>
-      <Text>{item.balance} (NZ${(item.quote_nzd || 0).toFixed(2)})</Text>
+      <Image source={{ uri: item.logo_url || 'https://logos.covalenthq.com/tokens/1/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png' }} style={styles.tokenLogo} />
+      <View style={styles.tokenInfo}>
+        <Text style={styles.assetName}>{item.contract_ticker_symbol || item.contract_name || 'ETH'} (Chain: {item.chain_id === 11155111 ? 'Sepolia (ETH)' : 'BSC Testnet'})</Text>
+        <Text style={styles.assetBalance}>{item.balance}</Text>
+      </View>
+      <Text style={styles.assetValue}>NZ${(item.quote_nzd || 0).toFixed(2)}</Text>
     </View>
   );
 
@@ -104,36 +108,39 @@ const Wallet = () => {
   }
 
   return (
-    <FlatList
-      style={styles.container}
-      data={data}
-      renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
-      keyExtractor={(item) => item.contract_address || item.token_id.toString()}
-      ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-      }
-      ListHeaderComponent={
-        <View>
-          <Text style={styles.homeTitle}>Home</Text>
-          <Text style={styles.total}>Total Balance: NZ${totalNzd}</Text>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          <View style={styles.switchButtons}>
-            <Button title="Crypto" onPress={() => setViewMode('crypto')} color={viewMode === 'crypto' ? '#0A84FF' : 'gray'} />
-            <Button title="NFTs" onPress={() => setViewMode('nfts')} color={viewMode === 'nfts' ? '#0A84FF' : 'gray'} />
+    <View style={styles.container}>
+      <FlatList
+        style={styles.container}
+        data={data}
+        renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
+        keyExtractor={(item) => item.contract_address || item.token_id.toString()}
+        ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+        ListHeaderComponent={
+          <View>
+            <Text style={styles.homeTitle}>Home</Text>
+            <Text style={styles.total}>Total Balance: NZ${totalNzd}</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search..."
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            <View style={styles.switchButtons}>
+              <Button title="Crypto" onPress={() => setViewMode('crypto')} color={viewMode === 'crypto' ? '#0A84FF' : 'gray'} />
+              <Button title="NFTs" onPress={() => setViewMode('nfts')} color={viewMode === 'nfts' ? '#0A84FF' : 'gray'} />
+            </View>
+            <Text style={styles.subtitle}>Holdings:</Text>
           </View>
-          <Text style={styles.subtitle}>Holdings:</Text>
-        </View>
-      }
-      ListFooterComponent={
+        }
+        ListFooterComponent={null}
+      />
+      <View style={styles.logoutContainer}>
         <Button title="Logout" onPress={handleLogout} color="red" />
-      }
-    />
+      </View>
+    </View>
   );
 };
 
@@ -166,8 +173,11 @@ const styles = StyleSheet.create({
   },
   switchButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justifyContent: 'center',
     marginBottom: 10,
+    borderRadius: 25, // Rounded like Trust Wallet toggle
+    overflow: 'hidden', // For toggle effect
+    backgroundColor: 'gray', // Gray background for unselected
   },
   subtitle: {
     fontSize: 16,
@@ -175,12 +185,32 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   balanceItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
+  tokenLogo: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  tokenInfo: {
+    flex: 1,
+  },
   assetName: {
     fontWeight: 'bold',
+    fontSize: 16,
+  },
+  assetBalance: {
+    color: 'gray',
+    fontSize: 14,
+  },
+  assetValue: {
+    fontWeight: 'bold',
+    fontSize: 16,
   },
   nftImage: {
     width: 50,
@@ -194,6 +224,13 @@ const styles = StyleSheet.create({
   errorText: {
     color: 'red',
     marginBottom: 10,
+  },
+  logoutContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 20,
+    right: 20,
+    padding: 10,
   },
 });
 
