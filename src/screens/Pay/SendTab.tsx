@@ -104,7 +104,7 @@ const SendTab = () => {
       <View style={styles.toggleRow}>
         <Button title="TOKEN" onPress={() => setAmountUnit('token')} color={amountUnit === 'token' ? '#0A84FF' : '#ccc'} />
         <Button title="USD" onPress={() => setAmountUnit('usd')} color={amountUnit === 'usd' ? '#0A84FF' : '#ccc'} />
-        <Button title="NZD" onPress {() => setAmountUnit('nzd') } color={amountUnit === 'nzd' ? '#0A84FF' : '#ccc'} />
+        <Button title="NZD" onPress={() => setAmountUnit('nzd')} color={amountUnit === 'nzd' ? '#0A84FF' : '#ccc'} />
       </View>
       <TextInput style={styles.input} placeholder={amountPlaceholder} value={amount} onChangeText={setAmount} keyboardType="numeric" />
       <Button title={`Estimate Fee: ${feeEstimate}`} onPress={() => {}} disabled />
