@@ -66,6 +66,7 @@ const Wallet = () => {
     }
   }, [viewMode, address]);
 
+<<<<<<< Updated upstream
   // Filter and sort crypto: by value descending, filter by search
   const filteredBalances = balances
     .filter(item => item.contract_address.toLowerCase().includes(searchQuery.toLowerCase()))
@@ -146,6 +147,75 @@ const Wallet = () => {
       />
       <View style={styles.logoutContainer}>
         <Button title="Logout" onPress={handleLogout} color="red" />
+=======
+  // Render crypto balance item
+  const renderBalanceItem = ({ item }) => (
+    <View style={styles.balanceItem}>
+      <Image source={{ uri: item.logo_url }} style={styles.tokenLogo} />
+      <View style={styles.tokenInfo}>
+        <Text style={styles.assetName}>{item.contract_ticker_symbol} ({item.chain_id === 11155111 ? 'ETH' : 'BSC'})</Text>
+        <Text style={styles.assetBalance}>{item.balance} {item.contract_ticker_symbol}</Text>
+      </View>
+      <Text style={styles.assetValue}>${item.quote_nzd.toFixed(2)} NZD</Text>
+    </View>
+  );
+
+  // Render NFT item
+  const renderNftItem = ({ item }) => (
+    <View style={styles.balanceItem}>
+      <Image source={{ uri: item.nft_data[0]?.external_data.image }} style={styles.nftImage} />
+      <Text style={styles.assetName}>{item.contract_name}</Text>
+      <Text style={styles.assetBalance}>Token ID: {item.nft_data[0]?.token_id}</Text>
+    </View>
+  );
+
+  const filteredBalances = balances.filter(item => item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredNfts = nfts.filter(item => item.contract_name.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  return (
+    <View style={styles.container}>
+      <Text style={styles.homeTitle}>Home</Text>
+      <View style={styles.totalContainer}>
+        <Text style={styles.totalLabel}>Total Balance</Text>
+        <Text style={styles.totalValue}>${totalNzd} NZD</Text>
+      </View>
+      <View style={styles.searchContainer}>
+        <Ionicons name="search" size={20} color="gray" style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search assets..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
+      <View style={styles.switchButtons}>
+        <Button title="Crypto" onPress={() => setViewMode('crypto')} color={viewMode === 'crypto' ? '#0A84FF' : 'gray'} style={styles.switchButton} />
+        <Button title="NFTs" onPress={() => setViewMode('nfts')} color={viewMode === 'nfts' ? '#0A84FF' : 'gray'} style={styles.switchButton} />
+      </View>
+      {viewMode === 'crypto' ? (
+        <FlatList
+          data={filteredBalances}
+          keyExtractor={(item) => item.contract_address + item.chain_id}
+          renderItem={renderBalanceItem}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={cryptoLoading ? <ActivityIndicator /> : (
+            <Text style={styles.empty}>{cryptoError ? cryptoError : 'No crypto assets yet'}</Text>
+          )}
+        />
+      ) : (
+        <FlatList
+          data={filteredNfts}
+          keyExtractor={(item) => item.contract_address + item.chain_id}
+          renderItem={renderNftItem}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          ListEmptyComponent={nftLoading ? <ActivityIndicator /> : (
+            <Text style={styles.empty}>{nftError ? nftError : 'No NFTs yet'}</Text>
+          )}
+        />
+      )}
+      <View style={styles.logoutContainer}>
+        <Button title="Logout" onPress={handleLogout} color="#FF0000" />
+>>>>>>> Stashed changes
       </View>
     </View>
   );
@@ -157,11 +227,14 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#fff',
   },
+<<<<<<< Updated upstream
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+=======
+>>>>>>> Stashed changes
   homeTitle: {
     fontSize: 32,
     fontWeight: 'bold',
