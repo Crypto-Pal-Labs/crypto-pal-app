@@ -66,29 +66,28 @@ const Wallet = () => {
   }, [viewMode, address]);
 
   // Render crypto balance item
-  const renderBalanceItem = ({ item }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url }} style={styles.tokenLogo} />
-      <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_ticker_symbol} ({item.chain_id === 11155111 ? 'ETH' : 'BSC'})</Text>
-        <Text style={styles.assetBalance}>{item.balance} {item.contract_ticker_symbol}</Text>
-      </View>
-      <Text style={styles.assetValue}>${item.quote_nzd.toFixed(2)} NZD</Text>
+const renderBalanceItem = ({ item }) => (
+  <View style={styles.balanceItem}>
+    <Image source={{ uri: item.logo_url }} style={styles.tokenLogo} />
+    <View style={styles.tokenInfo}>
+      <Text style={styles.assetName}>{item.contract_ticker_symbol} ({item.chain_id === 11155111 ? 'ETH' : 'BSC'})</Text>
+      <Text style={styles.assetBalance}>{item.balance} {item.contract_ticker_symbol}</Text>
     </View>
-  );
+    <Text style={styles.assetValue}>${item.quote_nzd.toFixed(2)} NZD</Text>
+  </View>
+);
 
-  // Render NFT item
-  const renderNftItem = ({ item }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.nft_data[0]?.external_data.image }} style={styles.nftImage} />
-      <Text style={styles.assetName}>{item.contract_name}</Text>
-      <Text style={styles.assetBalance}>Token ID: {item.nft_data[0]?.token_id}</Text>
-    </View>
-  );
+// Render NFT item
+const renderNftItem = ({ item }) => (
+  <View style={styles.balanceItem}>
+    <Image source={{ uri: item.nft_data[0]?.external_data.image }} style={styles.nftImage} />
+    <Text style={styles.assetName}>{item.contract_name}</Text>
+    <Text style={styles.assetBalance}>Token ID: {item.nft_data[0]?.token_id}</Text>
+  </View>
+);
 
-  const filteredBalances = balances.filter(item => item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
-  const filteredNfts = nfts.filter(item => item.contract_name.toLowerCase().includes(searchQuery.toLowerCase()));
-
+const filteredBalances = balances.filter(item => item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
+const filteredNfts = nfts.filter(item => item.contract_name.toLowerCase().includes(searchQuery.toLowerCase()));
   return (
     <View style={styles.container}>
       <Text style={styles.homeTitle}>Home</Text>
