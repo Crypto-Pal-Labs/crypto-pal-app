@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button, Image, RefreshControl } from 'react-native';
 import { useBalances } from '../hooks/useBalances';
 import { resetRoot } from '../navigation/RootNavigation';
-import { COVALENT_KEY } from '@env';
 import { getWalletAddress } from '../utils/wallet'; // From v0.4.0
 import { Ionicons } from '@expo/vector-icons'; // Add for search icon
 
@@ -49,7 +48,7 @@ const Wallet = () => {
     setNftError(null);
     try {
       const chainId = 11155111; // Sepolia (ETH testnet); add BSC testnet (97) later if needed
-      const response = await fetch(`https://api.covalenthq.com/v1/${chainId}/address/${address}/balances_nft/?key=${COVALENT_KEY}`);
+      const response = await fetch(`https://api.covalenthq.com/v1/${chainId}/address/${address}/balances_nft/?key=${process.env.COVALENT_KEY}`);
       const data = await response.json();
       setNfts(data.data?.items || []);
     } catch (err) {
@@ -66,88 +65,6 @@ const Wallet = () => {
     }
   }, [viewMode, address]);
 
-<<<<<<< Updated upstream
-  // Filter and sort crypto: by value descending, filter by search
-  const filteredBalances = balances
-    .filter(item => item.contract_address.toLowerCase().includes(searchQuery.toLowerCase()))
-    .sort((a, b) => (b.quote_nzd || 0) - (a.quote_nzd || 0));
-
-  const renderBalanceItem = ({ item }: { item: { contract_address: string; balance: string; quote_nzd: number; chain_id: number; logo_url: string; contract_ticker_symbol: string; contract_name: string } }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url || 'https://logos.covalenthq.com/tokens/1/0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee.png' }} style={styles.tokenLogo} />
-      <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_ticker_symbol || item.contract_name || 'ETH'} (Chain: {item.chain_id === 11155111 ? 'Sepolia (ETH)' : 'BSC Testnet'})</Text>
-        <Text style={styles.assetBalance}>{item.balance}</Text>
-      </View>
-      <Text style={styles.assetValue}>NZ${(item.quote_nzd || 0).toFixed(2)}</Text>
-    </View>
-  );
-
-  const renderNFTItem = ({ item }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.nft_data?.external_data?.image || '' }} style={styles.nftImage} />
-      <Text style={styles.assetName}>{item.contract_name || 'Unnamed NFT'}</Text>
-      <Text>{item.nft_data?.external_data?.description?.slice(0, 50) || 'No description'}</Text>
-    </View>
-  );
-
-  const data = viewMode === 'crypto' ? filteredBalances : nfts;
-  const isLoading = viewMode === 'crypto' ? cryptoLoading : nftLoading;
-  const error = viewMode === 'crypto' ? cryptoError : nftError;
-  const emptyMessage = viewMode === 'crypto' ? 'You have no Tokens to display yet.' : 'You don\'t hold any NFT\'s yet.';
-
-  if (isLoading) {
-    return <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>;
-  }
-
-  if (error) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.errorText}>{error}</Text>
-        <Button title="Retry" onPress={onRefresh} />
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.container}>
-      <FlatList
-        style={styles.container}
-        data={data}
-        renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
-        keyExtractor={(item) => item.contract_address || item.token_id.toString()}
-        ListEmptyComponent={<Text style={styles.empty}>{emptyMessage}</Text>}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        ListHeaderComponent={
-          <View>
-            <Text style={styles.homeTitle}>Main Wallet</Text>
-            <View style={styles.totalContainer}>
-              <Text style={styles.totalLabel}>Total Balance</Text>
-              <Text style={styles.totalValue}>NZ${totalNzd}</Text>
-            </View>
-            <View style={styles.searchContainer}>
-              <Ionicons name="search" size={20} color="gray" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search or enter code..."
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-            </View>
-            <View style={styles.switchButtons}>
-              <Button title="Crypto" onPress={() => setViewMode('crypto')} color={viewMode === 'crypto' ? '#0A84FF' : 'gray'} style={styles.switchButton} />
-              <Button title="NFTs" onPress={() => setViewMode('nfts')} color={viewMode === 'nfts' ? '#0A84FF' : 'gray'} style={styles.switchButton} />
-            </View>
-            <Text style={styles.subtitle}>Holdings:</Text>
-          </View>
-        }
-        ListFooterComponent={null}
-      />
-      <View style={styles.logoutContainer}>
-        <Button title="Logout" onPress={handleLogout} color="red" />
-=======
   // Render crypto balance item
   const renderBalanceItem = ({ item }) => (
     <View style={styles.balanceItem}>
@@ -215,7 +132,6 @@ const Wallet = () => {
       )}
       <View style={styles.logoutContainer}>
         <Button title="Logout" onPress={handleLogout} color="#FF0000" />
->>>>>>> Stashed changes
       </View>
     </View>
   );
@@ -227,14 +143,6 @@ const styles = StyleSheet.create({
     padding: 20,
     backgroundColor: '#fff',
   },
-<<<<<<< Updated upstream
-  center: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-=======
->>>>>>> Stashed changes
   homeTitle: {
     fontSize: 32,
     fontWeight: 'bold',
