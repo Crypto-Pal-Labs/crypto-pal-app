@@ -72,3 +72,46 @@ export async function getWalletSigner(chain = 'ETH') {
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   return wallet.connect(provider);
 }
+
+/**
+ * Estimate gas for a transaction.
+ * @param to Recipient address.
+ * @param amount Amount in token units.
+ * @param tokenAddress Optional ERC20 contract address (null for native).
+ * @param chain Chain ('ETH' or 'BSC').
+ * @returns Estimated fee in ETH/BNB.
+ */
+export async function estimateGas(to: string, amount: string, tokenAddress: string | null, chain = 'ETH') {
+  const signer = await getWalletSigner(chain);
+  let tx: any = { to, value: ethers.parseEther(amount) };
+  if (tokenAddress) {
+    const abi = ['function transfer(address to, uint256 value)'];
+    const contract = new ethers.Contract(tokenAddress, abi, signer);
+    tx = await contract.populateTransaction.transfer(to, ethers.parseUnits(amount, 18)); // Assume 18 decimals; adjust per token
+  }
+  const gasLimit = await signer.estimateGas(tx);
+  const gasPrice = await signer.provider.getGasPrice();
+  return ethers.formatEther(gasLimit * gasPrice);
+}
+
+/**
+ * Send transaction and wait for confirmation.
+ * @param to Recipient address.
+ * @param amount Amount in token units.
+ * @param tokenAddress Optional ERC20 contract address (null for native).
+ * @param chain Chain ('ETH' or 'BSC').
+ * @returns Tx hash.
+ */
+export async function sendTransaction(to: string, amount: string, tokenAddress: string | null, chain = 'ETH') {
+  const signer = await getWalletSigner(chain);
+  let txResponse;
+  if (tokenAddress) {
+    const abi = ['function transfer(address to, uint256 value)'];
+    const contract = new ethers.Contract(tokenAddress, abi, signer);
+    txResponse = await contract.transfer(to, ethers.parseUnits(amount, 18)); // Assume 18 decimals
+  } else {
+    txResponse = await signer.sendTransaction({ to, value: ethers.parseEther(amount) });
+  }
+  await txResponse.wait();
+  return txResponse.hash;
+}
