@@ -7,6 +7,7 @@ import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View } from 'react-native';
 import AppNavigator from './src/navigation/AppNavigator'; // From remote backup for scan feature
+import { COVALENT_KEY, ETH_RPC_URL, BSC_RPC_URL, ETHERSCAN_BASE, BSCSCAN_BASE } from '@env'; // Import prefixed vars
 
 export default function App() {
   useEffect(() => {
