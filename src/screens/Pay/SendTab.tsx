@@ -2,20 +2,21 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
-import { useBalances } from '../../hooks/useBalances';
-import { ethers } from 'ethers';
-import { getSavedMnemonic, getWalletSigner } from '../../utils/wallet';
+import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
+import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { ETH_RPC_URL, BSC_RPC_URL, ETHERSCAN_BASE } from '@env';
 
 const SendTab = () => {
   const { chainId } = useWalletStore();
-  const { balances } = useBalances();
+  const [balances, refreshBalances] = useBalancesEx(); // Updated for refresh
   const [toAddress, setToAddress] = useState('');
-  const [selectedToken, setSelectedToken] = useState('native');
+  const [selectedToken, setSelectedToken] = useState(null); // Updated to null, select from balances
   const [amount, setAmount] = useState('');
   const [amountUnit, setAmountUnit] = useState('token'); // 'token', 'usd', 'nzd'
   const [feeEstimate, setFeeEstimate] = useState('Calculating...');
   const [loading, setLoading] = useState(false);
+
+  const chain = chainId === 1 ? 'ETH' : 'BSC'; // Determine chain
 
   const convertAmountToToken = (input) => {
     if (amountUnit === 'token') return parseFloat(input) || 0;
@@ -32,26 +33,20 @@ const SendTab = () => {
 
   useEffect(() => {
     const estimateFee = async () => {
+      if (!toAddress || !amount || !selectedToken) {
+        setFeeEstimate('Enter details');
+        return;
+      }
       try {
-        const signer = await getWalletSigner(chainId === 1 ? 'ETH' : 'BSC');
-        let tx = { to: toAddress, value: ethers.parseEther(convertAmountToToken(amount).toString()) };
-        if (selectedToken !== 'native') {
-          const erc20Abi = ['function transfer(address,uint256) returns (bool)'];
-          const contract = new ethers.Contract(selectedToken, erc20Abi, signer);
-          tx.data = contract.interface.encodeFunctionData('transfer', [toAddress, ethers.parseUnits(convertAmountToToken(amount).toString(), 18)]);
-          tx.value = 0;
-        }
-        const gasEstimate = await signer.estimateGas(tx);
-        const gasPrice = await signer.provider.getGasPrice();
-        const feeEth = ethers.formatEther(gasEstimate * gasPrice);
-        const feeNzd = (parseFloat(feeEth) * 1500 * 1.6).toFixed(2);
+        const fee = await estimateGas(toAddress, convertAmountToToken(amount).toString(), selectedToken.contract_address, chain);
+        const feeNzd = (parseFloat(fee) * 1500 * 1.6).toFixed(2); // Stub conversion
         setFeeEstimate(`~NZ$${feeNzd}`);
       } catch (error) {
         setFeeEstimate('Unable to estimate: ' + error.message);
       }
     };
-    if (toAddress && amount) estimateFee();
-  }, [chainId, selectedToken, toAddress, amount]);
+    estimateFee();
+  }, [toAddress, amount, selectedToken, amountUnit, chain]);
 
   const handleSend = async () => {
     if (!toAddress || !amount) return Alert.alert('Error', 'Enter address and amount');
@@ -65,7 +60,7 @@ const SendTab = () => {
         onPress: () => {
           Alert.alert(
             'Confirm Send',
-            `Sending ${sendAmount} ${selectedToken === 'native' ? (chainId === 1 ? 'ETH' : 'BNB') : 'Token'} to ${toAddress}.`,
+            `Sending ${sendAmount} ${selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB')} to ${toAddress}.`,
             [
               { text: 'Cancel', style: 'cancel' },
               {
@@ -73,19 +68,9 @@ const SendTab = () => {
                 onPress: async () => {
                   setLoading(true);
                   try {
-                    const signer = await getWalletSigner(chainId === 1 ? 'ETH' : 'BSC');
-
-                    let tx;
-                    if (selectedToken === 'native') {
-                      tx = await signer.sendTransaction({
-                        to: toAddress,
-                        value: ethers.parseEther(sendAmount),
-                      });
-                    } else {
-                      const tokenContract = new ethers.Contract(selectedToken, ['function transfer(address to, uint amount)'], signer);
-                      tx = await tokenContract.transfer(toAddress, ethers.parseUnits(sendAmount, 18));
-                    }
-                    Alert.alert('Success', `Tx: ${tx.hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${tx.hash}`);
+                    const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
+                    Alert.alert('Success', `Tx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`);
+                    refreshBalances(); // Refresh balances after send
                   } catch (err: any) {
                     Alert.alert('Error', err.message);
                   } finally {
@@ -111,15 +96,15 @@ const SendTab = () => {
       </View>
       <Text style={styles.label}>What crypto currency would you like to send ...</Text>
       <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
-        <Picker.Item label={chainId === 1 ? 'ETH' : 'BNB'} value="native" />
+        <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
         {balances.map((item) => (
-          <Picker.Item key={item.contract_address} label={item.contract_address.slice(0, 6)} value={item.contract_address} />
+          <Picker.Item key={item.contract_address} label={item.contract_ticker_symbol} value={item} />
         ))}
       </Picker>
       <View style={styles.toggleRow}>
         <Button title="TOKEN" onPress={() => setAmountUnit('token')} color={amountUnit === 'token' ? '#0A84FF' : '#ccc'} />
         <Button title="USD" onPress={() => setAmountUnit('usd')} color={amountUnit === 'usd' ? '#0A84FF' : '#ccc'} />
-        <Button title="NZD" onPress={() => setAmountUnit('nzd')} color={amountUnit === 'nzd' ? '#0A84FF' : '#ccc'} />
+        <Button title="NZD" onPress () => setAmountUnit('nzd') } color={amountUnit === 'nzd' ? '#0A84FF' : '#ccc'} />
       </View>
       <TextInput style={styles.input} placeholder={amountPlaceholder} value={amount} onChangeText={setAmount} keyboardType="numeric" />
       <Button title={`Estimate Fee: ${feeEstimate}`} onPress={() => {}} disabled />
