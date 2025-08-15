@@ -1,6 +1,4 @@
-// src/hooks/useTransactions.ts
 import { useState, useEffect } from 'react';
-import Constants from 'expo-constants';
 import { useWalletStore } from '../store/useWalletStore';
 
 export type Transaction = {
@@ -19,8 +17,7 @@ export function useTransactions() {
 
   useEffect(() => {
     if (!address) return;
-    const COVALENT_KEY = Constants.expoConfig?.extra?.covalentKey as string;
-    const url = `https://api.covalenthq.com/v1/1/address/${address}/transactions_v2/?key=${COVALENT_KEY}&page-size=20`;
+    const url = `https://api.covalenthq.com/v1/1/address/${address}/transactions_v2/?key=${process.env.COVALENT_KEY}&page-size=20`;
 
     let cancelled = false;
     async function fetchTxns() {

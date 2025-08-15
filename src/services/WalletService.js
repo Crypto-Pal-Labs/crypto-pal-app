@@ -3,6 +3,8 @@ import 'react-native-get-random-values';
 import * as SecureStore from 'expo-secure-store';
 import { ethers } from 'ethers';
 
+// No env vars used in this file, so no changes for EXPO_PUBLIC_ prefixed imports from @env
+
 const MNEMONIC_KEY = 'mnemonic';
 const PRIVATE_KEY = 'privateKey';
 

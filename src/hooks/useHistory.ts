@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { COVALENT_KEY } from '@env';
 import { useWalletStore } from '../store/useWalletStore';
 import { getSavedMnemonic } from '../utils/wallet';
 import { ethers } from 'ethers';
@@ -31,7 +30,7 @@ export const useHistory = () => {
         const wallet = ethers.Wallet.fromPhrase(mnemonic);
         const address = wallet.address;
 
-        const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/?key=${COVALENT_KEY}`;
+        const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/?key=${process.env.COVALENT_KEY}`;
         const response = await fetch(url);
         if (!response.ok) throw new Error(`API error: ${response.status}`);
         const data = await response.json();

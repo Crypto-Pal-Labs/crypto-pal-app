@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
 import { formatEther } from 'ethers';
-import { COVALENT_KEY } from '@env';
 import { getWalletAddress } from '../utils/wallet';
 
 interface BalanceItem {
@@ -54,7 +53,7 @@ export const useBalances = () => {
 
       let allItems: BalanceItem[] = [];
       for (const chainId of chains) {
-        const url = `https://api.covalenthq.com/v1/${chainId}/address/${address.toLowerCase()}/balances_v2/?key=${COVALENT_KEY}&quote-currency=USD`;
+        const url = `https://api.covalenthq.com/v1/${chainId}/address/${address.toLowerCase()}/balances_v2/?key=${process.env.COVALENT_KEY}&quote-currency=USD`;
         console.log('Covalent URL for chain', chainId, ':', url);
         const response = await fetch(url);
         if (!response.ok) {

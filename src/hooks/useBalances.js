@@ -1,6 +1,5 @@
 // src/hooks/useBalances.js
 import { useCallback, useEffect, useState } from 'react';
-import { COVALENT_KEY } from '@env';
 import { useWalletStore } from '../store/useWalletStore';
 
 // INTERNAL: core fetcher used by both hooks
@@ -8,7 +7,7 @@ function useBalancesCore() {
   const { address, chainId } = useWalletStore();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError]   = useState(null);
+  const [error, setError] = useState(null);
 
   const fetchBalances = useCallback(async () => {
     if (!address) {
@@ -20,7 +19,7 @@ function useBalancesCore() {
       setError(null);
       const url =
         `https://api.covalenthq.com/v1/${chainId}/address/${address}/balances_v2/` +
-        `?quote-currency=nzd&no-nft=true&key=${COVALENT_KEY}`;
+        `?quote-currency=nzd&no-nft=true&key=${process.env.COVALENT_KEY}`;
       const res = await fetch(url);
       const json = await res.json();
       const arr = Array.isArray(json?.data?.items) ? json.data.items : [];
@@ -60,4 +59,3 @@ export function useBalancesEx() {
   const { items, fetchBalances, loading, error } = useBalancesCore();
   return [items, fetchBalances, { loading, error }];
 }
-

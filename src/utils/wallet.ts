@@ -1,12 +1,13 @@
 // src/utils/wallet.ts
 import * as SecureStore from 'expo-secure-store';
 import { ethers } from 'ethers';
-import { ETH_RPC_URL, BSC_RPC_URL } from '@env';
+import { EXPO_PUBLIC_ETH_RPC_URL, EXPO_PUBLIC_BSC_RPC_URL } from '@env';
 
 const MNEMONIC_KEY = 'mnemonic';
 
 /**
  * Save a 12-word mnemonic phrase to secure storage.
+ * @param mnemonic The wallet’s backup phrase.
  * @param mnemonic The wallet’s backup phrase.
  */
 export async function saveMnemonic(mnemonic: string): Promise<void> {
@@ -68,7 +69,7 @@ export async function getWalletSigner(chain = 'ETH') {
     throw new Error('No wallet found. Please create or restore a wallet.');
   }
   const wallet = ethers.Wallet.fromPhrase(mnemonic);
-  const rpcUrl = chain === 'BSC' ? BSC_RPC_URL : ETH_RPC_URL;
+  const rpcUrl = chain === 'BSC' ? EXPO_PUBLIC_BSC_RPC_URL : EXPO_PUBLIC_ETH_RPC_URL;
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   return wallet.connect(provider);
 }
