@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { formatEther } from 'ethers';
-import { COVALENT_KEY } from '@env';
+import { COVALENT_KEY } from '@env'; // Updated to prefixed for Expo Go
 import { getWalletAddress } from '../utils/wallet';
 
 interface BalanceItem {
@@ -12,7 +12,8 @@ interface BalanceItem {
   raw_balance: string; // Original wei for reference
 }
 
-export const useBalances = () => {
+// INTERNAL: core fetcher used by both hooks
+function useBalancesCore() {
   const [balances, setBalances] = useState<BalanceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,14 +56,14 @@ export const useBalances = () => {
       let allItems: BalanceItem[] = [];
       for (const chainId of chains) {
         const url = `https://api.covalenthq.com/v1/${chainId}/address/${address.toLowerCase()}/balances_v2/?key=${COVALENT_KEY}&quote-currency=USD`;
-        console.log('Covalent URL for chain', chainId, ':', url);
+        console.log('Fetching balances for address:', address, 'url:', url); // Added debug log
         const response = await fetch(url);
         if (!response.ok) {
-          console.log('Failed response for chain', chainId, response.status);
+          console.error('Fetch failed for chain', chainId, 'status:', response.status); // Added debug log
           continue;
         }
         const data = await response.json();
-        console.log('Raw Covalent response for chain', chainId, ':', data);
+        console.log('Balances data for chain', chainId, ':', data.data.items.length, 'items'); // Added debug log
         let items = Array.isArray(data.data.items) ? data.data.items : [];
 
         // Fallback price if quote null
@@ -101,4 +102,15 @@ export const useBalances = () => {
   }, [fetchBalances]);
 
   return { balances, loading, error, fetchBalances };
+};
+
+// Export for old behavior (BACK-COMPAT)
+export function useBalances() {
+  return useBalancesCore();
+}
+
+// Export for new behavior (ENHANCED with refresh/loading/error)
+export function useBalancesEx() {
+  const { balances, loading, error, fetchBalances } = useBalancesCore();
+  return [balances, fetchBalances, { loading, error }];
 };
