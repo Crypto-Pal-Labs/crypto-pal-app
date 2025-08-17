@@ -6,8 +6,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web",
-    "ios": "expo run:ios"
+    "web": "expo start --web"
   },
   "dependencies": {
     "@babel/runtime": "^7.28.2",
@@ -50,6 +49,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
+    "@types/react": "~19.0.10",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
     "eslint": "^9.31.0",
@@ -57,8 +57,8 @@
     "eslint-plugin-react": "^7.37.5",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.2",
-    "prettier": "^3.6.2"
+    "prettier": "^3.6.2",
+    "typescript": "~5.8.3"
   },
-  "private": true,
   "packageManager": "yarn@1.22.19"
 }
