@@ -89,6 +89,7 @@ const SwapRoute = () => {
       </Picker>
       {quote && <View style={{ marginTop: 16 }}><Text style={{ color: '#fff' }}>Receive: {quote.toAmount} {toToken.symbol} (Slippage impact: {quote.slippage}%)</Text><Text style={{ color: '#fff' }}>Provider Fee: ${quote.fee}</Text></View>}
       <Button title="Get Quote" onPress={getQuote} disabled={!amount || fromToken.chainId !== toToken.chainId || loading} color="#0A84FF" />
+      <Text style={{ color: '#fff', textAlign: 'center', marginTop: 8 }}>Swap feature deferred for now</Text>
       <View style={{ marginTop: 8 }}><Button title="Swap" onPress={executeSwap} disabled={!quote || loading} color="#0A84FF" /></View>
       {loading && <ActivityIndicator color="#0A84FF" style={{ marginTop: 16 }} />}
     </View>
