@@ -1,12 +1,16 @@
+import "react-native-get-random-values";
+import "@ethersproject/shims";
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Button, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Button, TextInput, Alert } from 'react-native';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import { useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { Picker } from '@react-native-picker/picker';
 import { getWalletAddress } from '../utils/wallet';
-import { TRANSAK_API_KEY } from '@env';
+import { TRANSAK_API_KEY, ONE_INCH_API_KEY } from '@env';
 import { useNavigation } from '@react-navigation/native';
-import { Picker } from '@react-native-picker/picker'; import { tokens } from '../utils/tokens';
+import { tokens } from '../utils/tokens';
+import { ethers } from 'ethers';
 
 const BuyRoute = () => {
   const [address, setAddress] = useState('');
@@ -26,7 +30,6 @@ const BuyRoute = () => {
 const SellRoute = () => {
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    // Omit getWalletAddress for Sell in staging to avoid testnet conflict; rely on disableWalletAddressCheck
     setLoading(false);
   }, []);
   const uri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&cryptoCurrency=USDC&cryptoAmount=1&fiatCurrency=NZD&paymentMethod=bank_transfer&productsAvailed=SELL&product=SELL&disableWalletAddressCheck=true&isTestingMode=true&environment=STAGING&network=ethereum`;
@@ -42,7 +45,35 @@ const SwapRoute = () => {
   const [quote, setQuote] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const getQuote = () => {};
+  const getQuote = async () => {
+    if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+      Alert.alert('Invalid Amount', 'Please enter a positive number.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const chainId = fromToken.chainId;
+      const decimals = fromToken.symbol === 'USDC' ? 6 : 18;
+      const amountWei = ethers.parseUnits(amount, decimals);
+      const response = await fetch(`https://api.1inch.io/v5.0/${chainId}/quote?fromTokenAddress=${fromToken.address}&toTokenAddress=${toToken.address}&amount=${amountWei.toString()}`, {
+        headers: { Authorization: `Bearer ${ONE_INCH_API_KEY}` }
+      });
+      console.log('API Response Status:', response.status);
+      const data = await response.json();
+      console.log('API Response Data:', data);
+      if (!response.ok) throw new Error(`API failed with status ${response.status}`);
+      if (data.error) throw new Error(data.description || 'Unknown API error');
+      const toDecimals = toToken.symbol === 'USDC' ? 6 : 18;
+      const toAmount = ethers.formatUnits(data.toTokenAmount, toDecimals);
+      const slippage = 1;
+      const fee = (data.estimatedGas / 1e6).toFixed(2);
+      setQuote({ toAmount, fee, slippage });
+    } catch (error) {
+      Alert.alert('Error', 'Quote failed - check connection or amount.');
+      console.error('Detailed Quote Error:', error.message || error);
+    }
+    setLoading(false);
+  };
   const executeSwap = () => {};
 
   return (
@@ -86,7 +117,7 @@ const Buy = () => {
         navigationState={{ index, routes }}
         renderScene={renderScene}
         onIndexChange={setIndex}
-        initialLayout={{ width: layout.width }}
+        initialLayout={ { width: layout.width } }
         renderTabBar={(props) => (
           <TabBar {...props} style={styles.tabBar} activeColor="#0A84FF" inactiveColor="#ccc" />
         )}
