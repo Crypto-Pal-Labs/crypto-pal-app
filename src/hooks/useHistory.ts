@@ -39,13 +39,10 @@ export const useHistory = () => {
       let allTx: Transaction[] = [];
       for (const chain of chains) {
         const url = `https://api.covalenthq.com/v1/${chain.id}/address/${address}/transactions_v3/?key=${COVALENT_KEY}`;
-        console.log('Fetching Covalent URL:', url); // Debug log
         const response = await fetch(url);
-        console.log('Covalent Response Status:', response.status); // Debug log
-        if (!response.ok) throw new Error(`Failed for chain ${chain.id}: ${response.statusText}`);
+        if (!response.ok) throw new Error(`Failed for chain ${chain.id}`);
         const data = await response.json();
-        console.log('Covalent Data for chain', chain.id, ':', data); // Debug log full data
-        const chainTx: Transaction[] = (data.items || []).map((tx: any) => ({
+        const chainTx: Transaction[] = (data.data?.items || []).map((tx: any) => ({
           tx_hash: tx.tx_hash,
           block_signed_at: tx.block_signed_at,
           value: tx.value,
@@ -59,7 +56,6 @@ export const useHistory = () => {
       setTransactions(allTx);
     } catch (err) {
       setError((err as Error).message || 'Failed to fetch history.');
-      console.error('Fetch History Error:', err); // Debug log
     } finally {
       setLoading(false);
     }

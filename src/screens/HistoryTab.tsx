@@ -49,13 +49,13 @@ const HistoryTab = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', padding: 16, textAlign: 'center' },
+  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', marginTop: 20, padding: 16, textAlign: 'center' }, // Larger, blue, moved down
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   listContainer: { padding: 16 },
   txItem: { padding: 12, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
   txDate: { fontWeight: 'bold' },
   link: { color: '#0A84FF', marginTop: 4 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', height: '100%' }, // Center vertically
+  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 300 }, // Centered in middle
   empty: { textAlign: 'center', color: '#888' },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
   retry: { color: '#0A84FF', marginTop: 10 },
