@@ -1,50 +1,53 @@
+// src/hooks/useHistory.ts
 import { useState, useEffect } from 'react';
-import { COVALENT_KEY } from '@env';
 import { useWalletStore } from '../store/useWalletStore';
-import { getSavedMnemonic } from '../utils/wallet';
-import { ethers } from 'ethers';
-
-interface TxItem {
-  tx_hash: string;
-  from_address: string;
-  to_address: string;
-  value: string;
-  successful: boolean;
-  block_signed_at: string;
-}
+import { COVALENT_KEY } from '@env';
 
 export const useHistory = () => {
-  const { chainId } = useWalletStore();
-  const [transactions, setTransactions] = useState<TxItem[]>([]);
+  const address = useWalletStore((state) => state.address);
+  const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState(null);
+
+  const fetchHistory = async () => {
+    if (!address) {
+      setError('No wallet address found.');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const chains = [
+        { id: 11155111, explorer: 'https://sepolia.etherscan.io/tx/' }, // Sepolia ETH
+        { id: 97, explorer: 'https://testnet.bscscan.com/tx/' } // BSC testnet
+      ];
+      let allTx = [];
+      for (const chain of chains) {
+        const url = `https://api.covalenthq.com/v1/${chain.id}/address/${address}/transactions_v3/?key=${COVALENT_KEY}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Covalent fetch failed for chain ${chain.id}`);
+        const data = await response.json();
+        const chainTx = (data.data?.items || []).map(tx => ({
+          ...tx,
+          chainId: chain.id,
+          explorer: chain.explorer
+        }));
+        allTx = [...allTx, ...chainTx];
+      }
+      // Sort by date descending
+      allTx.sort((a, b) => new Date(b.block_signed_at).getTime() - new Date(a.block_signed_at).getTime());
+      setTransactions(allTx);
+    } catch (err) {
+      setError(err.message || 'Failed to fetch history.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchHistory = async () => {
-      setLoading(true);
-      setError(null);
-      setTransactions([]);
-      try {
-        const mnemonic = await getSavedMnemonic();
-        if (!mnemonic) throw new Error('No wallet');
-
-        const wallet = ethers.Wallet.fromPhrase(mnemonic);
-        const address = wallet.address;
-
-        const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/?key=${COVALENT_KEY}`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`API error: ${response.status}`);
-        const data = await response.json();
-        setTransactions(Array.isArray(data.data.items) ? data.data.items : []);
-      } catch (err: any) {
-        setError(err.message || 'Failed to load history');
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchHistory();
-  }, [chainId]);
+  }, [address]);
 
-  return { transactions, loading, error };
+  return { transactions, loading, error, refetch: fetchHistory };
 };

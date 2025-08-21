@@ -6,6 +6,7 @@ import Wallet  from '../screens/Wallet';
 import BuyScreen     from '../screens/Buy';
 import PayTabs       from '../screens/Pay/PayTabs';
 import HistoryScreen from '../screens/HistoryTab';
+import HistoryTab from '../screens/HistoryTab';
 
 const Tab = createBottomTabNavigator();
 
@@ -36,11 +37,12 @@ export default function AppTabs() {
   }, [ipRegion]);
 
   return (
-    <Tab.Navigator initialRouteName="Wallet" screenOptions={{ headerShown: false }}>
-      <Tab.Screen name="Wallet"  component={Wallet}  />
-      {showBuy && <Tab.Screen name="Buy" component={BuyScreen} />}
-      <Tab.Screen name="Pay"     component={PayTabs}       />
-      <Tab.Screen name="History" component={HistoryScreen} />
-    </Tab.Navigator>
-  );
-};
+  <Tab.Navigator initialRouteName="Wallet" screenOptions={{ headerShown: false }}>
+    {/* Your screens here, e.g. */}
+    <Tab.Screen name="Wallet" component={Wallet} />
+    <Tab.Screen name="Buy" component={BuyScreen} />
+    <Tab.Screen name="Pay" component={PayTabs} />
+    <Tab.Screen name="History" component={HistoryTab} />
+  </Tab.Navigator>
+);
+}
