@@ -1,4 +1,3 @@
-// src/screens/Wallet.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button, Image, RefreshControl, TouchableOpacity } from 'react-native';
 import { ethers } from 'ethers';
@@ -10,7 +9,7 @@ import { useWalletStore } from '../store/useWalletStore';
 
 const Wallet = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
-  const { balances, nfts, loading: assetsLoading, error: assetsError, refetch } = useAssets();
+  const { balances, nfts, loading, error, refetch } = useAssets();
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('crypto');
   const [refreshing, setRefreshing] = useState(false);
@@ -25,17 +24,14 @@ const Wallet = () => {
     setLoadError(null);
     try {
       const currentAddress = await getWalletAddress();
-      console.log('Loaded address:', currentAddress); // Debug log
       if (currentAddress) {
-        setAddress(currentAddress); // Set in store for hook
-        setLocalAddress(currentAddress); // Local for UI
+        setAddress(currentAddress);
+        setLocalAddress(currentAddress);
       } else {
         throw new Error('No address returned from secure store.');
       }
     } catch (err) {
-      const msg = (err as Error).message || 'Failed to load wallet address.';
-      setLoadError(msg);
-      console.error('Address load error:', err); // Debug log
+      setLoadError((err as Error).message || 'Failed to load wallet address.');
     }
   };
 
@@ -58,7 +54,7 @@ const Wallet = () => {
         <Text style={styles.assetName}>{item.contract_ticker_symbol} ({item.contract_ticker_symbol})</Text>
         <Text style={styles.assetBalance}>{ethers.formatEther(item.balance)} {item.contract_ticker_symbol}</Text>
       </View>
-      <Text style={styles.assetValue}>${item.quote.toFixed(2)} NZD</Text>
+      <Text style={styles.assetValue}>${item.quote ? item.quote.toFixed(2) : 'N/A'} NZD</Text>
     </View>
   );
 
@@ -90,8 +86,8 @@ const Wallet = () => {
         <Button title="CRYPTO" color={viewMode === 'crypto' ? '#0A84FF' : '#888'} onPress={() => setViewMode('crypto')} />
         <Button title="NFTs" color={viewMode === 'nfts' ? '#0A84FF' : '#888'} onPress={() => setViewMode('nfts')} />
       </View>
-      {assetsError && <Text style={styles.errorText}>{assetsError}</Text>}
-      {assetsLoading ? <ActivityIndicator size="large" color="#0A84FF" /> : (
+      {error && <Text style={styles.errorText}>{error}</Text>}
+      {loading ? <ActivityIndicator size="large" color="#0A84FF" /> : (
         <FlatList
           data={viewMode === 'crypto' ? filteredBalances : filteredNFTs}
           renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
@@ -124,9 +120,9 @@ const styles = StyleSheet.create({
   assetValue: { fontWeight: 'bold', fontSize: 16 },
   empty: { textAlign: 'center', color: '#888', marginTop: 100 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
-  retry: { color: '#0A84FF', marginTop: 10 },
   logoutContainer: { padding: 10, position: 'absolute', bottom: 0, left: 0, right: 0 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  retry: { color: '#0A84FF', marginTop: 10 },
 });
 
 export default Wallet;
