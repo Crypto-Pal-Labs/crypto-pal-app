@@ -70,7 +70,7 @@ export const useAssets = () => {
         console.error('Balances error for chain', chainId, ':', err);
       }
 
-      // NFTs (fetch from Covalent on Sepolia, multi-chain ready)
+      // NFTs
       try {
         const nftUrl = `https://api.covalenthq.com/v1/${chainId}/address/${address}/nft_token_ids/?key=${COVALENT_KEY}`;
         const nftResp = await fetch(nftUrl);
