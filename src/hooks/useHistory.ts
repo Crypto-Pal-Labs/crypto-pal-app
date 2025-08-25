@@ -10,6 +10,10 @@ interface Transaction {
   successful: boolean;
   chainId: number;
   explorer: string;
+  from_address: string;
+  to_address: string;
+  gas_quote: number;
+  tx_type: string; // e.g., 'transfer', 'mint', 'swap'
 }
 
 interface Chain {
@@ -48,7 +52,11 @@ export const useHistory = () => {
           value: tx.value,
           successful: tx.successful,
           chainId: chain.id,
-          explorer: chain.explorer
+          explorer: chain.explorer,
+          from_address: tx.from_address || 'Unknown',
+          to_address: tx.to_address || 'Unknown',
+          gas_quote: tx.gas_quote || 0,
+          tx_type: tx.tx_type || 'Unknown' // Add if Covalent provides; fallback
         }));
         allTx = [...allTx, ...chainTx];
       }
