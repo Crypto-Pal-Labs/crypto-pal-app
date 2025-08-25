@@ -47,11 +47,14 @@ const Wallet = () => {
     setRefreshing(false);
   };
 
+  const filteredBalances = balances.filter((item) => item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredNfts = nfts.filter((item) => (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()));
+
   const renderBalanceItem = ({ item }: { item: any }) => (
     <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url }} style={styles.tokenLogo} />
+      <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
       <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_ticker_symbol} ({item.contract_ticker_symbol})</Text>
+        <Text style={styles.assetName}>{item.contract_ticker_symbol}</Text>
         <Text style={styles.assetBalance}>{ethers.formatEther(item.balance)} {item.contract_ticker_symbol}</Text>
       </View>
       <Text style={styles.assetValue}>${item.quote ? item.quote.toFixed(2) : 'N/A'} NZD</Text>
@@ -60,16 +63,23 @@ const Wallet = () => {
 
   const renderNFTItem = ({ item }: { item: any }) => (
     <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url }} style={styles.tokenLogo} />
+      <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
       <View style={styles.tokenInfo}>
         <Text style={styles.assetName}>{item.contract_name || 'NFT'}</Text>
         <Text style={styles.assetBalance}>Token ID: {item.token_id}</Text>
       </View>
+      <Text style={styles.assetValue}>Value: N/A</Text>
     </View>
   );
 
-  const filteredBalances = balances.filter((item) => item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
-  const filteredNFTs = nfts.filter((item) => (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()));
+  const EmptyState = () => (
+    <View style={styles.center}>
+      <Text style={styles.empty}>No {viewMode === 'crypto' ? 'crypto' : 'NFTs'} yet—buy via Buy tab!</Text>
+      <TouchableOpacity onPress={onRefresh}>
+        <Ionicons name="refresh-circle" size={40} color="#0A84FF" />
+      </TouchableOpacity>
+    </View>
+  );
 
   if (loadError) return <View style={styles.center}><Text style={styles.errorText}>{loadError}</Text><TouchableOpacity onPress={loadAddress}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
 
@@ -83,17 +93,23 @@ const Wallet = () => {
         <TextInput style={styles.searchInput} placeholder="Search assets..." value={searchQuery} onChangeText={setSearchQuery} />
       </View>
       <View style={styles.switchButtons}>
-        <Button title="CRYPTO" color={viewMode === 'crypto' ? '#0A84FF' : '#888'} onPress={() => setViewMode('crypto')} />
-        <Button title="NFTs" color={viewMode === 'nfts' ? '#0A84FF' : '#888'} onPress={() => setViewMode('nfts')} />
+        <TouchableOpacity style={viewMode === 'crypto' ? styles.activeButton : styles.inactiveButton} onPress={() => setViewMode('crypto')}>
+          <Text style={viewMode === 'crypto' ? styles.activeText : styles.inactiveText}>CRYPTO</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={viewMode === 'nfts' ? styles.activeButton : styles.inactiveButton} onPress={() => setViewMode('nfts')}>
+          <Text style={viewMode === 'nfts' ? styles.activeText : styles.inactiveText}>NFTs</Text>
+        </TouchableOpacity>
       </View>
-      {error && <Text style={styles.errorText}>{error}</Text>}
-      {loading ? <ActivityIndicator size="large" color="#0A84FF" /> : (
+      {error && <Text style={styles.errorText}>{error} <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity></Text>}
+      {loading ? (
+        <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />
+      ) : (
         <FlatList
-          data={viewMode === 'crypto' ? filteredBalances : filteredNFTs}
+          data={viewMode === 'crypto' ? filteredBalances : filteredNfts}
           renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
           keyExtractor={(item) => item.contract_address + (item.token_id || '')}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          ListEmptyComponent={<Text style={styles.empty}>No {viewMode === 'crypto' ? 'crypto' : 'NFTs'} to display yet</Text>}
+          ListEmptyComponent={EmptyState}
         />
       )}
       <View style={styles.logoutContainer}>
@@ -112,7 +128,11 @@ const styles = StyleSheet.create({
   searchIcon: { marginRight: 5 },
   searchInput: { flex: 1, padding: 10 },
   switchButtons: { flexDirection: 'row', justifyContent: 'center', marginBottom: 10 },
-  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 10, borderBottomWidth: 1, borderBottomColor: '#eee' },
+  activeButton: { backgroundColor: '#0A84FF', padding: 10, borderRadius: 5, marginHorizontal: 5 },
+  inactiveButton: { backgroundColor: '#ccc', padding: 10, borderRadius: 5, marginHorizontal: 5 },
+  activeText: { color: '#fff' },
+  inactiveText: { color: '#000' },
+  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
   tokenLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
   tokenInfo: { flex: 1 },
   assetName: { fontWeight: 'bold', fontSize: 16 },
@@ -120,9 +140,9 @@ const styles = StyleSheet.create({
   assetValue: { fontWeight: 'bold', fontSize: 16 },
   empty: { textAlign: 'center', color: '#888', marginTop: 100 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
+  retry: { color: '#0A84FF', marginTop: 10 },
   logoutContainer: { padding: 10, position: 'absolute', bottom: 0, left: 0, right: 0 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  retry: { color: '#0A84FF', marginTop: 10 },
 });
 
 export default Wallet;
