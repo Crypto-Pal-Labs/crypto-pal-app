@@ -6,6 +6,7 @@ import { resetRoot } from '../navigation/RootNavigation';
 import { getWalletAddress } from '../utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
+import { Picker } from '@react-native-picker/picker';
 
 const Wallet = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
@@ -15,6 +16,7 @@ const Wallet = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [localAddress, setLocalAddress] = useState('');
+  const [currency, setCurrency] = useState('NZD'); // Default to NZD per NZ focus
 
   useEffect(() => {
     loadAddress();
@@ -39,7 +41,10 @@ const Wallet = () => {
     resetRoot([{ name: 'Welcome' }]);
   };
 
-  const totalNzd = balances.reduce((sum, item) => sum + (item.quote || 0), 0).toFixed(2);
+  const totalValue = balances.reduce((sum, item) => {
+    const quote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
+    return sum + quote;
+  }, 0).toFixed(2);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -57,7 +62,7 @@ const Wallet = () => {
         <Text style={styles.assetName}>{item.contract_ticker_symbol}</Text>
         <Text style={styles.assetBalance}>{ethers.formatEther(item.balance)} {item.contract_ticker_symbol}</Text>
       </View>
-      <Text style={styles.assetValue}>${item.quote ? item.quote.toFixed(2) : 'N/A'} NZD</Text>
+      <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
     </View>
   );
 
@@ -86,19 +91,30 @@ const Wallet = () => {
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Home</Text>
-      <Text style={styles.totalLabel}>Total Balance</Text>
-      <Text style={styles.totalValue}>${totalNzd} NZD</Text>
+      <Text style={styles.totalLabel}>Total Balance:</Text>
+      <Text style={styles.totalValue}>${totalValue} {currency}</Text>
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
         <TextInput style={styles.searchInput} placeholder="Search assets..." value={searchQuery} onChangeText={setSearchQuery} />
       </View>
       <View style={styles.switchButtons}>
-        <TouchableOpacity style={viewMode === 'crypto' ? styles.activeButton : styles.inactiveButton} onPress={() => setViewMode('crypto')}>
-          <Text style={viewMode === 'crypto' ? styles.activeText : styles.inactiveText}>CRYPTO</Text>
+        <TouchableOpacity style={viewMode === 'crypto' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('crypto')}>
+          <Text style={viewMode === 'crypto' ? styles.activeToggleText : styles.inactiveToggleText}>CRYPTOs</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={viewMode === 'nfts' ? styles.activeButton : styles.inactiveButton} onPress={() => setViewMode('nfts')}>
-          <Text style={viewMode === 'nfts' ? styles.activeText : styles.inactiveText}>NFTs</Text>
+        <TouchableOpacity style={viewMode === 'nfts' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('nfts')}>
+          <Text style={viewMode === 'nfts' ? styles.activeToggleText : styles.inactiveToggleText}>NFTs</Text>
         </TouchableOpacity>
+      </View>
+      <View style={{ alignSelf: 'center', width: 120, height: 60, overflow: 'visible' }}>
+        <Picker
+          selectedValue={currency}
+          onValueChange={(itemValue) => setCurrency(itemValue)}
+          style={{ height: 60, width: 120, color: '#0A84FF' }} // Increased height for full visibility
+          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' }} // Match height and ensure text fits
+        >
+          <Picker.Item label="NZD" value="NZD" />
+          <Picker.Item label="USD" value="USD" />
+        </Picker>
       </View>
       {error && <Text style={styles.errorText}>{error} <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity></Text>}
       {loading ? (
@@ -121,17 +137,17 @@ const Wallet = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 20 },
+  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 }, // Moved down slightly
   totalLabel: { fontSize: 18, color: '#000', textAlign: 'center' },
   totalValue: { fontSize: 24, fontWeight: 'bold', color: '#000', textAlign: 'center' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 10, margin: 10 },
   searchIcon: { marginRight: 5 },
   searchInput: { flex: 1, padding: 10 },
   switchButtons: { flexDirection: 'row', justifyContent: 'center', marginBottom: 10 },
-  activeButton: { backgroundColor: '#0A84FF', padding: 10, borderRadius: 5, marginHorizontal: 5 },
-  inactiveButton: { backgroundColor: '#ccc', padding: 10, borderRadius: 5, marginHorizontal: 5 },
-  activeText: { color: '#fff' },
-  inactiveText: { color: '#000' },
+  activeToggle: { borderBottomWidth: 2, borderBottomColor: '#0A84FF', padding: 10, marginHorizontal: 10 },
+  inactiveToggle: { padding: 10, marginHorizontal: 10 },
+  activeToggleText: { color: '#0A84FF', fontWeight: 'bold' },
+  inactiveToggleText: { color: '#888' },
   balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
   tokenLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
   tokenInfo: { flex: 1 },
