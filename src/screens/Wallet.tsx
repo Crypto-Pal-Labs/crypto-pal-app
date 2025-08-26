@@ -53,7 +53,10 @@ const Wallet = () => {
   };
 
   const filteredBalances = balances.filter((item) => item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
-  const filteredNfts = nfts.filter((item) => (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredNfts = nfts.filter((item) =>
+    (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    item.token_id.includes(searchQuery) // Enhanced for token_id search
+  );
 
   const renderBalanceItem = ({ item }: { item: any }) => (
     <View style={styles.balanceItem}>

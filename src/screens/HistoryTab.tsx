@@ -37,6 +37,13 @@ const HistoryTab = () => {
     </TouchableOpacity>
   );
 
+  const EmptyState = () => (
+    <View style={styles.center}>
+      <Ionicons name="wallet-outline" size={64} color="gray" />
+      <Text style={styles.empty}>No transactions yet—try buying or sending!</Text>
+    </View>
+  );
+
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>;
   if (error) return <View style={styles.center}><Text style={styles.errorText}>{error}</Text><TouchableOpacity onPress={refetch}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
 
@@ -47,7 +54,7 @@ const HistoryTab = () => {
         data={transactions}
         renderItem={renderTxItem}
         keyExtractor={(item) => item.tx_hash}
-        ListEmptyComponent={<View style={styles.emptyContainer}><Text style={styles.empty}>No transactions to display yet</Text></View>}
+        ListEmptyComponent={EmptyState}
         contentContainerStyle={styles.listContainer}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} colors={['#0A84FF']} />}
       />
@@ -68,8 +75,7 @@ const styles = StyleSheet.create({
   txStatus: { fontWeight: 'bold' },
   txFromTo: { color: '#888' },
   txFee: { color: '#888' },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', minHeight: 300 },
-  empty: { textAlign: 'center', color: '#888' },
+  empty: { textAlign: 'center', color: '#888', marginTop: 10 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
   retry: { color: '#0A84FF' },
 });
