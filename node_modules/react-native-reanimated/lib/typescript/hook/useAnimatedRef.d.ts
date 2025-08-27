@@ -1,5 +1,6 @@
 import type { Component } from 'react';
 import type { AnimatedRef } from './commonTypes';
+declare function useAnimatedRefWeb<TComponent extends Component>(): AnimatedRef<TComponent>;
 /**
  * Lets you get a reference of a view that you can use inside a worklet.
  *
@@ -7,5 +8,6 @@ import type { AnimatedRef } from './commonTypes';
  *   component.
  * @see https://docs.swmansion.com/react-native-reanimated/docs/core/useAnimatedRef
  */
-export declare function useAnimatedRef<TComponent extends Component>(): AnimatedRef<TComponent>;
+export declare const useAnimatedRef: typeof useAnimatedRefWeb;
+export {};
 //# sourceMappingURL=useAnimatedRef.d.ts.map
