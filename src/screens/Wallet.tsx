@@ -52,7 +52,7 @@ const Wallet = () => {
     setRefreshing(false);
   };
 
-  const filteredBalances = balances.filter((item) => item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredBalances = balances.filter((item) => Number(ethers.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredNfts = nfts.filter((item) =>
     (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.token_id.includes(searchQuery) // Enhanced for token_id search
@@ -82,9 +82,9 @@ const Wallet = () => {
 
   const EmptyState = () => (
     <View style={styles.center}>
-      <Text style={styles.empty}>No {viewMode === 'crypto' ? 'crypto' : 'NFTs'} yet—buy via Buy tab!</Text>
+      <Text style={styles.empty}>No tokens to display yet</Text>
       <TouchableOpacity onPress={onRefresh}>
-        <Ionicons name="refresh-circle" size={40} color="#0A84FF" />
+        <Ionicons name="refresh-circle" size= {40} color="#0A84FF" />
       </TouchableOpacity>
     </View>
   );
@@ -112,8 +112,8 @@ const Wallet = () => {
         <Picker
           selectedValue={currency}
           onValueChange={(itemValue) => setCurrency(itemValue)}
-          style={{ height: 60, width: 120, color: '#0A84FF' }} // Increased height for full visibility
-          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' }} // Match height and ensure text fits
+          style={{ height: 60, width: 120, color: '#0A84FF' }} // Increased height for full visibility, blue color
+          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' }} // Match height and blue text
         >
           <Picker.Item label="NZD" value="NZD" />
           <Picker.Item label="USD" value="USD" />
@@ -140,7 +140,7 @@ const Wallet = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
-  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 }, // Moved down slightly
+  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 }, // Blue, centered, moved down
   totalLabel: { fontSize: 18, color: '#000', textAlign: 'center' },
   totalValue: { fontSize: 24, fontWeight: 'bold', color: '#000', textAlign: 'center' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 10, margin: 10 },
