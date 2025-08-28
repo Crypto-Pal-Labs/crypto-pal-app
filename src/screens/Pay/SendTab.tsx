@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
 import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
@@ -89,39 +89,61 @@ const SendTab = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Send to ...</Text>
-      <View style={styles.addressRow}>
-        <TextInput style={styles.input} placeholder="Wallet address of recipient" value={toAddress} onChangeText={setToAddress} />
-        <Button title="Scan QR" onPress={handleScanQR} />
+      {/* Section 1: Send to... */}
+      <View style={styles.section}>
+        <Text style={styles.label}>Send to ...</Text>
+        <View style={styles.addressRow}>
+          <TextInput style={styles.input} placeholder="Wallet address of recipient" value={toAddress} onChangeText={setToAddress} />
+          <Button title="SCAN QR" onPress={handleScanQR} color="#0A84FF" />
+        </View>
       </View>
-      <Text style={styles.label}>What crypto currency would you like to send ...</Text>
-      <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
-        <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
-        {balances.map((item) => (
-          <Picker.Item key={item.contract_address} label={item.contract_ticker_symbol} value={item} />
-        ))}
-      </Picker>
-      <View style={styles.toggleRow}>
-        <Button title="TOKEN" onPress={() => setAmountUnit('token')} color={amountUnit === 'token' ? '#0A84FF' : '#ccc'} />
-        <Button title="USD" onPress={() => setAmountUnit('usd')} color={amountUnit === 'usd' ? '#0A84FF' : '#ccc'} />
-        <Button title="NZD" onPress={() => setAmountUnit('nzd')} color={amountUnit === 'nzd' ? '#0A84FF' : '#ccc'} />
+
+      {/* Section 2: What crypto... */}
+      <View style={styles.section}>
+        <Text style={styles.label}>What crypto currency would you like to send ...</Text>
+        <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
+          <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
+          {balances.map((item) => (
+            <Picker.Item key={item.contract_address} label={item.contract_ticker_symbol} value={item} />
+          ))}
+        </Picker>
       </View>
-      <TextInput style={styles.input} placeholder={amountPlaceholder} value={amount} onChangeText={setAmount} keyboardType="numeric" />
-      <Button title={`Estimate Fee: ${feeEstimate}`} onPress={() => {}} disabled />
-      <Button title="Send" onPress={handleSend} disabled={loading} />
-      {loading && <ActivityIndicator />}
+
+      {/* Section 3: How much... */}
+      <View style={styles.section}>
+        <View style={styles.unitRow}>
+          <TouchableOpacity style={amountUnit === 'token' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('token')}>
+            <Text style={amountUnit === 'token' ? styles.unitTextActive : styles.unitText}>TOKEN</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={amountUnit === 'usd' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('usd')}>
+            <Text style={amountUnit === 'usd' ? styles.unitTextActive : styles.unitText}>USD</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={amountUnit === 'nzd' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('nzd')}>
+            <Text style={amountUnit === 'nzd' ? styles.unitTextActive : styles.unitText}>NZD</Text>
+          </TouchableOpacity>
+        </View>
+        <TextInput style={styles.amountInput} placeholder={amountPlaceholder} value={amount} onChangeText={setAmount} keyboardType="numeric" />
+        <Button title={`ESTIMATE FEE: ${feeEstimate}`} onPress={() => {}} disabled color="#ccc" />
+        <Button title="SEND" onPress={handleSend} disabled={loading} color="#0A84FF" />
+        {loading && <ActivityIndicator color="#0A84FF" />}
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16 },
-  title: { fontSize: 20, fontWeight: 'bold', marginBottom: 16 },
-  addressRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  input: { flex: 1, borderWidth: 1, padding: 8, borderColor: '#ddd', marginRight: 8 },
-  label: { fontSize: 16, marginBottom: 8, fontWeight: 'bold' },
-  picker: { marginBottom: 16 },
-  toggleRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 },
+  section: { marginBottom: 24, borderBottomWidth: 1, borderBottomColor: '#ddd', paddingBottom: 16 },
+  label: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
+  addressRow: { flexDirection: 'row', alignItems: 'center' },
+  input: { flex: 1, borderWidth: 1, padding: 8, borderColor: '#ddd', marginRight: 8, borderRadius: 4 },
+  picker: { borderWidth: 1, borderColor: '#ddd', borderRadius: 4 },
+  unitRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
+  unitButton: { padding: 8, backgroundColor: '#f0f0f0', borderRadius: 4 },
+  unitButtonActive: { padding: 8, backgroundColor: '#0A84FF', borderRadius: 4 },
+  unitText: { color: '#0A84FF', fontWeight: 'bold' },
+  unitTextActive: { color: '#fff', fontWeight: 'bold' },
+  amountInput: { borderWidth: 1, padding: 8, borderColor: '#ddd', borderRadius: 4, height: 40 }, // Slimmer height
 });
 
 export default SendTab;
