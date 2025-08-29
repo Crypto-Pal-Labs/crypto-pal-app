@@ -52,7 +52,7 @@ const Wallet = () => {
     setRefreshing(false);
   };
 
-  const filteredBalances = balances.filter((item) => item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredBalances = balances.filter((item) => Number(ethers.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredNfts = nfts.filter((item) =>
     (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.token_id.includes(searchQuery) // Enhanced for token_id search
@@ -82,7 +82,7 @@ const Wallet = () => {
 
   const EmptyState = () => (
     <View style={styles.center}>
-      <Text style={styles.empty}>No {viewMode === 'crypto' ? 'crypto' : 'NFTs'} yet—buy via Buy tab!</Text>
+      <Text style={styles.empty}>No tokens to display yet</Text>
       <TouchableOpacity onPress={onRefresh}>
         <Ionicons name="refresh-circle" size={40} color="#0A84FF" />
       </TouchableOpacity>
@@ -112,8 +112,8 @@ const Wallet = () => {
         <Picker
           selectedValue={currency}
           onValueChange={(itemValue) => setCurrency(itemValue)}
-          style={{ height: 60, width: 120, color: '#0A84FF' }} // Increased height for full visibility
-          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' }} // Match height and ensure text fits
+          style={{ height: 60, width: 120, color: '#0A84FF' }} // Blue text
+          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' }} // Blue item text
         >
           <Picker.Item label="NZD" value="NZD" />
           <Picker.Item label="USD" value="USD" />
@@ -139,10 +139,10 @@ const Wallet = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 }, // Moved down slightly
+  container: { flex: 1, backgroundColor: '#F5F5F5' },
+  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 },
   totalLabel: { fontSize: 18, color: '#000', textAlign: 'center' },
-  totalValue: { fontSize: 24, fontWeight: 'bold', color: '#000', textAlign: 'center' },
+  totalValue: { fontSize: 24, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 10, margin: 10 },
   searchIcon: { marginRight: 5 },
   searchInput: { flex: 1, padding: 10 },
@@ -154,9 +154,9 @@ const styles = StyleSheet.create({
   balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
   tokenLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
   tokenInfo: { flex: 1 },
-  assetName: { fontWeight: 'bold', fontSize: 16 },
+  assetName: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' }, // Blue
   assetBalance: { color: 'gray', fontSize: 14 },
-  assetValue: { fontWeight: 'bold', fontSize: 16 },
+  assetValue: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' }, // Blue
   empty: { textAlign: 'center', color: '#888', marginTop: 100 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
   retry: { color: '#0A84FF', marginTop: 10 },
