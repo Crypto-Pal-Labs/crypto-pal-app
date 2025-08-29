@@ -1,4 +1,4 @@
-module.exports = function(api) {
+module.exports = function (api) {
   api.cache(true);
   return {
     presets: ['babel-preset-expo'],
@@ -7,6 +7,7 @@ module.exports = function(api) {
         moduleName: '@env',
         path: '.env',
       }],
+      'react-native-reanimated/plugin', // Added for reanimated worklets
     ],
   };
 };
