@@ -34,52 +34,19 @@ const SellRoute = () => {
   return <WebView source={{ uri }} style={{ flex: 1 }} />;
 };
 
-const SwapRoute = () => {
-  const navigation = useNavigation();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const uri = 'https://app.uniswap.org/swap?chain=sepolia'; // Testnet Sepolia; safe, loads tokens for swaps
-
-  return (
-    <View style={{ flex: 1 }}>
-      {loading && <ActivityIndicator size="large" color="#0A84FF" style={{ position: 'absolute', top: '50%', left: '45%' }} />}
-      {error ? (
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: 'red', fontSize: 16 }}>Error: {error}</Text>
-          <Button title="Retry" onPress={() => setLoading(true)} color="#0A84FF" />
-        </View>
-      ) : (
-        <WebView
-          source={{ uri }}
-          style={{ flex: 1 }}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          onLoadEnd={() => setLoading(false)}
-          onError={(e) => {
-            setError(e.nativeEvent.description);
-            setLoading(false);
-          }}
-          originWhitelist={['*']}
-        />
-      )}
-      <Button title="Back to Trade" onPress={() => navigation.goBack()} color="#0A84FF" />
-    </View>
-  );
-};
-
 const Buy = () => {
   const layout = useWindowDimensions();
   const [index, setIndex] = useState(0);
   const [routes] = useState([
     { key: 'buy', title: 'Buy' },
     { key: 'sell', title: 'Sell' },
-    { key: 'swap', title: 'Swap' },
+    // { key: 'swap', title: 'Swap' }, // Hidden as deferred
   ]);
 
   const renderScene = SceneMap({
     buy: BuyRoute,
     sell: SellRoute,
-    swap: SwapRoute,
+    // swap: SwapRoute, // Hidden as deferred
   });
 
   return (
@@ -91,7 +58,7 @@ const Buy = () => {
         onIndexChange={setIndex}
         initialLayout={{ width: layout.width }}
         renderTabBar={(props) => (
-          <TabBar {...props} style={styles.tabBar} activeColor="#0A84FF" inactiveColor="#ccc" />
+          <TabBar {...props} style={styles.tabBar} activeColor="#0A84FF" inactiveColor="#ccc" indicatorStyle={styles.indicator} />
         )}
       />
     </View>
@@ -99,9 +66,10 @@ const Buy = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  heading: { fontSize: 24, fontWeight: 'bold', padding: 16 },
+  container: { flex: 1, backgroundColor: '#F5F5F5' }, // Light gray background
+  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', padding: 16, marginTop: 20 }, // Blue, centered, moved down 1 line
   tabBar: { backgroundColor: '#fff' },
+  indicator: { backgroundColor: '#0A84FF' }, // Blue line for active tab
 });
 
 export default Buy;
