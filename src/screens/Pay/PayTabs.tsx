@@ -11,30 +11,30 @@ export default function PayTabs() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Pay or Receive</Text>
+      <Text style={styles.title}>Payments</Text>
 
-      {/* Toggle */}
+      {/* Toggle with line under active */}
       <View style={styles.toggleRow}>
         <TouchableOpacity
-          style={[styles.toggleBtn, mode === 'send' ? styles.btnActive : styles.btnInactive]}
+          style={mode === 'send' ? styles.activeToggle : styles.inactiveToggle}
           onPress={() => setMode('send')}
           activeOpacity={0.8}
           accessibilityRole="button"
           accessibilityLabel="Send"
         >
-          <Text style={[styles.btnText, mode === 'send' ? styles.textActive : styles.textInactive]}>
+          <Text style={mode === 'send' ? styles.activeText : styles.inactiveText}>
             SEND
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.toggleBtn, mode === 'receive' ? styles.btnActive : styles.btnInactive]}
+          style={mode === 'receive' ? styles.activeToggle : styles.inactiveToggle}
           onPress={() => setMode('receive')}
           activeOpacity={0.8}
           accessibilityRole="button"
           accessibilityLabel="Receive"
         >
-          <Text style={[styles.btnText, mode === 'receive' ? styles.textActive : styles.textInactive]}>
+          <Text style={mode === 'receive' ? styles.activeText : styles.inactiveText}>
             RECEIVE
           </Text>
         </TouchableOpacity>
@@ -49,20 +49,11 @@ export default function PayTabs() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 16 },
-  title: { fontSize: 28, fontWeight: '800', textAlign: 'center', marginBottom: 16 },
-  toggleRow: {
-    flexDirection: 'row',
-    borderRadius: 10,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: '#0A84FF',
-    marginBottom: 16,
-  },
-  toggleBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  btnActive: { backgroundColor: '#0A84FF' },
-  btnInactive: { backgroundColor: '#fff' },
-  btnText: { fontSize: 16, fontWeight: '700' },
-  textActive: { color: '#fff' },
-  textInactive: { color: '#0A84FF' },
+  container: { flex: 1, backgroundColor: '#F5F5F5', padding: 16 }, // Light gray background
+  title: { fontSize: 35, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40, marginBottom: 16 }, // Blue, centered, moved down
+  toggleRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 16 },
+  activeToggle: { borderBottomWidth: 2, borderBottomColor: '#0A84FF', paddingVertical: 10, marginHorizontal: 10 },
+  inactiveToggle: { paddingVertical: 10, marginHorizontal: 10 },
+  activeText: { color: '#0A84FF', fontWeight: '900' },
+  inactiveText: { color: '#ccc', fontWeight: '900' },
 });
