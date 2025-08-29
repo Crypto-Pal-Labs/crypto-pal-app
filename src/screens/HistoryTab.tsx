@@ -40,7 +40,7 @@ const HistoryTab = () => {
   const EmptyState = () => (
     <View style={styles.center}>
       <Ionicons name="wallet-outline" size={64} color="gray" />
-      <Text style={styles.empty}>No transactions yet—try buying or sending!</Text>
+      <Text style={styles.empty}>No transactions yet!</Text>
     </View>
   );
 

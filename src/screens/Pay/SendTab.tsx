@@ -124,7 +124,9 @@ const SendTab = () => {
         </View>
         <TextInput style={styles.amountInput} placeholder={amountPlaceholder} value={amount} onChangeText={setAmount} keyboardType="numeric" />
         <Button title={`ESTIMATE FEE: ${feeEstimate}`} onPress={() => {}} disabled color="#ccc" />
-        <Button title="SEND" onPress={handleSend} disabled={loading} color="#0A84FF" />
+        <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={loading}>
+          <Text style={styles.sendButtonText}>SEND</Text>
+        </TouchableOpacity>
         {loading && <ActivityIndicator color="#0A84FF" />}
       </View>
     </View>
@@ -144,6 +146,8 @@ const styles = StyleSheet.create({
   unitText: { color: '#0A84FF', fontWeight: 'bold' },
   unitTextActive: { color: '#fff', fontWeight: 'bold' },
   amountInput: { borderWidth: 1, padding: 8, borderColor: '#ddd', borderRadius: 4, height: 40 }, // Slimmer height
+  sendButton: { backgroundColor: '#0A84FF', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 16 },
+  sendButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
 });
 
 export default SendTab;

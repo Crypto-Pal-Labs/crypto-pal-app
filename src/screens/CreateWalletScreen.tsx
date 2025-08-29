@@ -1,4 +1,3 @@
-// src/screens/CreateWalletScreen.tsx
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
@@ -6,6 +5,7 @@ import { ethers } from 'ethers';
 
 import { saveMnemonic } from '../utils/wallet';
 import { useWalletStore } from '../store/useWalletStore';
+import { Ionicons } from '@expo/vector-icons'; // Added for icon
 
 export default function CreateWalletScreen() {
   const navigation = useNavigation();
@@ -34,10 +34,15 @@ export default function CreateWalletScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Welcome to Crypto Pal</Text>
+      <Ionicons name="add-circle-outline" size={64} color="#0A84FF" style={styles.icon} />
+      <Text style={styles.title}>Create a New Wallet</Text>
+
+      <Text style={styles.subtitle}>
+        Generate a new secure wallet with your own keys. You'll get a 12-word recovery phrase next—write it down and keep it safe, as it's the ONLY way to recover your funds if you lose access. If you already have a Wallet with Crypto Pal, then restore it now.
+      </Text>
 
       <TouchableOpacity style={styles.button} activeOpacity={0.8} onPress={handleCreate}>
-        <Text style={styles.buttonText}>Create New Wallet</Text>
+        <Text style={styles.buttonText}>Create a New Wallet</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.button} activeOpacity={0.8} onPress={handleRestore}>
@@ -48,8 +53,10 @@ export default function CreateWalletScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 24, backgroundColor: '#fff', justifyContent: 'center' },
-  title: { textAlign: 'center', fontSize: 28, fontWeight: '700', color: '#0A84FF', marginBottom: 32 },
-  button: { backgroundColor: '#0A84FF', paddingVertical: 16, borderRadius: 12, marginBottom: 16 },
+  container: { flex: 1, padding: 24, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center' }, // Light gray background
+  icon: { marginBottom: 16 }, // Added icon for confidence
+  title: { textAlign: 'center', fontSize: 28, fontWeight: '700', color: '#0A84FF', marginBottom: 16 },
+  subtitle: { textAlign: 'center', fontSize: 16, color: '#333', marginBottom: 32 },
+  button: { backgroundColor: '#0A84FF', paddingVertical: 16, borderRadius: 12, marginBottom: 16, width: '80%' },
   buttonText: { textAlign: 'center', color: 'white', fontSize: 18, fontWeight: '600' },
 });

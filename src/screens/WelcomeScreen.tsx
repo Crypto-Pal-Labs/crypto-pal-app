@@ -1,4 +1,3 @@
-// src/screens/WelcomeScreen.tsx
 import React from 'react';
 import {
   SafeAreaView,
@@ -8,6 +7,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons'; // Added for icon
 
 export default function WelcomeScreen() {
   const navigation = useNavigation();
@@ -15,11 +15,11 @@ export default function WelcomeScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
+        <Ionicons name="wallet-outline" size={64} color="#0A84FF" style={styles.icon} />
         <Text style={styles.title}>Welcome to Crypto Pal</Text>
 
         <Text style={styles.subtitle}>
-          Crypto Pal is your self-custody wallet. Secure your PIN, then back up
-          your recovery phrase.
+          Crypto Pal is your safe and secure 'self-custody wallet'. You control your keys, so never shared them with anyone. Start off by setting a PIN, then backing up your recovery phrase for safe access to your Wallet.
         </Text>
 
         <TouchableOpacity
@@ -35,13 +35,14 @@ export default function WelcomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: '#F5F5F5' }, // Light gray background for nice feel
   container: {
     flex: 1,
     padding: 24,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  icon: { marginBottom: 16 }, // Added icon for confidence
   title: {
     fontSize: 32,
     fontWeight: '700',

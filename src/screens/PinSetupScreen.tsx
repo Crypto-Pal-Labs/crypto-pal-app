@@ -1,4 +1,3 @@
-// src/screens/PinSetupScreen.tsx
 import React, { useState } from 'react';
 import {
   SafeAreaView,
@@ -9,6 +8,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons'; // Added for icon
 
 export default function PinSetupScreen() {
   const navigation = useNavigation();
@@ -25,7 +25,12 @@ export default function PinSetupScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
+        <Ionicons name="lock-closed-outline" size={64} color="#0A84FF" style={styles.icon} />
         <Text style={styles.title}>Create a 6-digit PIN</Text>
+
+        <Text style={styles.subtitle}>
+          Your PIN protects your wallet on this device. Keep it secret and never share it with anyone!
+        </Text>
 
         <TextInput
           secureTextEntry
@@ -64,18 +69,25 @@ export default function PinSetupScreen() {
 }
 
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: '#fff' },
+  safe: { flex: 1, backgroundColor: '#F5F5F5' }, // Light gray background for nice feel
   container: {
     flex: 1,
     padding: 24,
     justifyContent: 'center',
   },
+  icon: { marginBottom: 16, alignSelf: 'center' }, // Added icon for confidence
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: '#0A84FF',
-    marginBottom: 24,
+    marginBottom: 16,
     textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 16,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 24,
   },
   input: {
     borderWidth: 1,
@@ -99,5 +111,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-
-
