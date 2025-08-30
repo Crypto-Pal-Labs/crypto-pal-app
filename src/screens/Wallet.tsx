@@ -97,7 +97,7 @@ const Wallet = () => {
     setRefreshing(false);
   };
 
-  const filteredAssets = (viewMode === 'crypto' ? balances : nfts).filter(item => 
+  const filteredAssets = (viewMode === 'crypto' ? balances.filter(item => parseFloat(item.balance) > 0) : nfts).filter(item => 
     (item.contract_name ? item.contract_name.toLowerCase() : '').includes(searchQuery.toLowerCase()) || (item.contract_ticker_symbol ? item.contract_ticker_symbol.toLowerCase() : '').includes(searchQuery.toLowerCase())
   );
 
@@ -136,7 +136,7 @@ const Wallet = () => {
       </View>
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
-        <TextInput style={styles.searchInput} placeholder="Search your assets ..." value={searchQuery} onChangeText={setSearchQuery} />
+        <TextInput style={styles.searchInput} placeholder="Search assets" value={searchQuery} onChangeText={setSearchQuery} />
       </View>
       <View style={styles.switchButtons}>
         <TouchableOpacity style={viewMode === 'crypto' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('crypto')}>
@@ -172,9 +172,9 @@ const Wallet = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5' },
-  heading: { fontSize: 34, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 },
-  totalLabel: { fontSize: 22, color: '#000', textAlign: 'center' },
-  totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '110%', paddingHorizontal: 20, marginBottom: 10 },
+  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 },
+  totalLabel: { fontSize: 18, color: '#000', textAlign: 'center' },
+  totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '100%', paddingHorizontal: 20, marginBottom: 10 },
   totalAmountContainer: { flex: 1, alignItems: 'center' },
   totalValue: { fontSize: 24, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center' },
   currencyPicker: { color: '#0A84FF', width: 100 },
@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
   activeToggleText: { color: '#0A84FF', fontWeight: 'bold' },
   inactiveToggleText: { color: '#888' },
   balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
-  tokenLogo: { width: 50, height: 80, borderRadius: 0, marginRight: 10 },
+  tokenLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
   tokenInfo: { flex: 1 },
   assetName: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' },
   assetSymbol: { fontSize: 20, fontWeight: 'bold', color: '#0A84FF' }, // Larger symbol
@@ -195,8 +195,8 @@ const styles = StyleSheet.create({
   assetValue: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' },
   empty: { textAlign: 'center', color: '#888', marginTop: 100 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
-  retry: { color: '#0A84FF', marginTop: 10, textAlign: 'center' },
-  logoutContainer: { padding: 10, position: 'absolute', bottom: 10, left: 10, right: 10 },
+  retry: { color: '#0A84FF', marginTop: 10 },
+  logoutContainer: { padding: 10, position: 'absolute', bottom: 0, left: 0, right: 0 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
 
