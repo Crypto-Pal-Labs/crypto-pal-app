@@ -11,7 +11,7 @@ import {
 import { ethers } from 'ethers';
 import { saveMnemonic } from '../utils/wallet';
 import { resetRoot } from '../navigation/RootNavigation';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons'; // Added for icon
 
 function normalizeMnemonic(raw: string) {
   // Lowercase, collapse all whitespace (spaces/newlines/tabs) to single spaces, trim ends
@@ -83,8 +83,8 @@ export default function RestoreWalletScreen() {
         editable={!busy}
         style={{
           minHeight: 140,
-          borderWidth: 1,
-          borderColor: '#ddd',
+          borderWidth: 2,
+          borderColor: '#df1818ff',
           borderRadius: 12,
           padding: 12,
           fontSize: 16,
@@ -95,7 +95,7 @@ export default function RestoreWalletScreen() {
         disabled={busy}
         onPress={onRestore}
         style={{
-          marginTop: 20,
+          marginTop: 40,
           backgroundColor: busy ? '#9ec5ff' : '#1d6ef2',
           paddingVertical: 14,
           borderRadius: 12,
@@ -104,9 +104,9 @@ export default function RestoreWalletScreen() {
         activeOpacity={0.8}
       >
         <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>
-          {busy ? 'Restoring…' : 'Restore Wallet'}
+          {busy ? 'Restoring…' : 'Restore my Wallet'}
         </Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>
-  );
+  )
 }
