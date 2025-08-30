@@ -1,6 +1,6 @@
 {
   "name": "@transak/react-native-sdk",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "A React Native SDK for decentralised applications to onboard their global user base with fiat currency",
   "type": "module",
   "types": "lib/index.d.ts",

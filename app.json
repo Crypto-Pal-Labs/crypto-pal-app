@@ -29,11 +29,7 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "runtimeVersion": "1.0.0",
-    "doctor": {
-      "ignoredWarnings": [
-        "EXPO_DOCTOR_WARNING"
-      ]
+    "runtimeVersion": "1.0.0"
     },
     "extra": {
       "eas": {
@@ -56,4 +52,3 @@
       "expo-localization"
     ]
   }
-}

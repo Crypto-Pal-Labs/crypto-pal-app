@@ -19,8 +19,7 @@ export default function MnemonicBackupScreen() {
       <Ionicons name="shield-checkmark-outline" size={64} color="#0A84FF" style={styles.icon} />
       <Text style={styles.title}>{isRestore ? 'Restore Complete' : 'Backup Your Wallet'}</Text>
 
-      <Text style={styles.subtitle}>
-        Your 12-word recovery phrase is the key to your wallet. Write it down on paper and store it in a safe place. Never share it with anyone—it's the only way to recover your funds if you lose access to this device. If you lose it, your assets are gone forever.
+      <Text style={styles.subtitle}>Your 12-word recovery phrase is the key to your wallet. Write it down on paper and store it in a safe place. Never share it with anyone—it's the only way to recover your funds if you lose access to this device. If you lose it, your assets are gone forever.
       </Text>
 
       <ScrollView style={styles.phraseContainer} contentContainerStyle={{ padding: 16 }}>
