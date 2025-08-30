@@ -21,7 +21,7 @@
     "@transak/react-native-sdk": "^2.1.0",
     "dotenv": "^17.2.1",
     "ethers": "^6.15.0",
-    "expo": "54.0.0-preview.9",
+    "expo": "^53.0.20",
     "expo-barcode-scanner": "^13.0.1",
     "expo-build-properties": "~1.0.4",
     "expo-camera": "~17.0.3",
@@ -32,6 +32,7 @@
     "expo-sharing": "~14.0.3",
     "expo-status-bar": "~3.0.4",
     "expo-system-ui": "~6.0.3",
+    "metro": "^0.83.0",
     "react": "19.1.0",
     "react-native": "0.81.0",
     "react-native-dotenv": "^3.4.11",
@@ -56,6 +57,7 @@
     "@types/react": "~19.1.10",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
+    "eas-cli": "^16.18.0",
     "eslint": "^9.31.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react": "^7.37.5",
@@ -64,5 +66,5 @@
     "prettier": "^3.6.2",
     "typescript": "~5.9.2"
   },
-  "packageManager": "yarn@1.22.19"
+  "packageManager": "yarn@4.9.4"
 }
