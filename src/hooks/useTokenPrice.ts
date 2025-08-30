@@ -1,7 +1,8 @@
 // src/hooks/useTokenPrice.ts
 import { useState, useEffect } from 'react';
+import * as Localization from 'expo-localization';
 
-// Map your token symbols to CoinGecko IDs for NZD pricing
+// Map your token symbols to CoinGecko IDs
 const COINGECKO_IDS: Record<string, string> = {
   ETH:  'ethereum',
   USDC: 'usd-coin',
@@ -10,28 +11,38 @@ const COINGECKO_IDS: Record<string, string> = {
 };
 
 /**
- * Returns the latest NZD price for the given token symbol.
+ * Returns the latest prices for the given token symbol in multiple currencies.
  * @param token  One of the keys in COINGECKO_IDS (e.g. 'ETH', 'USDC')
  */
 export function useTokenPrice(token: keyof typeof COINGECKO_IDS) {
-  const [price, setPrice] = useState<number | null>(null);
+  const [prices, setPrices] = useState<{ [currency: string]: number | null }>({ usd: null, nzd: null });
+  const [localCurrency, setLocalCurrency] = useState<string>('usd'); // Default USD
+
+  useEffect(() => {
+    const initLocalCurrency = async () => {
+      const { currency: userCurrency } = await Localization.getLocalizationAsync();
+      setLocalCurrency(userCurrency?.toLowerCase() || 'usd');
+    };
+    initLocalCurrency();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     const id = COINGECKO_IDS[token];
+    const vsCurrencies = ['usd', 'nzd', localCurrency].filter((c, i, a) => a.indexOf(c) === i).join(',');
 
     async function fetchPrice() {
       try {
         const res = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=nzd`
+          `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=${vsCurrencies}`
         );
         const json = await res.json();
-        const p = json[id]?.nzd;
-        if (!cancelled && typeof p === 'number') {
-          setPrice(p);
+        const tokenPrices = json[id] || {};
+        if (!cancelled) {
+          setPrices((prev) => ({ ...prev, ...tokenPrices }));
         }
       } catch (err) {
-        console.error(`Failed to fetch ${token} price`, err);
+        console.error(`Failed to fetch ${token} prices`, err);
       }
     }
 
@@ -41,7 +52,7 @@ export function useTokenPrice(token: keyof typeof COINGECKO_IDS) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [token]);
+  }, [token, localCurrency]);
 
-  return price;
+  return { prices, localCurrency };
 }

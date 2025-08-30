@@ -28,7 +28,7 @@ export default function PinSetupScreen() {
         <Text style={styles.title}>Create a 6-digit PIN</Text>
 
         <Text style={styles.subtitle}>
-          Your PIN protects your wallet on this device. Keep it secret and never share it for maximum security.
+          Your PIN protects your wallet on this device. Keep it secret and never share it with anyone!
         </Text>
 
         <TextInput

@@ -27,7 +27,7 @@
     "expo-camera": "~17.0.3",
     "expo-clipboard": "~8.0.3",
     "expo-dev-client": "~6.0.5",
-    "expo-localization": "~17.0.3",
+    "expo-localization": "^16.1.6",
     "expo-secure-store": "~15.0.3",
     "expo-sharing": "~14.0.3",
     "expo-status-bar": "~3.0.4",

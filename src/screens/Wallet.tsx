@@ -8,6 +8,28 @@ import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
 import { useEthPrice } from '../hooks/useEthPrice'; // For live prices
 
+interface BalanceItem {
+  contract_address: string;
+  contract_name: string | null;
+  contract_ticker_symbol: string | null;
+  logo_url: string | null;
+  balance: string;
+  contract_decimals: number;
+  quote: number;
+  type: string | null;
+}
+
+interface NFTItem {
+  contract_address: string;
+  contract_name: string | null;
+  contract_ticker_symbol: string | null;
+  logo_url: string | null;
+  token_id: string;
+  description: string | null;
+  quote: number;
+  type: string | null;
+}
+
 const Wallet = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
   const { balances, nfts, loading, error, refetch } = useAssets();
@@ -50,7 +72,7 @@ const Wallet = () => {
     resetRoot([{ name: 'Welcome' }]);
   };
 
-  const formatBalance = (balance, decimals = 18) => {
+  const formatBalance = (balance: string, decimals = 18) => {
     balance = balance || '0';
     let str = balance.toString();
     const len = str.length;
@@ -59,13 +81,13 @@ const Wallet = () => {
     } else {
       str = str.slice(0, len - decimals) + '.' + str.slice(len - decimals);
     }
-    return str.replace(/\.$/, '').replace(/\.?0+$/, '');
+    return parseFloat(str).toFixed(4); // Limit to 4 decimals for display
   };
 
-  const totalValue = balances.reduce((sum, item) => {
-    const formattedBalance = parseFloat(formatBalance(item.balance, item.contract_decimals));
+  const totalValue = balances.reduce((sum, item: BalanceItem) => {
+    const formattedBalance = formatBalance(item.balance, item.contract_decimals);
     const price = ethPrices[currency] || 0;
-    const quote = formattedBalance * price;
+    const quote = parseFloat(formattedBalance) * price;
     return sum + quote;
   }, 0).toFixed(2);
 
@@ -75,22 +97,25 @@ const Wallet = () => {
     setRefreshing(false);
   };
 
-  const filteredAssets = (viewMode === 'crypto' ? balances : nfts).filter(item =>
+  const filteredAssets = (viewMode === 'crypto' ? balances : nfts).filter(item => 
     (item.contract_name ? item.contract_name.toLowerCase() : '').includes(searchQuery.toLowerCase()) || (item.contract_ticker_symbol ? item.contract_ticker_symbol.toLowerCase() : '').includes(searchQuery.toLowerCase())
   );
 
-  const renderItem = ({ item }) => {
+  const renderItem = ({ item }: { item: BalanceItem | NFTItem }) => {
     const price = ethPrices[currency] || 0;
-    const formattedBalance = formatBalance(item.balance, item.contract_decimals);
-    const assetValue = (viewMode === 'crypto' ? parseFloat(formattedBalance) * price : (item.quote || 0)).toFixed(2);
+    const formattedBalance = 'balance' in item ? formatBalance(item.balance, item.contract_decimals) : '1'; // NFTs have 1 unit
+    const formattedValue = (viewMode === 'crypto' ? parseFloat(formattedBalance) * price : (item.quote || 0)).toFixed(2);
+    const name = (item.contract_ticker_symbol === 'ETH' && (item.contract_name === 'Unknown' || item.contract_name == null || item.type === 'cryptocurrency' || item.contract_address === '0x0000000000000000000000000000000000000000')) ? 'Ethereum' : item.contract_name || 'Unknown';
+    const symbol = viewMode === 'crypto' ? (item.contract_ticker_symbol || 'UNK') : ''; // Hide symbol for NFTs
+    const description = viewMode === 'nft' ? (item.description || 'No description') : formattedBalance;
     return (
       <View style={styles.balanceItem}>
         <Image source={{ uri: item.logo_url }} style={styles.tokenLogo} />
         <View style={styles.tokenInfo}>
-          <Text style={styles.assetName}>{item.contract_name || 'Unknown'} ({item.contract_ticker_symbol || 'UNK'})</Text>
-          <Text style={styles.assetBalance}>{viewMode === 'crypto' ? formattedBalance : item.description || 'No description'}</Text>
+          <Text style={styles.assetName}><Text style={styles.assetSymbol}>{symbol}</Text> {name}</Text>
+          <Text style={styles.assetBalance}>{description}</Text>
         </View>
-        <Text style={styles.assetValue}>${assetValue} {currency.toUpperCase()}</Text>
+        <Text style={styles.assetValue}>${formattedValue} {currency.toUpperCase()}</Text>
       </View>
     );
   };
@@ -99,9 +124,11 @@ const Wallet = () => {
     <View style={styles.container}>
       <Text style={styles.heading}>Wallet</Text>
       <Text style={styles.totalLabel}>Total Balance</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={styles.totalValue}>${totalValue}</Text>
-        <Picker selectedValue={currency} onValueChange={setCurrency} style={{ color: '#0A84FF', width: 100 }}>
+      <View style={styles.totalRow}>
+        <View style={styles.totalAmountContainer}>
+          <Text style={styles.totalValue}>${totalValue}</Text>
+        </View>
+        <Picker selectedValue={currency} onValueChange={setCurrency} style={styles.currencyPicker}>
           {availableCurrencies.map((curr) => (
             <Picker.Item key={curr} label={curr.toUpperCase()} value={curr} />
           ))}
@@ -109,7 +136,7 @@ const Wallet = () => {
       </View>
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
-        <TextInput style={styles.searchInput} placeholder="Search assets" value={searchQuery} onChangeText={setSearchQuery} />
+        <TextInput style={styles.searchInput} placeholder="Search your assets ..." value={searchQuery} onChangeText={setSearchQuery} />
       </View>
       <View style={styles.switchButtons}>
         <TouchableOpacity style={viewMode === 'crypto' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('crypto')}>
@@ -145,9 +172,12 @@ const Wallet = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5' },
-  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 },
-  totalLabel: { fontSize: 18, color: '#000', textAlign: 'center' },
+  heading: { fontSize: 33, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 },
+  totalLabel: { fontSize: 22, color: '#000', textAlign: 'center' },
+  totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '110%', paddingHorizontal: 20, marginBottom: 10 },
+  totalAmountContainer: { flex: 1, alignItems: 'center' },
   totalValue: { fontSize: 24, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center' },
+  currencyPicker: { color: '#0A84FF', width: 100 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 10, margin: 10 },
   searchIcon: { marginRight: 5 },
   searchInput: { flex: 1, padding: 10 },
@@ -157,15 +187,16 @@ const styles = StyleSheet.create({
   activeToggleText: { color: '#0A84FF', fontWeight: 'bold' },
   inactiveToggleText: { color: '#888' },
   balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
-  tokenLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
+  tokenLogo: { width: 50, height: 80, borderRadius: 0, marginRight: 10 },
   tokenInfo: { flex: 1 },
-  assetName: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' }, // Blue
+  assetName: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' },
+  assetSymbol: { fontSize: 18, fontWeight: 'bold', color: '#0A84FF' }, // Larger symbol
   assetBalance: { color: 'gray', fontSize: 14 },
-  assetValue: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' }, // Blue
+  assetValue: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' },
   empty: { textAlign: 'center', color: '#888', marginTop: 100 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
   retry: { color: '#0A84FF', marginTop: 10 },
-  logoutContainer: { padding: 10, position: 'absolute', bottom: 0, left: 0, right: 0 },
+  logoutContainer: { padding: 10, position: 'absolute', bottom: 10, left: 10, right: 10 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
 

@@ -2,9 +2,8 @@
 import { useTokenPrice } from './useTokenPrice';
 
 /**
- * Convenience hook for ETH→NZD price only.
+ * Convenience hook for ETH prices only.
  */
 export function useEthPrice() {
   return useTokenPrice('ETH');
 }
-

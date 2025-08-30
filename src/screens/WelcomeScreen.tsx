@@ -19,7 +19,7 @@ export default function WelcomeScreen() {
         <Text style={styles.title}>Welcome to Crypto Pal</Text>
 
         <Text style={styles.subtitle}>
-          Crypto Pal is your secure self-custody wallet. You control your keys—never shared with us. Start by setting a PIN and backing up your recovery phrase for safe access to buy, hold, sell crypto/NFTs, and pay/receive easily.
+          Crypto Pal is your safe & secure self-custody Wallet. You control your keys—never shared them with anyone! Start by setting a PIN, then back up your recovery phrase for safe access and restore of your Wallet.
         </Text>
 
         <TouchableOpacity

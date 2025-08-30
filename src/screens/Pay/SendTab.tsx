@@ -1,30 +1,41 @@
+// src/screens/PayTabs/SendTab.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
-import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
-import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
+import { useBalancesEx } from '../../hooks/useBalances';
+import { estimateGas, sendTransaction } from '../../utils/wallet';
 import { ETH_RPC_URL, BSC_RPC_URL, ETHERSCAN_BASE } from '@env';
+import { Ionicons } from '@expo/vector-icons'; // For QR icon
+import { useTokenPrice } from '../../hooks/useTokenPrice'; // For live prices
 
 const SendTab = () => {
   const { chainId } = useWalletStore();
-  const [balances, refreshBalances] = useBalancesEx(); // Updated for refresh
+  const [balances, refreshBalances] = useBalancesEx();
   const [toAddress, setToAddress] = useState('');
-  const [selectedToken, setSelectedToken] = useState(null); // Updated to null, select from balances
+  const [selectedToken, setSelectedToken] = useState(null);
   const [amount, setAmount] = useState('');
-  const [amountUnit, setAmountUnit] = useState('token'); // 'token', 'usd', 'nzd'
+  const [amountUnit, setAmountUnit] = useState('usd'); // Default to USD
   const [feeEstimate, setFeeEstimate] = useState('Calculating...');
   const [loading, setLoading] = useState(false);
+  const [availableUnits, setAvailableUnits] = useState(['token', 'usd', 'nzd']);
 
-  const chain = chainId === 1 ? 'ETH' : 'BSC'; // Determine chain
+  const chain = chainId === 1 ? 'ETH' : 'BSC';
+
+  const tokenSymbol = selectedToken ? selectedToken.symbol : 'ETH'; // Default to ETH if no token selected
+  const { prices, localCurrency } = useTokenPrice(tokenSymbol);
+
+  useEffect(() => {
+    if (localCurrency && !availableUnits.includes(localCurrency)) {
+      setAvailableUnits((prev) => [...prev, localCurrency]);
+    }
+  }, [localCurrency]);
 
   const convertAmountToToken = (input) => {
-    if (amountUnit === 'token') return parseFloat(input) || 0;
-    const ethPriceUSD = 2000; // Stub; replace with real from useEthPrice.ts later
-    const usdToNzdRate = 1.6;
-    if (amountUnit === 'usd') return input / ethPriceUSD;
-    if (amountUnit === 'nzd') return input / (ethPriceUSD * usdToNzdRate);
-    return 0;
+    const parsed = parseFloat(input) || 0;
+    if (amountUnit === 'token') return parsed;
+    const price = prices[amountUnit] || 0;
+    return price > 0 ? parsed / price : 0;
   };
 
   const handleScanQR = () => {
@@ -39,88 +50,62 @@ const SendTab = () => {
       }
       try {
         const fee = await estimateGas(toAddress, convertAmountToToken(amount).toString(), selectedToken.contract_address, chain);
-        const feeNzd = (parseFloat(fee) * 1500 * 1.6).toFixed(2); // Stub conversion
-        setFeeEstimate(`~NZ$${feeNzd}`);
-      } catch (error) {
-        setFeeEstimate('Unable to estimate: ' + error.message);
+        const feeUsd = (parseFloat(fee) * (prices['usd'] || 0)).toFixed(2);
+        setFeeEstimate(`${fee} ETH (~$${feeUsd} USD)`);
+      } catch (err) {
+        setFeeEstimate('Error estimating fee');
       }
     };
     estimateFee();
-  }, [toAddress, amount, selectedToken, amountUnit, chain]);
+  }, [toAddress, amount, selectedToken, prices, amountUnit]);
 
   const handleSend = async () => {
-    if (!toAddress || !amount) return Alert.alert('Error', 'Enter address and amount');
-
-    let sendAmount = convertAmountToToken(amount).toString();
-
-    Alert.alert('Warning', 'Transactions are irreversible. Double-check details.', [
-      { text: 'Cancel' },
-      {
-        text: 'Confirm',
-        onPress: () => {
-          Alert.alert(
-            'Confirm Send',
-            `Sending ${sendAmount} ${selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB')} to ${toAddress}.`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Send',
-                onPress: async () => {
-                  setLoading(true);
-                  try {
-                    const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
-                    Alert.alert('Success', `Tx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`);
-                    refreshBalances(); // Refresh balances after send
-                  } catch (err: any) {
-                    Alert.alert('Error', err.message);
-                  } finally {
-                    setLoading(false);
-                  }
-                },
-              },
-            ]
-          );
-        },
-      },
-    ]);
+    if (!toAddress || !amount || !selectedToken) {
+      Alert.alert('Missing fields', 'Please fill all fields.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const txHash = await sendTransaction(toAddress, convertAmountToToken(amount).toString(), selectedToken.contract_address, chain);
+      Alert.alert('Transaction sent', `Hash: ${txHash}\nView on explorer: ${ETHERSCAN_BASE}/tx/${txHash}`);
+      refreshBalances();
+    } catch (err) {
+      Alert.alert('Send failed', (err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const amountPlaceholder = amountUnit === 'token' ? 'Enter Crypto Amount' : amountUnit === 'usd' ? 'Enter $USD Amount' : 'Enter $NZD Amount';
+  const amountPlaceholder = amountUnit === 'token' ? 'Enter amount in token' : `Enter amount in ${amountUnit.toUpperCase()}`;
 
   return (
     <View style={styles.container}>
-      {/* Section 1: Send to... */}
       <View style={styles.section}>
-        <Text style={styles.label}>Send to ...</Text>
+        <Text style={styles.label}>Send to...</Text>
         <View style={styles.addressRow}>
-          <TextInput style={styles.input} placeholder="Wallet address of recipient" value={toAddress} onChangeText={setToAddress} />
-          <Button title="SCAN QR" onPress={handleScanQR} color="#0A84FF" />
+          <TextInput style={styles.input} placeholder="Recipient address" value={toAddress} onChangeText={setToAddress} />
+          <TouchableOpacity onPress={handleScanQR}>
+            <Ionicons name="scan" size={24} color="#0A84FF" />
+          </TouchableOpacity>
         </View>
       </View>
-
-      {/* Section 2: What crypto... */}
       <View style={styles.section}>
-        <Text style={styles.label}>What crypto currency would you like to send them ...</Text>
-        <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
-          <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
+        <Text style={styles.label}>What crypto...</Text>
+        <Picker selectedValue={selectedToken?.contract_address} onValueChange={(addr) => setSelectedToken(balances.find((b) => b.contract_address === addr) || null)}>
+          <Picker.Item label="Select token" value={null} />
           {balances.map((item) => (
-            <Picker.Item key={item.contract_address} label={item.contract_ticker_symbol} value={item} />
+            <Picker.Item key={item.contract_address} label={`${item.symbol} (${item.balance})`} value={item.contract_address} />
           ))}
         </Picker>
       </View>
-
-      {/* Section 3: How much... */}
       <View style={styles.section}>
+        <Text style={styles.label}>How much...</Text>
         <View style={styles.unitRow}>
-          <TouchableOpacity style={amountUnit === 'token' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('token')}>
-            <Text style={amountUnit === 'token' ? styles.unitTextActive : styles.unitText}>TOKEN</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={amountUnit === 'usd' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('usd')}>
-            <Text style={amountUnit === 'usd' ? styles.unitTextActive : styles.unitText}>USD</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={amountUnit === 'nzd' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('nzd')}>
-            <Text style={amountUnit === 'nzd' ? styles.unitTextActive : styles.unitText}>NZD</Text>
-          </TouchableOpacity>
+          {availableUnits.map((unit) => (
+            <TouchableOpacity key={unit} style={amountUnit === unit ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit(unit)}>
+              <Text style={amountUnit === unit ? styles.unitTextActive : styles.unitText}>{unit.toUpperCase()}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
         <TextInput style={styles.amountInput} placeholder={amountPlaceholder} value={amount} onChangeText={setAmount} keyboardType="numeric" />
         <Button title={`ESTIMATE FEE: ${feeEstimate}`} onPress={() => {}} disabled color="#ccc" />

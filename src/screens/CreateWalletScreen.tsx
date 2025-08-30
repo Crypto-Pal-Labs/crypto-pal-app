@@ -35,7 +35,7 @@ export default function CreateWalletScreen() {
       <Text style={styles.title}>Create a New Wallet</Text>
 
       <Text style={styles.subtitle}>
-        Generate a new secure wallet with your own keys. You'll get a 12-word recovery phrase next—write it down and keep it safe, as it's the only way to recover your funds if you lose access.
+        Generate a new secure wallet with your own keys. You'll get a 12-word recovery phrase next—write it down and keep it safe, as it's the ONLY way to recover your Wallet if you lose access. If you already have a Crypto Pal Wallet then restore it now.
       </Text>
 
       <TouchableOpacity style={styles.button} activeOpacity={0.8} onPress={handleCreate}>
