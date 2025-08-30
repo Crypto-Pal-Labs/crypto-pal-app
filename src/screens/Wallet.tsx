@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button, Image, RefreshControl, TouchableOpacity } from 'react-native';
-import { ethers } from 'ethers';
 import { useAssets } from '../hooks/useAssets';
 import { resetRoot } from '../navigation/RootNavigation';
 import { getWalletAddress } from '../utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
+import { useEthPrice } from '../hooks/useEthPrice'; // For live prices
 
 const Wallet = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
@@ -16,7 +16,16 @@ const Wallet = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [localAddress, setLocalAddress] = useState('');
-  const [currency, setCurrency] = useState('NZD'); // Default to NZD per NZ focus
+  const [currency, setCurrency] = useState('usd'); // Default to USD
+  const [availableCurrencies, setAvailableCurrencies] = useState(['usd', 'nzd']);
+
+  const { prices: ethPrices, localCurrency } = useEthPrice();
+
+  useEffect(() => {
+    if (localCurrency && !availableCurrencies.includes(localCurrency)) {
+      setAvailableCurrencies((prev) => [...prev, localCurrency]);
+    }
+  }, [localCurrency]);
 
   useEffect(() => {
     loadAddress();
@@ -41,8 +50,22 @@ const Wallet = () => {
     resetRoot([{ name: 'Welcome' }]);
   };
 
+  const formatBalance = (balance, decimals = 18) => {
+    balance = balance || '0';
+    let str = balance.toString();
+    const len = str.length;
+    if (len <= decimals) {
+      str = '0.' + '0'.repeat(decimals - len) + str;
+    } else {
+      str = str.slice(0, len - decimals) + '.' + str.slice(len - decimals);
+    }
+    return str.replace(/\.$/, '').replace(/\.?0+$/, '');
+  };
+
   const totalValue = balances.reduce((sum, item) => {
-    const quote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
+    const formattedBalance = parseFloat(formatBalance(item.balance, item.contract_decimals));
+    const price = ethPrices[currency] || 0;
+    const quote = formattedBalance * price;
     return sum + quote;
   }, 0).toFixed(2);
 
@@ -52,85 +75,67 @@ const Wallet = () => {
     setRefreshing(false);
   };
 
-  const filteredBalances = balances.filter((item) => Number(ethers.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
-  const filteredNfts = nfts.filter((item) =>
-    (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.token_id.includes(searchQuery) // Enhanced for token_id search
+  const filteredAssets = (viewMode === 'crypto' ? balances : nfts).filter(item =>
+    (item.contract_name ? item.contract_name.toLowerCase() : '').includes(searchQuery.toLowerCase()) || (item.contract_ticker_symbol ? item.contract_ticker_symbol.toLowerCase() : '').includes(searchQuery.toLowerCase())
   );
 
-  const renderBalanceItem = ({ item }: { item: any }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
-      <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_ticker_symbol}</Text>
-        <Text style={styles.assetBalance}>{ethers.formatEther(item.balance)} {item.contract_ticker_symbol}</Text>
+  const renderItem = ({ item }) => {
+    const price = ethPrices[currency] || 0;
+    const formattedBalance = formatBalance(item.balance, item.contract_decimals);
+    const assetValue = (viewMode === 'crypto' ? parseFloat(formattedBalance) * price : (item.quote || 0)).toFixed(2);
+    return (
+      <View style={styles.balanceItem}>
+        <Image source={{ uri: item.logo_url }} style={styles.tokenLogo} />
+        <View style={styles.tokenInfo}>
+          <Text style={styles.assetName}>{item.contract_name || 'Unknown'} ({item.contract_ticker_symbol || 'UNK'})</Text>
+          <Text style={styles.assetBalance}>{viewMode === 'crypto' ? formattedBalance : item.description || 'No description'}</Text>
+        </View>
+        <Text style={styles.assetValue}>${assetValue} {currency.toUpperCase()}</Text>
       </View>
-      <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
-    </View>
-  );
-
-  const renderNFTItem = ({ item }: { item: any }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
-      <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_name || 'NFT'}</Text>
-        <Text style={styles.assetBalance}>Token ID: {item.token_id}</Text>
-      </View>
-      <Text style={styles.assetValue}>Value: N/A</Text>
-    </View>
-  );
-
-  const EmptyState = () => (
-    <View style={styles.center}>
-      <Text style={styles.empty}>No tokens to display yet</Text>
-      <TouchableOpacity onPress={onRefresh}>
-        <Ionicons name="refresh-circle" size={40} color="#0A84FF" />
-      </TouchableOpacity>
-    </View>
-  );
-
-  if (loadError) return <View style={styles.center}><Text style={styles.errorText}>{loadError}</Text><TouchableOpacity onPress={loadAddress}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
+    );
+  };
 
   return (
     <View style={styles.container}>
-      <Text style={styles.heading}>Home</Text>
-      <Text style={styles.totalLabel}>Total Balance:</Text>
-      <Text style={styles.totalValue}>${totalValue} {currency}</Text>
+      <Text style={styles.heading}>Wallet</Text>
+      <Text style={styles.totalLabel}>Total Balance</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={styles.totalValue}>${totalValue}</Text>
+        <Picker selectedValue={currency} onValueChange={setCurrency} style={{ color: '#0A84FF', width: 100 }}>
+          {availableCurrencies.map((curr) => (
+            <Picker.Item key={curr} label={curr.toUpperCase()} value={curr} />
+          ))}
+        </Picker>
+      </View>
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
-        <TextInput style={styles.searchInput} placeholder="Search your assets..." value={searchQuery} onChangeText={setSearchQuery} />
+        <TextInput style={styles.searchInput} placeholder="Search assets" value={searchQuery} onChangeText={setSearchQuery} />
       </View>
       <View style={styles.switchButtons}>
         <TouchableOpacity style={viewMode === 'crypto' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('crypto')}>
-          <Text style={viewMode === 'crypto' ? styles.activeToggleText : styles.inactiveToggleText}>CRYPTOs</Text>
+          <Text style={viewMode === 'crypto' ? styles.activeToggleText : styles.inactiveToggleText}>Crypto</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={viewMode === 'nfts' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('nfts')}>
-          <Text style={viewMode === 'nfts' ? styles.activeToggleText : styles.inactiveToggleText}>NFTs</Text>
+        <TouchableOpacity style={viewMode === 'nft' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('nft')}>
+          <Text style={viewMode === 'nft' ? styles.activeToggleText : styles.inactiveToggleText}>NFTs</Text>
         </TouchableOpacity>
       </View>
-      <View style={{ alignSelf: 'center', width: 120, height: 60, overflow: 'visible' }}>
-        <Picker
-          selectedValue={currency}
-          onValueChange={(itemValue) => setCurrency(itemValue)}
-          style={{ height: 60, width: 120, color: '#0A84FF' }} // Blue text
-          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' }} // Blue item text
-        >
-          <Picker.Item label="NZD" value="NZD" />
-          <Picker.Item label="USD" value="USD" />
-        </Picker>
-      </View>
-      {error && <Text style={styles.errorText}>{error} <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity></Text>}
-      {loading ? (
-        <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />
+      {loading || refreshing ? (
+        <ActivityIndicator style={styles.center} />
+      ) : filteredAssets.length === 0 ? (
+        <Text style={styles.empty}>No {viewMode} to display yet</Text>
       ) : (
         <FlatList
-          data={viewMode === 'crypto' ? filteredBalances : filteredNfts}
-          renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
-          keyExtractor={(item) => item.contract_address + (item.token_id || '')}
+          data={filteredAssets}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.contract_address || item.token_id || Math.random().toString()}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          ListEmptyComponent={EmptyState}
         />
       )}
+      {loadError && <Text style={styles.errorText}>{loadError}</Text>}
+      {error && <Text style={styles.errorText}>{error}</Text>}
+      <TouchableOpacity onPress={loadAddress} style={styles.retry}>
+        <Text>Retry</Text>
+      </TouchableOpacity>
       <View style={styles.logoutContainer}>
         <Button title="LOGOUT" color="red" onPress={handleLogout} />
       </View>
