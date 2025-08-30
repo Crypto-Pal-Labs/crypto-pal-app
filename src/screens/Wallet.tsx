@@ -160,9 +160,9 @@ const Wallet = () => {
       )}
       {loadError && <Text style={styles.errorText}>{loadError}</Text>}
       {error && <Text style={styles.errorText}>{error}</Text>}
-      <TouchableOpacity onPress={loadAddress} style={styles.retry}>
+      {loadError && <TouchableOpacity onPress={loadAddress} style={styles.retry}>
         <Text>Retry</Text>
-      </TouchableOpacity>
+      </TouchableOpacity>}
       <View style={styles.logoutContainer}>
         <Button title="LOGOUT" color="red" onPress={handleLogout} />
       </View>
@@ -172,7 +172,7 @@ const Wallet = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5' },
-  heading: { fontSize: 33, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 },
+  heading: { fontSize: 34, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 },
   totalLabel: { fontSize: 22, color: '#000', textAlign: 'center' },
   totalRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: '110%', paddingHorizontal: 20, marginBottom: 10 },
   totalAmountContainer: { flex: 1, alignItems: 'center' },
@@ -190,12 +190,12 @@ const styles = StyleSheet.create({
   tokenLogo: { width: 50, height: 80, borderRadius: 0, marginRight: 10 },
   tokenInfo: { flex: 1 },
   assetName: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' },
-  assetSymbol: { fontSize: 18, fontWeight: 'bold', color: '#0A84FF' }, // Larger symbol
+  assetSymbol: { fontSize: 20, fontWeight: 'bold', color: '#0A84FF' }, // Larger symbol
   assetBalance: { color: 'gray', fontSize: 14 },
   assetValue: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' },
   empty: { textAlign: 'center', color: '#888', marginTop: 100 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
-  retry: { color: '#0A84FF', marginTop: 10 },
+  retry: { color: '#0A84FF', marginTop: 10, textAlign: 'center' },
   logoutContainer: { padding: 10, position: 'absolute', bottom: 10, left: 10, right: 10 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
