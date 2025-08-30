@@ -59,54 +59,6 @@ export default function RestoreWalletScreen() {
   }, [busy, input]);
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, padding: 20, backgroundColor: '#F5F5F5', marginTop: 40 }} // Light gray background, moved down 2 lines
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Ionicons name="key-outline" size={64} color="#0A84FF" style={{ marginBottom: 16, alignSelf: 'center' }} /> {/* Added icon for confidence */}
-      <Text style={{ fontSize: 28, fontWeight: '800', marginBottom: 16, color: '#0A84FF', textAlign: 'center' }}>
-        Restore From Backup
-      </Text>
-
-      <Text style={{ color: '#444', marginBottom: 12, textAlign: 'center' }}>
-        Paste or enter your 12‑word recovery phrase below. Words can be separated by spaces or new lines. This will securely restore your wallet and your assets — make sure you're in a private location.
-      </Text>
-
-      <TextInput
-        value={input}
-        onChangeText={setInput}
-        autoCapitalize="none"
-        autoCorrect={false}
-        multiline
-        textAlignVertical="top"
-        placeholder="Enter your 12 word recovery phrase here separated by spaces no commas"
-        editable={!busy}
-        style={{
-          minHeight: 140,
-          borderWidth: 2,
-          borderColor: '#df1818ff',
-          borderRadius: 12,
-          padding: 12,
-          fontSize: 16,
-        }}
-      />
-
-      <TouchableOpacity
-        disabled={busy}
-        onPress={onRestore}
-        style={{
-          marginTop: 40,
-          backgroundColor: busy ? '#9ec5ff' : '#1d6ef2',
-          paddingVertical: 14,
-          borderRadius: 12,
-          alignItems: 'center',
-        }}
-        activeOpacity={0.8}
-      >
-        <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>
-          {busy ? 'Restoring…' : 'Restore my Wallet'}
-        </Text>
-      </TouchableOpacity>
-    </KeyboardAvoidingView>
+    <KeyboardAvoidingView style={{ flex: 1, padding: 20, backgroundColor: '#F5F5F5', marginTop: 40 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}><Ionicons name="key-outline" size={64} color="#0A84FF" style={{ marginBottom: 16, alignSelf: 'center' }} /><Text style={{ fontSize: 28, fontWeight: '800', marginBottom: 16, color: '#0A84FF', textAlign: 'center' }}>Restore From Backup</Text><Text style={{ color: '#444', marginBottom: 12, textAlign: 'center' }}>{`Paste or enter your 12-word recovery phrase below. Words can be separated by spaces or new lines. This will securely restore your wallet and your assets — make sure you're in a private location.`}</Text><TextInput value={input} onChangeText={setInput} autoCapitalize="none" autoCorrect={false} multiline textAlignVertical="top" placeholder="Enter your 12 word recovery phrase here separated by spaces no commas" editable={!busy} style={{ minHeight: 140, borderWidth: 2, borderColor: '#ccc', borderRadius: 12, padding: 12, fontSize: 16 }} /><TouchableOpacity disabled={busy} onPress={onRestore} style={{ marginTop: 40, backgroundColor: busy ? '#9ec5ff' : '#1d6ef2', paddingVertical: 14, borderRadius: 12, alignItems: 'center' }} activeOpacity={0.8}><Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>{busy ? 'Restoring…' : 'Restore my Wallet'}</Text></TouchableOpacity></KeyboardAvoidingView>
   )
 }
