@@ -24,13 +24,13 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.crwmlw.cryptopalapp"
+      "package": "com.crwmlw.cryptopalapp",
+      "permissions": ["CAMERA"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "runtimeVersion": "1.0.0"
-    },
+    "runtimeVersion": "1.0.0",
     "extra": {
       "eas": {
         "projectId": "6c753f76-cdce-4f42-8301-4b22267269c4"
@@ -52,3 +52,4 @@
       "expo-localization"
     ]
   }
+}
