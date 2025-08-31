@@ -5,7 +5,7 @@ import { useWalletStore } from '../../store/useWalletStore';
 import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { ETH_RPC_URL, BSC_RPC_URL, ETHERSCAN_BASE } from '@env';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { Camera } from 'expo-camera';
 
 const SendTab = () => {
   const { chainId } = useWalletStore();
@@ -16,6 +16,9 @@ const SendTab = () => {
   const [amountUnit, setAmountUnit] = useState('token'); // 'token', 'usd', 'nzd'
   const [feeEstimate, setFeeEstimate] = useState('Calculating...');
   const [loading, setLoading] = useState(false);
+  const [hasPermission, setHasPermission] = useState(null);
+  const [scanned, setScanned] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
 
   const chain = chainId === 1 ? 'ETH' : 'BSC'; // Determine chain
 
@@ -28,8 +31,27 @@ const SendTab = () => {
     return 0;
   };
 
+  useEffect(() => {
+    if (showScanner) {
+      (async () => {
+        const { status } = await Camera.requestCameraPermissionsAsync();
+        setHasPermission(status === 'granted');
+      })();
+    }
+  }, [showScanner]);
+
+  const handleBarCodeScanned = ({ data }) => {
+    setScanned(true);
+    setShowScanner(false);
+    if (ethers.utils.isAddress(data)) {
+      setToAddress(data);
+    } else {
+      Alert.alert('Invalid QR', 'Not a valid address.');
+    }
+  };
+
   const handleScanQR = () => {
-    Alert.alert('QR Scan Coming Soon', 'This will open the camera to scan recipient QR code and auto-fill the address.');
+    setShowScanner(true);
   };
 
   useEffect(() => {
@@ -130,6 +152,17 @@ const SendTab = () => {
         </TouchableOpacity>
         {loading && <ActivityIndicator color="#0A84FF" />}
       </View>
+
+      {/* QR Scanner View */}
+      {showScanner && hasPermission && !scanned && (
+        <Camera
+          style={{ height: 300, width: '100%' }}
+          onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
+          barCodeScannerSettings={{ barCodeTypes: ['qr'] }}
+        />
+      )}
+      {scanned && <TouchableOpacity onPress={() => setScanned(false)}><Text>Scan Again</Text></TouchableOpacity>}
+      {hasPermission === false && <Text>No camera access.</Text>}
     </View>
   );
 };

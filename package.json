@@ -21,7 +21,6 @@
     "dotenv": "^17.2.1",
     "ethers": "^6.15.0",
     "expo": "53.0.22",
-    "expo-barcode-scanner": "^13.0.1",
     "expo-build-properties": "~0.14.8",
     "expo-camera": "~16.1.11",
     "expo-clipboard": "~7.1.5",
