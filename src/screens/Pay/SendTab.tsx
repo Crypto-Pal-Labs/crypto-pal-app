@@ -5,6 +5,7 @@ import { useWalletStore } from '../../store/useWalletStore';
 import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { ETH_RPC_URL, BSC_RPC_URL, ETHERSCAN_BASE } from '@env';
+import { BarCodeScanner } from 'expo-barcode-scanner';
 
 const SendTab = () => {
   const { chainId } = useWalletStore();
