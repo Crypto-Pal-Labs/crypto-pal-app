@@ -14,7 +14,7 @@ import { resetRoot } from '../navigation/RootNavigation';
 import { Ionicons } from '@expo/vector-icons';
 
 function normalizeMnemonic(raw: string) {
-  // Lowercase, collapse all whitespace (spaces/newlines/tabs) to single spaces, trim ends
+  
   return raw.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
@@ -23,7 +23,7 @@ export default function RestoreWalletScreen() {
   const [busy, setBusy] = useState(false);
 
   const onRestore = useCallback(async () => {
-    if (busy) return; // double-tap guard
+    if (busy) return; 
 
     const phrase = normalizeMnemonic(input);
     const words = phrase ? phrase.split(' ') : [];
@@ -63,10 +63,10 @@ export default function RestoreWalletScreen() {
       style={{ flex: 1, padding: 20, backgroundColor: '#F5F5F5', marginTop: 40 }} // Light gray background, moved down 2 lines
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Ionicons name="key-outline" size={64} color="#0A84FF" style={{ marginBottom: 16, alignSelf: 'center' }} /> {/* Added icon for confidence */}
+      <Ionicons name="key-outline" size={64} color="#0A84FF" style={{ marginBottom: 16, alignSelf: 'center' }} />
       <Text style={{ fontSize: 28, fontWeight: '800', marginBottom: 16, color: '#0A84FF', textAlign: 'center' }}>Restore From Backup</Text>
 
-      <Text style={{ color: '#444', marginBottom: 12, textAlign: 'center' }}>Paste or enter your 12 word recovery phrase below. Words can be separated by spaces or new lines. This will securely restore your wallet and your assets, make sure you're in a private location.</Text>
+      <Text style={{ color: '#444', marginBottom: 12, textAlign: 'center' }}>Enter your 12 word recovery phrase below. Words can be separated by spaces or new lines. This will securely restore your wallet and your assets, make sure you're in a private location.</Text>
 
       <TextInput
         value={input}
