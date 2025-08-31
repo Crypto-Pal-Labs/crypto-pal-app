@@ -1,31 +1,26 @@
-// src/hooks/useHistory.ts
 import { useState, useEffect } from 'react';
 import { useWalletStore } from '../store/useWalletStore';
 import { COVALENT_KEY } from '@env';
 
-interface Transaction {
-  tx_hash: string;
-  block_signed_at: string;
-  value: string;
-  successful: boolean;
-  chainId: number;
-  explorer: string;
-  from_address: string;
-  to_address: string;
-  gas_quote: number;
-  tx_type: string; // e.g., 'transfer', 'mint', 'swap'
-}
-
-interface Chain {
-  id: number;
-  explorer: string;
-}
-
 export const useHistory = () => {
   const address = useWalletStore((state) => state.address);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        console.log(`Retry attempt ${attempt} failed: ${(err as Error).message}`);
+        if (attempt === retries) {
+          throw err;
+        }
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  };
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -35,38 +30,27 @@ export const useHistory = () => {
       setLoading(false);
       return;
     }
-    try {
-      const chains: Chain[] = [
-        { id: 11155111, explorer: 'https://sepolia.etherscan.io/tx/' },
-        { id: 97, explorer: 'https://testnet.bscscan.com/tx/' }
-      ];
-      let allTx: Transaction[] = [];
-      for (const chain of chains) {
-        const url = `https://api.covalenthq.com/v1/${chain.id}/address/${address}/transactions_v3/?key=${COVALENT_KEY}`;
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Failed for chain ${chain.id}`);
-        const data = await response.json();
-        const chainTx: Transaction[] = (data.data?.items || []).map((tx: any) => ({
-          tx_hash: tx.tx_hash,
-          block_signed_at: tx.block_signed_at,
-          value: tx.value,
-          successful: tx.successful,
-          chainId: chain.id,
-          explorer: chain.explorer,
-          from_address: tx.from_address || 'Unknown',
-          to_address: tx.to_address || 'Unknown',
-          gas_quote: tx.gas_quote || 0,
-          tx_type: tx.tx_type || 'Unknown' // Add if Covalent provides; fallback
-        }));
-        allTx = [...allTx, ...chainTx];
+
+    const chains = [11155111]; // Sepolia; add 97 for BSC
+    let allTx: any[] = [];
+    for (const chainId of chains) {
+      try {
+        const data = await retryFetch(async () => {
+          const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/?key=${COVALENT_KEY}`;
+          const resp = await fetch(url);
+          if (!resp.ok) {
+            throw new Error(`History fetch failed with status: ${resp.status}`);
+          }
+          return await resp.json();
+        });
+        allTx = [...allTx, ...(data.data.items || [])];
+      } catch (err) {
+        console.log('History fetch failed after retries:', (err as Error).message); // Log to console
+        setError('Failed to load history. Pull to refresh.');
       }
-      allTx.sort((a, b) => new Date(b.block_signed_at).getTime() - new Date(a.block_signed_at).getTime());
-      setTransactions(allTx);
-    } catch (err) {
-      setError((err as Error).message || 'Failed to fetch history.');
-    } finally {
-      setLoading(false);
     }
+    setTransactions(allTx);
+    setLoading(false);
   };
 
   useEffect(() => {

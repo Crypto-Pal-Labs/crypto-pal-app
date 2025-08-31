@@ -23,7 +23,7 @@ export default function RestoreWalletScreen() {
   const [busy, setBusy] = useState(false);
 
   const onRestore = useCallback(async () => {
-    if (busy) return; // double‑tap guard
+    if (busy) return; // double-tap guard
 
     const phrase = normalizeMnemonic(input);
     const words = phrase ? phrase.split(' ') : [];
@@ -64,13 +64,9 @@ export default function RestoreWalletScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <Ionicons name="key-outline" size={64} color="#0A84FF" style={{ marginBottom: 16, alignSelf: 'center' }} /> {/* Added icon for confidence */}
-      <Text style={{ fontSize: 28, fontWeight: '800', marginBottom: 16, color: '#0A84FF', textAlign: 'center' }}>
-        Restore From Backup
-      </Text>
+      <Text style={{ fontSize: 28, fontWeight: '800', marginBottom: 16, color: '#0A84FF', textAlign: 'center' }}>Restore From Backup</Text>
 
-      <Text style={{ color: '#444', marginBottom: 12, textAlign: 'center' }}>
-        Paste or enter your 12‑word recovery phrase below. Words can be separated by spaces or new lines. This will securely restore your wallet and your assets — make sure you're in a private location.
-      </Text>
+      <Text style={{ color: '#444', marginBottom: 12, textAlign: 'center' }}>Paste or enter your 12 word recovery phrase below. Words can be separated by spaces or new lines. This will securely restore your wallet and your assets, make sure you're in a private location.</Text>
 
       <TextInput
         value={input}

@@ -51,7 +51,7 @@ const Buy = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.heading}>Trade</Text>
+      <Text style={styles.heading}>Trading</Text>
       <TabView
         navigationState={{ index, routes }}
         renderScene={renderScene}
@@ -67,7 +67,7 @@ const Buy = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5' }, // Light gray background
-  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', padding: 16, marginTop: 20 }, // Blue, centered, moved down 1 line
+  heading: { fontSize: 34, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', padding: 12, marginTop: 26 }, // Blue, centered, moved down 1 line
   tabBar: { backgroundColor: '#fff' },
   indicator: { backgroundColor: '#0A84FF' }, // Blue line for active tab
 });

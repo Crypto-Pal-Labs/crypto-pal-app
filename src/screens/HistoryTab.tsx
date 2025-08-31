@@ -20,7 +20,7 @@ const HistoryTab = () => {
   }, [setAddress]);
 
   const getIconName = (tx: any) => {
-    if (tx.from_address.toLowerCase() === address.toLowerCase()) return 'arrow-forward'; // Sent
+    if (tx.from_address?.toLowerCase() === address.toLowerCase()) return 'arrow-forward'; // Sent, with null check
     return 'arrow-back'; // Received
   };
 
@@ -31,8 +31,10 @@ const HistoryTab = () => {
         <Text style={styles.txDate}>{new Date(item.block_signed_at).toLocaleString()}</Text>
         <Text style={styles.txValue}>Value: {item.value} ETH</Text>
         <Text style={[styles.txStatus, { color: item.successful ? 'green' : 'red' }]}>Status: {item.successful ? 'Success' : 'Failed'}</Text>
-        <Text style={styles.txFromTo}>From: {item.from_address.slice(0, 6)}... To: {item.to_address.slice(0, 6)}...</Text>
-        <Text style={styles.txFee}>Fee: {item.gas_quote.toFixed(4)} ETH</Text>
+        <Text style={styles.txFromTo}>
+          From: {item.from_address ? item.from_address.slice(0, 6) : 'Unknown'}... To: {item.to_address ? item.to_address.slice(0, 6) : 'Unknown'}...
+        </Text>
+        <Text style={styles.txFee}>Fee: {item.gas_quote ? item.gas_quote.toFixed(4) : 'N/A'} ETH</Text>
       </View>
     </TouchableOpacity>
   );
@@ -45,7 +47,7 @@ const HistoryTab = () => {
   );
 
   if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>;
-  if (error) return <View style={styles.center}><Text style={styles.errorText}>{error}</Text><TouchableOpacity onPress={refetch}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
+  if (error) return <View style={styles.center}><Text style={styles.errorText}>Failed to load history. Pull to refresh.</Text><TouchableOpacity onPress={refetch}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
 
   return (
     <View style={styles.container}>

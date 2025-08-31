@@ -12,7 +12,7 @@ const Tab = createBottomTabNavigator();
 
 export default function AppTabs() {
   const [ipRegion, setIpRegion] = useState('UNKNOWN'); // IP region
-  const [showBuy, setShowBuy] = useState(true); // Show by default for testing; hide if not NZ
+  const [showBuy, setShowBuy] = useState(true); // Default ON; hide only for restricted countries
 
   useEffect(() => {
     const fetchIpRegion = async () => {
@@ -23,17 +23,17 @@ export default function AppTabs() {
         console.log('Detected IP region:', region);
         setIpRegion(region);
       } catch {
-        setIpRegion('UNKNOWN');
+        setIpRegion('UNKNOWN'); // Fallback to show if fetch fails
       }
     };
     fetchIpRegion();
   }, []);
 
   useEffect(() => {
-    // Hide Buy if IP is not NZ (for compliance); fallback to show if unknown for testing
-    if (ipRegion !== 'NZ' && ipRegion !== 'UNKNOWN') {
-      setShowBuy(false);
-    }
+    // Restricted countries where crypto buying is banned (e.g., CN, EG, etc.)
+    const restrictedCountries = ['CN', 'EG', 'IQ', 'QA', 'OM', 'MA', 'DZ', 'TN', 'BD', 'BO'];
+    // Hide Buy only if in restricted country; show default for all others/unknown
+    setShowBuy(!restrictedCountries.includes(ipRegion));
   }, [ipRegion]);
 
   return (
@@ -45,13 +45,15 @@ export default function AppTabs() {
           tabBarIcon: ({ color, size }) => <Ionicons name="wallet-outline" size={size} color={color} />,
         }}
       />
-      <Tab.Screen
-        name="Buy"
-        component={BuyScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => <Ionicons name="cart-outline" size={size} color={color} />,
-        }}
-      />
+      {showBuy && (
+        <Tab.Screen
+          name="Buy"
+          component={BuyScreen}
+          options={{
+            tabBarIcon: ({ color, size }) => <Ionicons name="cart-outline" size={size} color={color} />,
+          }}
+        />
+      )}
       <Tab.Screen
         name="Pay"
         component={PayTabs}

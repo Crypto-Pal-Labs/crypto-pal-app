@@ -62,8 +62,8 @@ const Wallet = () => {
     <View style={styles.balanceItem}>
       <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
       <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_ticker_symbol}</Text>
-        <Text style={styles.assetBalance}>{ethers.formatEther(item.balance)} {item.contract_ticker_symbol}</Text>
+        <Text style={styles.assetName}>{item.contract_ticker_symbol} {item.contract_name ? `(${item.contract_name})` : ''}</Text>
+        <Text style={styles.assetBalance}>{Number(ethers.formatEther(item.balance)).toFixed(8)} {item.contract_ticker_symbol}</Text>
       </View>
       <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
     </View>
@@ -113,10 +113,10 @@ const Wallet = () => {
           selectedValue={currency}
           onValueChange={(itemValue) => setCurrency(itemValue)}
           style={{ height: 60, width: 120, color: '#0A84FF' }} // Blue text
-          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' }} // Blue item text
+          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' } } // Blue item text
         >
-          <Picker.Item label="NZD" value="NZD" />
-          <Picker.Item label="USD" value="USD" />
+          <Picker.Item label="$NZD" value="NZD" />
+          <Picker.Item label="$USD" value="USD" />
         </Picker>
       </View>
       {error && <Text style={styles.errorText}>{error} <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity></Text>}
@@ -140,7 +140,7 @@ const Wallet = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5' },
-  heading: { fontSize: 28, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40 },
+  heading: { fontSize: 34, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 50 },
   totalLabel: { fontSize: 18, color: '#000', textAlign: 'center' },
   totalValue: { fontSize: 24, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center' },
   searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 10, margin: 10 },
@@ -152,11 +152,11 @@ const styles = StyleSheet.create({
   activeToggleText: { color: '#0A84FF', fontWeight: 'bold' },
   inactiveToggleText: { color: '#888' },
   balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
-  tokenLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
+  tokenLogo: { width: 50, height: 80, borderRadius: 0, marginRight: 10 },
   tokenInfo: { flex: 1 },
-  assetName: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' }, // Blue
+  assetName: { fontWeight: 'bold', fontSize: 20, color: '#0A84FF' }, // Blue
   assetBalance: { color: 'gray', fontSize: 14 },
-  assetValue: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' }, // Blue
+  assetValue: { fontWeight: 'bold', fontSize: 18, color: '#0A84FF' }, // Blue
   empty: { textAlign: 'center', color: '#888', marginTop: 100 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
   retry: { color: '#0A84FF', marginTop: 10 },
