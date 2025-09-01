@@ -4,46 +4,51 @@ import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
 import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
-import { ETH_RPC_URL, BSC_RPC_URL, ETHERSCAN_BASE } from '@env';
-import { Camera } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import { ethers } from 'ethers';
+
+interface BalanceItem {
+  contract_address: string;
+  contract_ticker_symbol: string;
+  // Add other properties as needed from your balances
+}
 
 const SendTab = () => {
   const { chainId } = useWalletStore();
-  const [balances, refreshBalances] = useBalancesEx(); // Updated for refresh
+  const [balances, refreshBalances] = useBalancesEx() as [BalanceItem[], () => Promise<void>]; // Typing for hook
   const [toAddress, setToAddress] = useState('');
-  const [selectedToken, setSelectedToken] = useState(null); // Updated to null, select from balances
+  const [selectedToken, setSelectedToken] = useState<BalanceItem | null>(null);
   const [amount, setAmount] = useState('');
   const [amountUnit, setAmountUnit] = useState('token'); // 'token', 'usd', 'nzd'
   const [feeEstimate, setFeeEstimate] = useState('Calculating...');
   const [loading, setLoading] = useState(false);
-  const [hasPermission, setHasPermission] = useState(null);
+  const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
 
   const chain = chainId === 1 ? 'ETH' : 'BSC'; // Determine chain
 
-  const convertAmountToToken = (input) => {
+  const convertAmountToToken = (input: string) => {
     if (amountUnit === 'token') return parseFloat(input) || 0;
     const ethPriceUSD = 2000; // Stub; replace with real from useEthPrice.ts later
     const usdToNzdRate = 1.6;
-    if (amountUnit === 'usd') return input / ethPriceUSD;
-    if (amountUnit === 'nzd') return input / (ethPriceUSD * usdToNzdRate);
+    if (amountUnit === 'usd') return parseFloat(input) / ethPriceUSD;
+    if (amountUnit === 'nzd') return parseFloat(input) / (ethPriceUSD * usdToNzdRate);
     return 0;
   };
 
   useEffect(() => {
-    if (showScanner) {
-      (async () => {
-        const { status } = await Camera.requestCameraPermissionsAsync();
-        setHasPermission(status === 'granted');
-      })();
+    if (showScanner && !permission?.granted) {
+      console.log('Requesting camera permission');
+      requestPermission();
     }
-  }, [showScanner]);
+  }, [showScanner, permission, requestPermission]);
 
-  const handleBarCodeScanned = ({ data }) => {
+  const handleBarCodeScanned = ({ data }: { data: string }) => {
+    console.log('Scanned data:', data);
     setScanned(true);
     setShowScanner(false);
-    if (ethers.utils.isAddress(data)) {
+    if (ethers.isAddress(data)) {
       setToAddress(data);
     } else {
       Alert.alert('Invalid QR', 'Not a valid address.');
@@ -51,6 +56,7 @@ const SendTab = () => {
   };
 
   const handleScanQR = () => {
+    console.log('SCAN QR button pressed');
     setShowScanner(true);
   };
 
@@ -64,7 +70,7 @@ const SendTab = () => {
         const fee = await estimateGas(toAddress, convertAmountToToken(amount).toString(), selectedToken.contract_address, chain);
         const feeNzd = (parseFloat(fee) * 1500 * 1.6).toFixed(2); // Stub conversion
         setFeeEstimate(`~NZ$${feeNzd}`);
-      } catch (error) {
+      } catch (error: any) {
         setFeeEstimate('Unable to estimate: ' + error.message);
       }
     };
@@ -76,45 +82,49 @@ const SendTab = () => {
 
     let sendAmount = convertAmountToToken(amount).toString();
 
-    Alert.alert('Warning', 'Transactions are irreversible. Double-check details.', [
-      { text: 'Cancel' },
-      {
-        text: 'Confirm',
-        onPress: () => {
-          Alert.alert(
-            'Confirm Send',
-            `Sending ${sendAmount} ${selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB')} to ${toAddress}.`,
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Send',
-                onPress: async () => {
-                  setLoading(true);
-                  try {
-                    const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
-                    Alert.alert('Success', `Tx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`);
-                    refreshBalances(); // Refresh balances after send
-                  } catch (err: any) {
-                    Alert.alert('Error', err.message);
-                  } finally {
-                    setLoading(false);
-                  }
+    Alert.alert(
+      'Warning',
+      'Transactions are irreversible. Double check details.',
+      [
+        { text: 'Cancel' },
+        {
+          text: 'Confirm',
+          onPress: async () => {
+            Alert.alert(
+              'Confirm Send',
+              `Sending $${sendAmount} ${selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB')} to ${toAddress}.`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Send',
+                  onPress: async () => {
+                    setLoading(true);
+                    try {
+                      const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
+                      Alert.alert('Success', `Tx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`);
+                      refreshBalances(); // Refresh balances after send
+                    } catch (err: any) {
+                      Alert.alert('Error', err.message);
+                    } finally {
+                      setLoading(false);
+                    }
+                  },
                 },
-              },
-            ]
-          );
+              ]
+            );
+          },
         },
-      },
-    ]);
+      ]
+    );
   };
 
-  const amountPlaceholder = amountUnit === 'token' ? 'Enter Crypto Amount' : amountUnit === 'usd' ? 'Enter $USD Amount' : 'Enter $NZD Amount';
+  const amountPlaceholder = amountUnit === 'token' ? 'Enter Crypto Amount' : amountUnit === 'usd' ? 'Enter USD Amount' : 'Enter NZD Amount';
 
   return (
     <View style={styles.container}>
       {/* Section 1: Send to... */}
       <View style={styles.section}>
-        <Text style={styles.label}>Send to ...</Text>
+        <Text style={styles.label}>Send to</Text>
         <View style={styles.addressRow}>
           <TextInput style={styles.input} placeholder="Wallet address of recipient" value={toAddress} onChangeText={setToAddress} />
           <Button title="SCAN QR" onPress={handleScanQR} color="#0A84FF" />
@@ -123,7 +133,7 @@ const SendTab = () => {
 
       {/* Section 2: What crypto... */}
       <View style={styles.section}>
-        <Text style={styles.label}>What crypto currency would you like to send them ...</Text>
+        <Text style={styles.label}>What crypto currency would you like to send them</Text>
         <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
           <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
           {balances.map((item) => (
@@ -145,8 +155,14 @@ const SendTab = () => {
             <Text style={amountUnit === 'nzd' ? styles.unitTextActive : styles.unitText}>NZD</Text>
           </TouchableOpacity>
         </View>
-        <TextInput style={styles.amountInput} placeholder={amountPlaceholder} value={amount} onChangeText={setAmount} keyboardType="numeric" />
-        <Button title={`ESTIMATE FEE: ${feeEstimate}`} onPress={() => {}} disabled color="#ccc" />
+        <TextInput
+          style={styles.amountInput}
+          placeholder={amountPlaceholder}
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="numeric"
+        />
+        <Button title={`ESTIMATE FEE: $${feeEstimate}`} onPress={() => {}} disabled color="#ccc" />
         <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={loading}>
           <Text style={styles.sendButtonText}>SEND</Text>
         </TouchableOpacity>
@@ -154,15 +170,22 @@ const SendTab = () => {
       </View>
 
       {/* QR Scanner View */}
-      {showScanner && hasPermission && !scanned && (
-        <Camera
-          style={{ height: 300, width: '100%' }}
-          onBarCodeScanned={scanned ? undefined : handleBarCodeScanned}
-          barCodeScannerSettings={{ barCodeTypes: ['qr'] }}
-        />
+      {showScanner &&
+        permission?.granted && !scanned && (
+          <View style={{ alignItems: 'center', marginTop: 16, backgroundColor: '#f0f0f0' }}>
+            <CameraView
+              style={{ height: 300, width: 300 }}
+              onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+            />
+          </View>
+        )}
+      {scanned && (
+        <TouchableOpacity onPress={() => setScanned(false)} style={{ marginTop: 8 }}>
+          <Text>Scan Again</Text>
+        </TouchableOpacity>
       )}
-      {scanned && <TouchableOpacity onPress={() => setScanned(false)}><Text>Scan Again</Text></TouchableOpacity>}
-      {hasPermission === false && <Text>No camera access.</Text>}
+      {permission && !permission.granted && <Text>No camera access check settings</Text>}
     </View>
   );
 };
