@@ -48,7 +48,7 @@ const SendTab = () => {
     console.log('Scanned data:', data);
     setScanned(true);
     setShowScanner(false);
-    if (ethers.isAddress(data)) {
+    if (ethers.utils.isAddress(data)) {  // Corrected to ethers.utils.isAddress
       setToAddress(data);
     } else {
       Alert.alert('Invalid QR', 'Not a valid address.');
@@ -58,6 +58,7 @@ const SendTab = () => {
   const handleScanQR = () => {
     console.log('SCAN QR button pressed');
     setShowScanner(true);
+    setScanned(false);  // Reset scanned for new scan
   };
 
   useEffect(() => {
@@ -169,23 +170,32 @@ const SendTab = () => {
         {loading && <ActivityIndicator color="#0A84FF" />}
       </View>
 
-      {/* QR Scanner View */}
-      {showScanner &&
-        permission?.granted && !scanned && (
-          <View style={{ alignItems: 'center', marginTop: 16, backgroundColor: '#f0f0f0' }}>
-            <CameraView
-              style={{ height: 300, width: 300 }}
-              onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
-              barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-            />
-          </View>
-        )}
-      {scanned && (
-        <TouchableOpacity onPress={() => setScanned(false)} style={{ marginTop: 8 }}>
-          <Text>Scan Again</Text>
-        </TouchableOpacity>
+      {/* QR Scanner Modal */}
+      {showScanner && (
+        <View style={styles.scannerContainer}>
+          {permission?.granted ? (
+            <>
+              {!scanned && (
+                <CameraView
+                  style={styles.camera}  // Updated to flex:1
+                  onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
+                  barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                />
+              )}
+              <TouchableOpacity style={styles.closeButton} onPress={() => setShowScanner(false)}>
+                <Text style={styles.closeText}>Close Scanner</Text>
+              </TouchableOpacity>
+              {scanned && (
+                <TouchableOpacity style={styles.scanAgainButton} onPress={() => setScanned(false)}>
+                  <Text>Scan Again</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          ) : (
+            <Text>No camera access. Check settings.</Text>
+          )}
+        </View>
       )}
-      {permission && !permission.granted && <Text>No camera access check settings</Text>}
     </View>
   );
 };
@@ -205,6 +215,11 @@ const styles = StyleSheet.create({
   amountInput: { borderWidth: 1, padding: 8, borderColor: '#ddd', borderRadius: 4, height: 40 }, // Slimmer height
   sendButton: { backgroundColor: '#0A84FF', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 16 },
   sendButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  scannerContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center' },  // Full screen modal
+  camera: { flex: 1, width: '100%' },  // Full screen camera
+  closeButton: { position: 'absolute', top: 40, right: 20, backgroundColor: 'white', padding: 10, borderRadius: 5 },
+  closeText: { color: 'black' },
+  scanAgainButton: { backgroundColor: 'white', padding: 10, borderRadius: 5, marginTop: 20 },
 });
 
 export default SendTab;
