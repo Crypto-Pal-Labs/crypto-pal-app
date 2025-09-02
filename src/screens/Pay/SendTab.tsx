@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
 import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { ETHERSCAN_BASE } from '@env'; // Add this line
+import { ETHERSCAN_BASE } from '@env'; // For explorer link
 
 interface BalanceItem {
   contract_address: string;
@@ -14,7 +14,7 @@ interface BalanceItem {
 }
 
 const SendTab = () => {
-  const { chainId } = useWalletStore();
+  const { chainId, address: fromAddress } = useWalletStore(); // Added fromAddress
   const [balances, refreshBalances] = useBalancesEx() as [BalanceItem[], () => Promise<void>]; // Typing for hook
   const [toAddress, setToAddress] = useState('');
   const [selectedToken, setSelectedToken] = useState<BalanceItem | null>(null);
@@ -48,7 +48,7 @@ const SendTab = () => {
     console.log('Scanned data:', data);
     setScanned(true);
     setShowScanner(false);
-    if (isValidEthereumAddress(data)) {  // Use regex for validation
+    if (isValidEthereumAddress(data)) { // Use regex for validation
       setToAddress(data);
       console.log('Valid address populated:', data);
     } else {
@@ -68,11 +68,11 @@ const SendTab = () => {
   };
 
   useEffect(() => {
-    const estimateFee = async () => {
-      if (!toAddress || !amount || !selectedToken) {
-        setFeeEstimate('Enter details');
-        return;
-      }
+    if (!toAddress || !amount || !selectedToken) {
+      setFeeEstimate('Enter details');
+      return;
+    }
+    (async () => {
       try {
         const fee = await estimateGas(toAddress, convertAmountToToken(amount).toString(), selectedToken.contract_address, chain);
         const feeNzd = (parseFloat(fee) * 1500 * 1.6).toFixed(2); // Stub conversion
@@ -80,14 +80,25 @@ const SendTab = () => {
       } catch (error: any) {
         setFeeEstimate('Unable to estimate: ' + error.message);
       }
-    };
-    estimateFee();
+    })();
   }, [toAddress, amount, selectedToken, amountUnit, chain]);
+
+  const resetFields = () => {
+    setToAddress('');
+    setSelectedToken(null);
+    setAmount('');
+    setAmountUnit('token');
+    setFeeEstimate('Calculating...');
+  };
 
   const handleSend = async () => {
     if (!toAddress || !amount) return Alert.alert('Error', 'Enter address and amount');
 
     let sendAmount = convertAmountToToken(amount).toString();
+    const displayAmount = amount;
+    const displayUnit = amountUnit.toUpperCase();
+    const tokenSymbol = selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB');
+    const nativeAmount = convertAmountToToken(amount).toFixed(4); // Approximate native for popup
 
     Alert.alert(
       'Warning',
@@ -99,7 +110,7 @@ const SendTab = () => {
           onPress: async () => {
             Alert.alert(
               'Confirm Send',
-              `Sending $${sendAmount} ${selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB')} to ${toAddress}.`,
+              `Sending $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol}) to ${toAddress}.`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -108,8 +119,12 @@ const SendTab = () => {
                     setLoading(true);
                     try {
                       const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
-                      Alert.alert('Success', `Tx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`);
+                      Alert.alert(
+                        'Success',
+                        `Sent $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nFrom: ${fromAddress}\nTo: ${toAddress}\nTx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`
+                      );
                       refreshBalances(); // Refresh balances after send
+                      resetFields(); // Reset fields after success
                     } catch (err: any) {
                       Alert.alert('Error', err.message);
                     } finally {
@@ -202,6 +217,13 @@ const SendTab = () => {
           )}
         </View>
       )}
+
+      {/* Centered Loading Overlay */}
+      <Modal visible={loading} transparent={true} animationType="fade">
+        <View style={styles.modalOverlay}>
+          <ActivityIndicator size="large" color="#0A84FF" />
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -226,6 +248,7 @@ const styles = StyleSheet.create({
   closeButton: { position: 'absolute', top: 40, right: 20, backgroundColor: 'white', padding: 10, borderRadius: 5 },
   closeText: { color: 'black' },
   scanAgainButton: { backgroundColor: 'white', padding: 10, borderRadius: 5, marginTop: 20 },
+  modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' }, // Centered overlay
 });
 
 export default SendTab;

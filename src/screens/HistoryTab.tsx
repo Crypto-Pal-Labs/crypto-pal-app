@@ -1,10 +1,11 @@
 // src/screens/HistoryTab.tsx
 import React, { useEffect } from 'react';
 import { View, Text, ActivityIndicator, FlatList, StyleSheet, Linking, TouchableOpacity, RefreshControl } from 'react-native';
-import { Ionicons } from '@expo/vector-icons'; // Add this import for icons
+import { Ionicons } from '@expo/vector-icons';
 import { useHistory } from '../hooks/useHistory';
 import { useWalletStore } from '../store/useWalletStore';
 import { getWalletAddress } from '../utils/wallet';
+import { formatEther } from 'ethers';
 
 const HistoryTab = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
@@ -21,16 +22,16 @@ const HistoryTab = () => {
 
   const getIconName = (tx: any) => {
     if (tx.from_address?.toLowerCase() === address.toLowerCase()) {
-      return 'arrow-up'; // Sent
+      return 'arrow-up';
     }
-    return 'arrow-down'; // Received
+    return 'arrow-down';
   };
 
   const getIconColor = (tx: any) => {
     if (tx.from_address?.toLowerCase() === address.toLowerCase()) {
-      return 'red'; // Sent
+      return 'red';
     }
-    return 'green'; // Received
+    return 'green';
   };
 
   const renderTxItem = ({ item }: { item: any }) => (
@@ -38,7 +39,9 @@ const HistoryTab = () => {
       <Ionicons name={getIconName(item)} size={24} color={getIconColor(item)} style={styles.icon} />
       <View style={styles.txInfo}>
         <Text style={styles.txDate}>{new Date(item.block_signed_at).toLocaleString()}</Text>
-        <Text style={styles.txValue}>Value: {item.value} ETH</Text>
+        <Text style={styles.txValue}>
+          Value: {item.value ? formatEther(item.value) : '0'} ETH {item.quote ? ` ($${item.quote.toFixed(2)} USD)` : ''}
+        </Text>
         <Text style={[styles.txStatus, { color: item.successful ? 'green' : 'red' }]}>Status: {item.successful ? 'Success' : 'Failed'}</Text>
         <Text style={styles.txFromTo}>
           From: {item.from_address ? item.from_address.slice(0, 6) + '...' + item.from_address.slice(-4) : 'N/A'}
@@ -46,7 +49,7 @@ const HistoryTab = () => {
         <Text style={styles.txFromTo}>
           To: {item.to_address ? item.to_address.slice(0, 6) + '...' + item.to_address.slice(-4) : 'N/A'}
         </Text>
-        <Text style={styles.txFee}>Fee: {item.gas_spent ? item.gas_spent : 'N/A'} ETH</Text>
+        <Text style={styles.txFee}>Fee: {item.gas_spent ? formatEther(item.gas_spent) : '0'} ETH</Text>
       </View>
     </TouchableOpacity>
   );
