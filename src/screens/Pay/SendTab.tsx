@@ -5,7 +5,7 @@ import { useWalletStore } from '../../store/useWalletStore';
 import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { ethers } from 'ethers';
+import { ETHERSCAN_BASE } from '@env'; // Add this line
 
 interface BalanceItem {
   contract_address: string;
@@ -48,11 +48,17 @@ const SendTab = () => {
     console.log('Scanned data:', data);
     setScanned(true);
     setShowScanner(false);
-    if (ethers.utils.isAddress(data)) {  // Corrected to ethers.utils.isAddress
+    if (isValidEthereumAddress(data)) {  // Use regex for validation
       setToAddress(data);
+      console.log('Valid address populated:', data);
     } else {
       Alert.alert('Invalid QR', 'Not a valid address.');
+      console.log('Invalid address scanned');
     }
+  };
+
+  const isValidEthereumAddress = (address: string) => {
+    return /^0x[0-9a-fA-F]{40}$/.test(address); // Simple regex for 0x + 40 hex chars
   };
 
   const handleScanQR = () => {
@@ -177,7 +183,7 @@ const SendTab = () => {
             <>
               {!scanned && (
                 <CameraView
-                  style={styles.camera}  // Updated to flex:1
+                  style={styles.camera}  // Full screen camera
                   onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
                   barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 />
