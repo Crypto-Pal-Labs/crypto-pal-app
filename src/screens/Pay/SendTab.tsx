@@ -5,6 +5,7 @@ import { useWalletStore } from '../../store/useWalletStore';
 import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import { ETHERSCAN_BASE } from '@env'; // Add this line
 
 interface BalanceItem {
   contract_address: string;

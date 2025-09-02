@@ -20,28 +20,39 @@ const HistoryTab = () => {
   }, [setAddress]);
 
   const getIconName = (tx: any) => {
-    if (tx.from_address?.toLowerCase() === address.toLowerCase()) return 'arrow-forward'; // Sent, with null check
-    return 'arrow-back'; // Received
+    if (tx.from_address?.toLowerCase() === address.toLowerCase()) {
+      return 'arrow-up'; // Sent
+    }
+    return 'arrow-down'; // Received
+  };
+
+  const getIconColor = (tx: any) => {
+    if (tx.from_address?.toLowerCase() === address.toLowerCase()) {
+      return 'red'; // Sent
+    }
+    return 'green'; // Received
   };
 
   const renderTxItem = ({ item }: { item: any }) => (
     <TouchableOpacity style={styles.txItem} onPress={() => Linking.openURL(`${item.explorer}${item.tx_hash}`)}>
-      <Ionicons name={getIconName(item)} size={24} color="#0A84FF" style={styles.icon} />
+      <Ionicons name={getIconName(item)} size={24} color={getIconColor(item)} style={styles.icon} />
       <View style={styles.txInfo}>
         <Text style={styles.txDate}>{new Date(item.block_signed_at).toLocaleString()}</Text>
         <Text style={styles.txValue}>Value: {item.value} ETH</Text>
         <Text style={[styles.txStatus, { color: item.successful ? 'green' : 'red' }]}>Status: {item.successful ? 'Success' : 'Failed'}</Text>
         <Text style={styles.txFromTo}>
-          From: {item.from_address ? item.from_address.slice(0, 6) : 'Unknown'}... To: {item.to_address ? item.to_address.slice(0, 6) : 'Unknown'}...
+          From: {item.from_address ? item.from_address.slice(0, 6) + '...' + item.from_address.slice(-4) : 'N/A'}
         </Text>
-        <Text style={styles.txFee}>Fee: {item.gas_quote ? item.gas_quote.toFixed(4) : 'N/A'} ETH</Text>
+        <Text style={styles.txFromTo}>
+          To: {item.to_address ? item.to_address.slice(0, 6) + '...' + item.to_address.slice(-4) : 'N/A'}
+        </Text>
+        <Text style={styles.txFee}>Fee: {item.gas_spent ? item.gas_spent : 'N/A'} ETH</Text>
       </View>
     </TouchableOpacity>
   );
 
   const EmptyState = () => (
     <View style={styles.center}>
-      <Ionicons name="wallet-outline" size={64} color="gray" />
       <Text style={styles.empty}>No transactions to display yet!</Text>
     </View>
   );
