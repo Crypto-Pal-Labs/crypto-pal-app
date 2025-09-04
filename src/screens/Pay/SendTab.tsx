@@ -1,3 +1,4 @@
+// src/screens/SendTab.tsx
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
@@ -6,7 +7,6 @@ import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ETHERSCAN_BASE } from '@env'; // For explorer link
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface BalanceItem {
   contract_address: string;
@@ -26,15 +26,33 @@ const SendTab = () => {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
+  const [ethPriceUSD, setEthPriceUSD] = useState(2000); // Initial stub
+  const [usdToNzd, setUsdToNzd] = useState(1.6); // Initial stub
 
   const chain = chainId === 1 ? 'ETH' : 'BSC'; // Determine chain
 
+  useEffect(() => {
+    const fetchRates = async () => {
+      try {
+        const ethResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
+        const ethData = await ethResponse.json();
+        setEthPriceUSD(ethData?.ethereum?.usd || 2000);
+
+        const nzdResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=usdt&vs_currencies=nzd');
+        const nzdData = await nzdResponse.json();
+        setUsdToNzd(nzdData?.usdt?.nzd || 1.6);
+      } catch (e) {
+        console.error('Rate fetch error in SendTab:', e);
+      }
+    };
+    fetchRates();
+  }, []);
+
   const convertAmountToToken = (input: string) => {
-    if (amountUnit === 'token') return parseFloat(input) || 0;
-    const ethPriceUSD = 2000; // Stub; replace with real from useEthPrice.ts later
-    const usdToNzdRate = 1.6;
-    if (amountUnit === 'usd') return parseFloat(input) / ethPriceUSD;
-    if (amountUnit === 'nzd') return parseFloat(input) / (ethPriceUSD * usdToNzdRate);
+    const numInput = parseFloat(input) || 0;
+    if (amountUnit === 'token') return numInput;
+    if (amountUnit === 'usd') return numInput / ethPriceUSD;
+    if (amountUnit === 'nzd') return numInput / (ethPriceUSD * usdToNzd);
     return 0;
   };
 
@@ -76,13 +94,13 @@ const SendTab = () => {
     (async () => {
       try {
         const fee = await estimateGas(toAddress, convertAmountToToken(amount).toString(), selectedToken.contract_address, chain);
-        const feeNzd = (parseFloat(fee) * 1500 * 1.6).toFixed(2); // Stub conversion
+        const feeNzd = (parseFloat(fee) * ethPriceUSD * usdToNzd).toFixed(2); // Use real rates for fee
         setFeeEstimate(`~NZ$${feeNzd}`);
       } catch (error: any) {
         setFeeEstimate('Unable to estimate: ' + error.message);
       }
     })();
-  }, [toAddress, amount, selectedToken, amountUnit, chain]);
+  }, [toAddress, amount, selectedToken, amountUnit, ethPriceUSD, usdToNzd, chain]);
 
   const resetFields = () => {
     setToAddress('');
@@ -90,18 +108,6 @@ const SendTab = () => {
     setAmount('');
     setAmountUnit('token');
     setFeeEstimate('Calculating...');
-  };
-
-  const saveTxDetails = async (hash: string, amount: string, unit: string) => {
-    try {
-      const txDetails = { amount, unit };
-      let storedTxs = await AsyncStorage.getItem('txDetails');
-      const parsedTxs = storedTxs ? JSON.parse(storedTxs) : {};
-      parsedTxs[hash] = txDetails;
-      await AsyncStorage.setItem('txDetails', JSON.stringify(parsedTxs));
-    } catch (e) {
-      console.error('AsyncStorage error:', e);
-    }
   };
 
   const handleSend = async () => {
@@ -132,7 +138,6 @@ const SendTab = () => {
                     setLoading(true);
                     try {
                       const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
-                      await saveTxDetails(hash, displayAmount, displayUnit); // Save entered unit
                       Alert.alert(
                         'Success',
                         `Sent $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nFrom: ${fromAddress}\nTo: ${toAddress}\nTx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`
