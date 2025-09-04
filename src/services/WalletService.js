@@ -2,6 +2,7 @@
 import 'react-native-get-random-values';
 import * as SecureStore from 'expo-secure-store';
 import { ethers } from 'ethers';
+import { getProvider } from '../config/chains';  // Import the helper for chain-specific providers
 
 const MNEMONIC_KEY = 'mnemonic';
 const PRIVATE_KEY = 'privateKey';
@@ -41,4 +42,19 @@ export async function getStoredAddress() {
 /** Get the stored mnemonic phrase (if any) */
 export async function getStoredMnemonic() {
   return await SecureStore.getItemAsync(MNEMONIC_KEY);
+}
+
+/**
+ * Get the connected wallet for a specific chain.
+ * Fetches the stored private key, creates the wallet, and connects it to the chain's provider.
+ * This is useful for signing transactions or querying on a specific chain.
+ */
+export async function getConnectedWallet(chainKey) {
+  const privateKey = await SecureStore.getItemAsync(PRIVATE_KEY);
+  if (!privateKey) {
+    throw new Error('No wallet stored');
+  }
+  const provider = getProvider(chainKey);
+  const wallet = new ethers.Wallet(privateKey).connect(provider);
+  return wallet;
 }

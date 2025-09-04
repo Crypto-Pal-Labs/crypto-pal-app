@@ -142,7 +142,7 @@ const HistoryTab = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  heading: { fontSize: 32, fontWeight: 'bold', color: '#0A84FF', marginTop: 50, padding: 24, textAlign: 'center' },
+  heading: { fontSize: 32, fontWeight: 'bold', color: '#0A84FF', marginTop: 35, padding: 20, textAlign: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   listContainer: { padding: 16 },
   txItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },

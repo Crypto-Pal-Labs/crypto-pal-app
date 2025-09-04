@@ -3,7 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
-import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ETHERSCAN_BASE } from '@env'; // For explorer link
@@ -16,7 +15,6 @@ interface BalanceItem {
 
 const SendTab = () => {
   const { chainId, address: fromAddress } = useWalletStore(); // Added fromAddress
-  const [balances, refreshBalances] = useBalancesEx() as [BalanceItem[], () => Promise<void>]; // Typing for hook
   const [toAddress, setToAddress] = useState('');
   const [selectedToken, setSelectedToken] = useState<BalanceItem | null>(null);
   const [amount, setAmount] = useState('');
@@ -142,7 +140,6 @@ const SendTab = () => {
                         'Success',
                         `Sent $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nFrom: ${fromAddress}\nTo: ${toAddress}\nTx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`
                       );
-                      refreshBalances(); // Refresh balances after send
                       resetFields(); // Reset fields after success
                     } catch (err: any) {
                       Alert.alert('Error', err.message);
@@ -177,9 +174,6 @@ const SendTab = () => {
         <Text style={styles.label}>What crypto currency would you like to send them</Text>
         <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
           <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
-          {balances.map((item) => (
-            <Picker.Item key={item.contract_address} label={item.contract_ticker_symbol} value={item} />
-          ))}
         </Picker>
       </View>
 
