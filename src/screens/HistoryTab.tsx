@@ -1,19 +1,23 @@
 // src/screens/HistoryTab.tsx
 import React, { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, FlatList, StyleSheet, Linking, TouchableOpacity, RefreshControl } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useHistory } from '../hooks/useHistory';
 import { useWalletStore } from '../store/useWalletStore';
 import { getWalletAddress } from '../utils/wallet';
 import { formatEther } from 'ethers';
 
+interface TxDetails {
+  amount: string;
+  unit: string;
+}
+
 const HistoryTab = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
   const { transactions, loading, error, refetch } = useHistory();
   const address = useWalletStore((state) => state.address);
-  const [ethPriceUSD, setEthPriceUSD] = useState(0);
-  const [usdToNzd, setUsdToNzd] = useState(1.6);
-  const [displayUnit, setDisplayUnit] = useState('TOKEN');
+  const [txDetailsMap, setTxDetailsMap] = useState<Record<string, TxDetails>>({});
 
   useEffect(() => {
     const loadAddress = async () => {
@@ -24,32 +28,24 @@ const HistoryTab = () => {
   }, [setAddress]);
 
   useEffect(() => {
-    const fetchRates = async () => {
+    const fetchTxDetails = async () => {
       try {
-        const ethResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
-        const ethData = await ethResponse.json();
-        setEthPriceUSD(ethData?.ethereum?.usd || 2000); // Null check and fallback
-
-        const nzdResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=usdt&vs_currencies=nzd');
-        const nzdData = await nzdResponse.json();
-        setUsdToNzd(nzdData?.usdt?.nzd || 1.6); // Null check and fallback
+        const stored = await AsyncStorage.getItem('txDetails');
+        setTxDetailsMap(stored ? JSON.parse(stored) : {});
       } catch (e) {
-        console.error('Rate fetch error:', e);
-        setEthPriceUSD(2000); // Fallback
-        setUsdToNzd(1.6); // Fallback
+        console.error('AsyncStorage fetch error:', e);
       }
     };
-    fetchRates();
+    fetchTxDetails();
   }, []);
 
   const getValueDisplay = (tx: any) => {
+    const stored = txDetailsMap[tx.tx_hash];
+    if (stored && stored.unit !== 'TOKEN') {
+      return `Value: $${stored.amount} ${stored.unit}`;
+    }
     const ethValueStr = tx.value ? formatEther(tx.value) : '0';
-    const ethValueNum = Number(ethValueStr);
-    if (displayUnit === 'TOKEN') return `Value: ${ethValueNum.toFixed(4)} ETH`;
-    const usdValue = ethValueNum * ethPriceUSD;
-    if (displayUnit === 'USD') return `Value: $${usdValue.toFixed(2)} USD (${ethValueNum.toFixed(4)} ETH)`;
-    const nzdValue = usdValue * usdToNzd;
-    return `Value: $${nzdValue.toFixed(2)} NZD (${ethValueNum.toFixed(4)} ETH)`;
+    return `Value: ${Number(ethValueStr).toFixed(4)} ETH`;
   };
 
   const getIconName = (tx: any) => {
@@ -96,17 +92,6 @@ const HistoryTab = () => {
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Transaction History</Text>
-      <View style={styles.unitRow}>
-        <TouchableOpacity style={displayUnit === 'TOKEN' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('TOKEN')}>
-          <Text style={displayUnit === 'TOKEN' ? styles.unitTextActive : styles.unitText}>TOKEN</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={displayUnit === 'USD' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('USD')}>
-          <Text style={displayUnit === 'USD' ? styles.unitTextActive : styles.unitText}>USD</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={displayUnit === 'NZD' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('NZD')}>
-          <Text style={displayUnit === 'NZD' ? styles.unitTextActive : styles.unitText}>NZD</Text>
-        </TouchableOpacity>
-      </View>
       <FlatList
         data={transactions}
         renderItem={renderTxItem}
@@ -124,22 +109,17 @@ const styles = StyleSheet.create({
   heading: { fontSize: 32, fontWeight: 'bold', color: '#0A84FF', marginTop: 50, padding: 24, textAlign: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   listContainer: { padding: 16 },
-  txItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
+  txItem: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#d6ecf4ff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
   icon: { marginRight: 10 },
   txInfo: { flex: 1 },
   txDate: { fontWeight: 'bold' },
   txValue: { color: '#000' },
   txStatus: { fontWeight: 'bold' },
-  txFromTo: { color: '#888' },
+  txFromTo: { color: '#111111ff' },
   txFee: { color: '#888' },
   empty: { textAlign: 'center', color: '#888', marginTop: 10 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
   retry: { color: '#0A84FF' },
-  unitRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 10 },
-  unitButton: { padding: 8, backgroundColor: '#f0f0f0', borderRadius: 4, marginHorizontal: 5 },
-  unitButtonActive: { padding: 8, backgroundColor: '#0A84FF', borderRadius: 4, marginHorizontal: 5 },
-  unitText: { color: '#0A84FF', fontWeight: 'bold' },
-  unitTextActive: { color: '#fff', fontWeight: 'bold' },
 });
 
 export default HistoryTab;

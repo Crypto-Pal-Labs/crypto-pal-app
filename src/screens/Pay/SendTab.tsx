@@ -6,6 +6,7 @@ import { useBalancesEx } from '../../hooks/useBalances'; // Updated for refresh
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ETHERSCAN_BASE } from '@env'; // For explorer link
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface BalanceItem {
   contract_address: string;
@@ -91,6 +92,18 @@ const SendTab = () => {
     setFeeEstimate('Calculating...');
   };
 
+  const saveTxDetails = async (hash: string, amount: string, unit: string) => {
+    try {
+      const txDetails = { amount, unit };
+      let storedTxs = await AsyncStorage.getItem('txDetails');
+      const parsedTxs = storedTxs ? JSON.parse(storedTxs) : {};
+      parsedTxs[hash] = txDetails;
+      await AsyncStorage.setItem('txDetails', JSON.stringify(parsedTxs));
+    } catch (e) {
+      console.error('AsyncStorage error:', e);
+    }
+  };
+
   const handleSend = async () => {
     if (!toAddress || !amount) return Alert.alert('Error', 'Enter address and amount');
 
@@ -119,6 +132,7 @@ const SendTab = () => {
                     setLoading(true);
                     try {
                       const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
+                      await saveTxDetails(hash, displayAmount, displayUnit); // Save entered unit
                       Alert.alert(
                         'Success',
                         `Sent $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nFrom: ${fromAddress}\nTo: ${toAddress}\nTx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`
