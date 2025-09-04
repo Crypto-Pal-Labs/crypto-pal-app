@@ -7,10 +7,12 @@ import { getWalletAddress } from '../utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
+import { useChain } from '../hooks/useChain';  // For chain state
 
 const Wallet = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
-  const { balances, nfts, loading, error, refetch } = useAssets();
+  const { currentChain, setCurrentChain, chains } = useChain();  // Get chain state
+  const { balances, nfts, loading, error, refetch } = useAssets();  // No param, multi-chain internal
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('crypto');
   const [refreshing, setRefreshing] = useState(false);
@@ -108,12 +110,25 @@ const Wallet = () => {
           <Text style={viewMode === 'nfts' ? styles.activeToggleText : styles.inactiveToggleText}>NFTs</Text>
         </TouchableOpacity>
       </View>
-      <View style={{ alignSelf: 'center', width: 120, height: 60, overflow: 'visible' }}>
+      {/* Picker Row - Side-by-side, compact, dropdown mode for visible labels */}
+      <View style={styles.pickerRow}>
+        <Picker
+          selectedValue={currentChain}
+          onValueChange={(itemValue) => setCurrentChain(itemValue)}
+          style={styles.picker}
+          itemStyle={styles.pickerItem}
+          mode="dropdown"  // Fix: Shows selected value always on Android
+        >
+          {Object.keys(chains).map((key) => (
+            <Picker.Item key={key} label={chains[key].name} value={key} />
+          ))}
+        </Picker>
         <Picker
           selectedValue={currency}
           onValueChange={(itemValue) => setCurrency(itemValue)}
-          style={{ height: 60, width: 120, color: '#0A84FF' }} // Blue text
-          itemStyle={{ height: 60, fontSize: 16, color: '#0A84FF' } } // Blue item text
+          style={styles.picker}
+          itemStyle={styles.pickerItem}
+          mode="dropdown"  // Fix: Shows selected value always on Android
         >
           <Picker.Item label="$NZD" value="NZD" />
           <Picker.Item label="$USD" value="USD" />
@@ -124,6 +139,7 @@ const Wallet = () => {
         <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />
       ) : (
         <FlatList
+          style={styles.assetList}  // flex: 1 for full expansion
           data={viewMode === 'crypto' ? filteredBalances : filteredNfts}
           renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
           keyExtractor={(item) => item.contract_address + (item.token_id || '')}
@@ -139,27 +155,31 @@ const Wallet = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5' },
-  heading: { fontSize: 34, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 50 },
-  totalLabel: { fontSize: 18, color: '#000', textAlign: 'center' },
-  totalValue: { fontSize: 24, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center' },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 10, margin: 10 },
+  container: { flex: 1, backgroundColor: '#fff' },
+  heading: { fontSize: 36, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 20 },
+  totalLabel: { fontSize: 20, color: '#000', textAlign: 'center', marginBottom: 5 },
+  totalValue: { fontSize: 24, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginBottom: 5 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 5, marginHorizontal: 10, marginBottom: 5 },
   searchIcon: { marginRight: 5 },
-  searchInput: { flex: 1, padding: 10 },
-  switchButtons: { flexDirection: 'row', justifyContent: 'center', marginBottom: 10 },
-  activeToggle: { borderBottomWidth: 2, borderBottomColor: '#0A84FF', padding: 10, marginHorizontal: 10 },
-  inactiveToggle: { padding: 10, marginHorizontal: 10 },
+  searchInput: { flex: 1, padding: 5 },
+  switchButtons: { flexDirection: 'row', justifyContent: 'center', marginBottom: 5 },
+  activeToggle: { borderBottomWidth: 2, borderBottomColor: '#0A84FF', padding: 5, marginHorizontal: 10 },
+  inactiveToggle: { padding: 5, marginHorizontal: 10 },
   activeToggleText: { color: '#0A84FF', fontWeight: 'bold' },
   inactiveToggleText: { color: '#888' },
-  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: '#fff', borderRadius: 8, marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
-  tokenLogo: { width: 50, height: 80, borderRadius: 0, marginRight: 10 },
+  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 10, marginBottom: 5 },
+  picker: { height: 30, width: '48%', color: '#0A84FF' },
+  pickerItem: { height: 30, fontSize: 12, color: '#0A84FF' },
+  assetList: { flex: 1 },
+  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 10, backgroundColor: '#fff', borderRadius: 8, marginBottom: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
+  tokenLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
   tokenInfo: { flex: 1 },
-  assetName: { fontWeight: 'bold', fontSize: 20, color: '#0A84FF' }, // Blue
-  assetBalance: { color: 'gray', fontSize: 14 },
-  assetValue: { fontWeight: 'bold', fontSize: 18, color: '#0A84FF' }, // Blue
-  empty: { textAlign: 'center', color: '#888', marginTop: 100 },
-  errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
-  retry: { color: '#0A84FF', marginTop: 10 },
+  assetName: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' },
+  assetBalance: { color: 'gray', fontSize: 12 },
+  assetValue: { fontWeight: 'bold', fontSize: 14, color: '#0A84FF' },
+  empty: { textAlign: 'center', color: '#888', marginTop: 50 },
+  errorText: { color: 'red', textAlign: 'center', marginBottom: 5 },
+  retry: { color: '#0A84FF', marginTop: 5 },
   logoutContainer: { padding: 10, position: 'absolute', bottom: 0, left: 0, right: 0 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
