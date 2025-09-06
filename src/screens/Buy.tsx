@@ -1,37 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, Button } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import { useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { getWalletAddress } from '../utils/wallet';
 import { TRANSAK_API_KEY } from '@env';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';  // For reload on focus
 
 const BuyRoute = () => {
   const [address, setAddress] = useState('');
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    getWalletAddress().then((addr) => {
-      setAddress(addr);
-      setLoading(false);
-    });
-  }, []);
-  const uri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&walletAddress=${address}&defaultFiatCurrency=NZD&defaultFiatAmount=10&defaultCryptoCurrency=USDC&defaultPaymentMethod=credit_card&productsAvailed=BUY&product=BUY&hideExchangeScreen=true&isTestingMode=true&environment=STAGING&network=ethereum`;
-  console.log('Buy URI:', uri);
+  const [uri, setUri] = useState('');
+
+  useFocusEffect(
+    React.useCallback(() => {
+      getWalletAddress().then((addr) => {
+        setAddress(addr);
+        const newUri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&walletAddress=${addr}&defaultFiatCurrency=NZD&defaultFiatAmount=10&defaultCryptoCurrency=USDC&defaultPaymentMethod=credit_card&productsAvailed=BUY&defaultProduct=BUY&isBuyOrSell=BUY&environment=STAGING&network=sepolia&disableWalletAddressForm=true`;
+        setUri(newUri);
+        console.log('Buy URI reloaded:', newUri);
+        setLoading(false);
+      });
+    }, [])
+  );
+
   if (loading) return <ActivityIndicator />;
-  return <WebView source={{ uri }} style={{ flex: 1 }} />;
+  return <WebView source={{ uri }} style={{ flex: 1 }} cacheMode="LOAD_NO_CACHE" key="buy" />;
 };
 
 const SellRoute = () => {
+  const [address, setAddress] = useState('');
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    // Omit getWalletAddress for Sell in staging to avoid testnet conflict; rely on disableWalletAddressCheck
-    setLoading(false);
-  }, []);
-  const uri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&cryptoCurrency=USDC&cryptoAmount=1&fiatCurrency=NZD&paymentMethod=bank_transfer&productsAvailed=SELL&product=SELL&disableWalletAddressCheck=true&isTestingMode=true&environment=STAGING&network=ethereum`;
-  console.log('Sell URI:', uri);
+  const [uri, setUri] = useState('');
+
+  useFocusEffect(
+    React.useCallback(() => {
+      getWalletAddress().then((addr) => {
+        setAddress(addr);
+        const newUri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&cryptoCurrency=USDC&cryptoAmount=1&fiatCurrency=NZD&paymentMethod=bank_transfer&productsAvailed=SELL&defaultProduct=SELL&isBuyOrSell=SELL&environment=STAGING&network=sepolia&disableWalletAddressForm=true`;
+        setUri(newUri);
+        console.log('Sell URI reloaded:', newUri);
+        setLoading(false);
+      });
+    }, [])
+  );
+
   if (loading) return <ActivityIndicator />;
-  return <WebView source={{ uri }} style={{ flex: 1 }} />;
+  return <WebView source={{ uri }} style={{ flex: 1 }} cacheMode="LOAD_NO_CACHE" key="sell" />;
 };
 
 const Buy = () => {
@@ -40,13 +55,11 @@ const Buy = () => {
   const [routes] = useState([
     { key: 'buy', title: 'Buy' },
     { key: 'sell', title: 'Sell' },
-    // { key: 'swap', title: 'Swap' }, // Hidden as deferred
   ]);
 
   const renderScene = SceneMap({
     buy: BuyRoute,
     sell: SellRoute,
-    // swap: SwapRoute, // Hidden as deferred
   });
 
   return (
