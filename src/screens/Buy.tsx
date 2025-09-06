@@ -71,7 +71,7 @@ const Buy = () => {
         onIndexChange={setIndex}
         initialLayout={{ width: layout.width }}
         renderTabBar={(props) => (
-          <TabBar {...props} style={styles.tabBar} activeColor="#0A84FF" inactiveColor="#ccc" indicatorStyle={styles.indicator} />
+          <TabBar {...props} style={styles.tabBar} activeColor="#0A84FF" inactiveColor="#241e1eff" indicatorStyle={styles.indicator} />
         )}
       />
     </View>
@@ -81,7 +81,7 @@ const Buy = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F5F5F5' }, // Light gray background
   heading: { fontSize: 34, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', padding: 12, marginTop: 26 }, // Blue, centered, moved down 1 line
-  tabBar: { backgroundColor: '#fff' },
+  tabBar: { backgroundColor: '#e7f9a6ff' },
   indicator: { backgroundColor: '#0A84FF' }, // Blue line for active tab
 });
 

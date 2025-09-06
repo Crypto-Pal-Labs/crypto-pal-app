@@ -122,7 +122,7 @@ const HistoryTab = () => {
           <Text style={displayUnit === 'TOKEN' ? styles.unitTextActive : styles.unitText}>TOKEN</Text>
         </TouchableOpacity>
         <TouchableOpacity style={displayUnit === 'USD' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('USD')}>
-          <Text style={displayUnit === 'USD' ? styles.unitTextActive : styles.unitText}>USD</Text>
+          <Text style={displayUnit === 'USD' ? styles.unitTextActive : styles.unitText}>$USD</Text>
         </TouchableOpacity>
         <TouchableOpacity style={displayUnit === 'NZD' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('NZD')}>
           <Text style={displayUnit === 'NZD' ? styles.unitTextActive : styles.unitText}>NZD</Text>

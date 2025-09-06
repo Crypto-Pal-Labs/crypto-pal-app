@@ -86,7 +86,7 @@ const Wallet = () => {
     <View style={styles.center}>
       <Text style={styles.empty}>No tokens to display yet</Text>
       <TouchableOpacity onPress={onRefresh}>
-        <Ionicons name="refresh-circle" size={40} color="#0A84FF" />
+        <Ionicons name="refresh-circle" size={50} color="#0A84FF" />
       </TouchableOpacity>
     </View>
   );
@@ -130,8 +130,8 @@ const Wallet = () => {
           itemStyle={styles.pickerItem}
           mode="dropdown"  // Fix: Shows selected value always on Android
         >
-          <Picker.Item label="$NZD" value="NZD" />
-          <Picker.Item label="$USD" value="USD" />
+          <Picker.Item label="NZD" value="NZD" />
+          <Picker.Item label="USD" value="USD" />
         </Picker>
       </View>
       {error && <Text style={styles.errorText}>{error} <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity></Text>}
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' },
   heading: { fontSize: 36, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 20 },
   totalLabel: { fontSize: 20, color: '#000', textAlign: 'center', marginBottom: 5 },
-  totalValue: { fontSize: 24, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginBottom: 5 },
+  totalValue: { fontSize: 27, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginBottom: 5 },
   searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 5, marginHorizontal: 10, marginBottom: 5 },
   searchIcon: { marginRight: 5 },
   searchInput: { flex: 1, padding: 5 },
@@ -171,16 +171,16 @@ const styles = StyleSheet.create({
   picker: { height: 30, width: '48%', color: '#0A84FF' },
   pickerItem: { height: 30, fontSize: 12, color: '#0A84FF' },
   assetList: { flex: 1 },
-  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 10, backgroundColor: '#fff', borderRadius: 8, marginBottom: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
-  tokenLogo: { width: 40, height: 40, borderRadius: 20, marginRight: 10 },
+  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 10, backgroundColor: '#f1f7deff', borderRadius: 8, marginBottom: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
+  tokenLogo: { width: 60, height: 80, borderRadius: 0, marginRight: 20 },
   tokenInfo: { flex: 1 },
-  assetName: { fontWeight: 'bold', fontSize: 16, color: '#0A84FF' },
+  assetName: { fontWeight: 'bold', fontSize: 20, color: '#0A84FF' },
   assetBalance: { color: 'gray', fontSize: 12 },
-  assetValue: { fontWeight: 'bold', fontSize: 14, color: '#0A84FF' },
+  assetValue: { fontWeight: 'bold', fontSize: 20, color: '#0A84FF' },
   empty: { textAlign: 'center', color: '#888', marginTop: 50 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 5 },
   retry: { color: '#0A84FF', marginTop: 5 },
-  logoutContainer: { padding: 10, position: 'absolute', bottom: 0, left: 0, right: 0 },
+  logoutContainer: { padding: 10, position: 'absolute', bottom: 20, left: 0, right: 0 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 });
 
