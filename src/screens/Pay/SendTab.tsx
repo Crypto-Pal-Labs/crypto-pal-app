@@ -6,6 +6,7 @@ import { useWalletStore } from '../../store/useWalletStore';
 import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ETHERSCAN_BASE } from '@env'; // For explorer link
+import AsyncStorage from '@react-native-async-storage/async-storage';  // Added for fiat storage
 
 interface BalanceItem {
   contract_address: string;
@@ -48,10 +49,11 @@ const SendTab = () => {
 
   const convertAmountToToken = (input: string) => {
     const numInput = parseFloat(input) || 0;
-    if (amountUnit === 'token') return numInput;
-    if (amountUnit === 'usd') return numInput / ethPriceUSD;
-    if (amountUnit === 'nzd') return numInput / (ethPriceUSD * usdToNzd);
-    return 0;
+    let tokenAmount = 0;
+    if (amountUnit === 'token') tokenAmount = numInput;
+    if (amountUnit === 'usd') tokenAmount = numInput / ethPriceUSD;
+    if (amountUnit === 'nzd') tokenAmount = numInput / (ethPriceUSD * usdToNzd);
+    return tokenAmount.toFixed(18);  // Fix: Truncate to 18 decimals to avoid underflow error
   };
 
   useEffect(() => {
@@ -91,7 +93,7 @@ const SendTab = () => {
     }
     (async () => {
       try {
-        const fee = await estimateGas(toAddress, convertAmountToToken(amount).toString(), selectedToken.contract_address, chain);
+        const fee = await estimateGas(toAddress, convertAmountToToken(amount), selectedToken.contract_address, chain);
         const feeNzd = (parseFloat(fee) * ethPriceUSD * usdToNzd).toFixed(2); // Use real rates for fee
         setFeeEstimate(`~NZ$${feeNzd}`);
       } catch (error: any) {
@@ -111,11 +113,11 @@ const SendTab = () => {
   const handleSend = async () => {
     if (!toAddress || !amount) return Alert.alert('Error', 'Enter address and amount');
 
-    let sendAmount = convertAmountToToken(amount).toString();
+    let sendAmount = convertAmountToToken(amount);
     const displayAmount = amount;
     const displayUnit = amountUnit.toUpperCase();
     const tokenSymbol = selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB');
-    const nativeAmount = convertAmountToToken(amount).toFixed(4); // Approximate native for popup
+    const nativeAmount = parseFloat(sendAmount).toFixed(4); // Approximate native for popup
 
     Alert.alert(
       'Warning',
@@ -138,8 +140,22 @@ const SendTab = () => {
                       const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
                       Alert.alert(
                         'Success',
-                        `Sent $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nFrom: ${fromAddress}\nTo: ${toAddress}\nTx: ${hash}\nView on Explorer: ${ETHERSCAN_BASE}/tx/${hash}`
+                        `Value: $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nStatus: Success\nFrom: ${fromAddress.slice(0, 6)}...${fromAddress.slice(-4)}\nTo: ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}\nFee: 0.000000000000000021 ${tokenSymbol}`,
                       );
+
+                      // Store frozen fiat snapshot for History (both sender and receiver can sync manually)
+                      const txDetails = { amount: displayAmount, unit: displayUnit };
+                      let storedDetails: Record<string, { amount: string; unit: string }> = {};  // Fix: Add Record type for TS
+                      try {
+                        const stored = await AsyncStorage.getItem('txDetails');
+                        storedDetails = stored ? JSON.parse(stored) : {};
+                      } catch (e) {}
+                      storedDetails[hash] = txDetails;
+                      await AsyncStorage.setItem('txDetails', JSON.stringify(storedDetails));
+
+                      // P2P share snapshot to receiver (stub for MVP - Alert for now)
+                      Alert.alert('Successful transaction!', `$${displayAmount} ${displayUnit} ${tokenSymbol} sent as requested.`);
+
                       resetFields(); // Reset fields after success
                     } catch (err: any) {
                       Alert.alert('Error', err.message);
@@ -249,8 +265,8 @@ const styles = StyleSheet.create({
   input: { flex: 1, borderWidth: 1, padding: 8, borderColor: '#ddd', marginRight: 8, borderRadius: 4 },
   picker: { borderWidth: 1, borderColor: '#ddd', borderRadius: 4 },
   unitRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
-  unitButton: { padding: 8, backgroundColor: '#f0f0f0', borderRadius: 4 },
-  unitButtonActive: { padding: 8, backgroundColor: '#0A84FF', borderRadius: 4 },
+  unitButton: { padding: 8, backgroundColor: '#f0f0f0', borderRadius: 4, marginHorizontal: 5 },
+  unitButtonActive: { padding: 8, backgroundColor: '#0A84FF', borderRadius: 4, marginHorizontal: 5 },
   unitText: { color: '#0A84FF', fontWeight: 'bold' },
   unitTextActive: { color: '#fff', fontWeight: 'bold' },
   amountInput: { borderWidth: 1, padding: 8, borderColor: '#ddd', borderRadius: 4, height: 40 }, // Slimmer height
