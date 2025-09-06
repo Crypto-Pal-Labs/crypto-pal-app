@@ -64,13 +64,13 @@ const HistoryTab = () => {
     const ethValueNum = Number(ethValueStr);
     const stored = txDetailsMap[tx.tx_hash];
     if (stored) {
-      return `Value: $${stored.amount} ${stored.unit} (${ethValueNum.toFixed(4)} ETH)`;
+      return `$${stored.amount} ${stored.unit} (${ethValueNum.toFixed(4)} ETH)`;
     }
-    if (displayUnit === 'TOKEN') return `Value: ${ethValueNum.toFixed(4)} ETH`;
+    if (displayUnit === 'TOKEN') return `${ethValueNum.toFixed(4)} ETH`;
     const usdValue = tx.value_quote || (ethValueNum * ethPriceUSD); // Use value_quote if available
-    if (displayUnit === 'USD') return `Value: $${usdValue.toFixed(2)} USD (${ethValueNum.toFixed(4)} ETH)`;
+    if (displayUnit === 'USD') return `$${usdValue.toFixed(2)} USD (${ethValueNum.toFixed(4)} ETH)`;
     const nzdValue = usdValue * usdToNzd;
-    return `Value: $${nzdValue.toFixed(2)} NZD (${ethValueNum.toFixed(4)} ETH)`;
+    return `$${nzdValue.toFixed(2)} NZD (${ethValueNum.toFixed(4)} ETH)`;
   };
 
   const getIconName = (tx: any) => {
@@ -92,7 +92,7 @@ const HistoryTab = () => {
       <Ionicons name={getIconName(item)} size={24} color={getIconColor(item)} style={styles.icon} />
       <View style={styles.txInfo}>
         <Text style={styles.txDate}>{new Date(item.block_signed_at).toLocaleString()}</Text>
-        <Text style={styles.txValue}>{getValueDisplay(item)}</Text>
+        <Text style={styles.txValue}>Value: {getValueDisplay(item)}</Text>
         <Text style={[styles.txStatus, { color: item.successful ? 'green' : 'red' }]}>Status: {item.successful ? 'Success' : 'Failed'}</Text>
         <Text style={styles.txFromTo}>
           From: {item.from_address ? item.from_address.slice(0, 6) + '...' + item.from_address.slice(-4) : 'N/A'}
@@ -122,7 +122,7 @@ const HistoryTab = () => {
           <Text style={displayUnit === 'TOKEN' ? styles.unitTextActive : styles.unitText}>TOKEN</Text>
         </TouchableOpacity>
         <TouchableOpacity style={displayUnit === 'USD' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('USD')}>
-          <Text style={displayUnit === 'USD' ? styles.unitTextActive : styles.unitText}>$USD</Text>
+          <Text style={displayUnit === 'USD' ? styles.unitTextActive : styles.unitText}>USD</Text>
         </TouchableOpacity>
         <TouchableOpacity style={displayUnit === 'NZD' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('NZD')}>
           <Text style={displayUnit === 'NZD' ? styles.unitTextActive : styles.unitText}>NZD</Text>

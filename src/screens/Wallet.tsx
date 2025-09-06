@@ -171,7 +171,7 @@ const styles = StyleSheet.create({
   picker: { height: 30, width: '48%', color: '#0A84FF' },
   pickerItem: { height: 30, fontSize: 12, color: '#0A84FF' },
   assetList: { flex: 1 },
-  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 10, backgroundColor: '#f1f7deff', borderRadius: 8, marginBottom: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4 },
+  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 10, backgroundColor: '#f1f7deff', borderRadius: 8, shadowColor: '#0004ffff', shadowOpacity: 0.1, shadowRadius: 12, elevation: 4, marginBottom:10 },
   tokenLogo: { width: 60, height: 80, borderRadius: 0, marginRight: 20 },
   tokenInfo: { flex: 1 },
   assetName: { fontWeight: 'bold', fontSize: 20, color: '#0A84FF' },
