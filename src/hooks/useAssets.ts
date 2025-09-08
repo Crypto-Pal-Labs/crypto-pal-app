@@ -79,8 +79,9 @@ export const useAssets = () => {
         }
         return await resp.json();
       });
+      console.log('Covalent fetch success for chainId', chainId, 'items:', covalentData.data.items.length);  // Log to see data
     } catch (err: unknown) {
-      console.log('Covalent failed after retries:', (err as Error).message); // Log to console
+      console.log('Covalent failed after retries for chainId', chainId, (err as Error).message); // Log to console
     }
 
     let tempBalances: CovalentItem[] = [];
@@ -129,8 +130,30 @@ export const useAssets = () => {
           contract_address: '0x0',
           contract_decimals: chain.nativeCurrency.decimals,  // Added for formatUnits
         });
+        console.log('Fallback success for native balance on chain', currentChain);  // Added logging
       } catch (fallbackErr: unknown) {
-        console.log('Provider fallback failed:', (fallbackErr as Error).message); // Log to console
+        console.log('Provider fallback failed for chain', currentChain, (fallbackErr as Error).message); // Log to console
+        setError('Failed to load balances. Pull to refresh.');
+      }
+    }
+
+    // Force fallback if tempBalances empty (e.g., for Amoy lag)
+    if (tempBalances.length === 0) {
+      try {
+        const provider = getProvider(currentChain);
+        const nativeBalance = await provider.getBalance(checksumAddress);
+        tempBalances.push({
+          contract_ticker_symbol: chain.nativeCurrency.symbol,
+          balance: nativeBalance.toString(),
+          quote: 0, // Filled in prices below
+          logo_url: 'https://placeholder.com/40x40', // Native logo URL
+          type: 'cryptocurrency',
+          contract_address: '0x0',
+          contract_decimals: chain.nativeCurrency.decimals,  // Added for formatUnits
+        });
+        console.log('Forced fallback success for native balance on chain', currentChain);  // Added logging
+      } catch (forceFallbackErr: unknown) {
+        console.log('Forced fallback failed for chain', currentChain, (forceFallbackErr as Error).message); // Log to console
         setError('Failed to load balances. Pull to refresh.');
       }
     }
@@ -140,6 +163,7 @@ export const useAssets = () => {
       'ETH': 'ethereum',
       'USDC': 'usd-coin',
       'BNB': 'binancecoin',  // New: For BSC
+      'MATIC': 'matic-network',  // New: For Polygon
       // Add more as needed
     };
     const uniqueIds = [...new Set(tempBalances.map(item => tickerToIdMap[item.contract_ticker_symbol?.toUpperCase() ?? ''] || ''))].filter(id => id);
@@ -171,6 +195,9 @@ export const useAssets = () => {
       } else if (ticker === 'BNB' && prices['binancecoin']) {
         quoteNzd = parsedBalance * (prices['binancecoin'].nzd || 0);
         quoteUsd = parsedBalance * (prices['binancecoin'].usd || 0);
+      } else if (ticker === 'MATIC' && prices['matic-network']) {
+        quoteNzd = parsedBalance * (prices['matic-network'].nzd || 0);
+        quoteUsd = parsedBalance * (prices['matic-network'].usd || 0);
       }
       return {
         contract_ticker_symbol: item.contract_ticker_symbol ?? 'Unknown',
@@ -183,11 +210,4 @@ export const useAssets = () => {
     setBalances(pricedBalances);
     setNfts(allNfts);
     setLoading(false);
-  };
-
-  useEffect(() => {
-    fetchAssets();
-  }, [address, currentChain]);  // New: Re-fetch on chain change
-
-  return { balances, nfts, loading, error, refetch: fetchAssets };
-};
+  }};
