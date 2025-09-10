@@ -47,7 +47,7 @@ const AppTabs = () => {
         },
         tabBarActiveTintColor: '#0A84FF',
         tabBarInactiveTintColor: 'gray',
-        tabBarStyle: { backgroundColor: '#f9faf1ff', borderTopWidth: 0, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 5 },
+        tabBarStyle: { backgroundColor: '#eef6faff', borderTopWidth: 0, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 4, elevation: 5 },
         headerShown: false,
       })}>
       <Tab.Screen name="Wallet" component={Wallet} />

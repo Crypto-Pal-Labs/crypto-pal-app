@@ -1,187 +1,52 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button, Image, RefreshControl, TouchableOpacity } from 'react-native';
-import { ethers } from 'ethers';
-import { useAssets } from '../hooks/useAssets';
-import { resetRoot } from '../navigation/RootNavigation';
-import { getWalletAddress } from '../utils/wallet';
-import { Ionicons } from '@expo/vector-icons';
-import { useWalletStore } from '../store/useWalletStore';
+import { View, Text, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { useChain } from '../hooks/useChain';  // For chain state
+import * as SecureStore from 'expo-secure-store';
+import useAssets from '../hooks/useAssets';
+import { ChainKey } from '../hooks/chains';
 
 const Wallet = () => {
-  const setAddress = useWalletStore((state) => state.setAddress);
-  const { currentChain, setCurrentChain, chains } = useChain();  // Get chain state
-  const { balances, nfts, loading, error, refetch } = useAssets();  // No param, multi-chain internal
-  const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState('crypto');
-  const [refreshing, setRefreshing] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [localAddress, setLocalAddress] = useState('');
-  const [currency, setCurrency] = useState('NZD'); // Default to NZD per NZ focus
+  const [walletAddress, setWalletAddress] = useState<string | null>(null);
+  const [selectedChain, setSelectedChain] = useState<ChainKey>('eth');
+  const { balances, loading, error } = useAssets(selectedChain, walletAddress || '');
 
   useEffect(() => {
-    loadAddress();
-  }, [setAddress]);
+    const fetchAddress = async () => {
+      const address = await SecureStore.getItemAsync('walletAddress'); // Adjust key if different
+      setWalletAddress(address);
+    };
+    fetchAddress();
+  }, []);
 
-  const loadAddress = async () => {
-    setLoadError(null);
-    try {
-      const currentAddress = await getWalletAddress();
-      if (currentAddress) {
-        setAddress(currentAddress);
-        setLocalAddress(currentAddress);
-      } else {
-        throw new Error('No address returned from secure store.');
-      }
-    } catch (err) {
-      setLoadError((err as Error).message || 'Failed to load wallet address.');
-    }
-  };
-
-  const handleLogout = () => {
-    resetRoot([{ name: 'Welcome' }]);
-  };
-
-  const totalValue = balances.reduce((sum, item) => {
-    const quote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
-    return sum + quote;
-  }, 0).toFixed(2);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await refetch();
-    setRefreshing(false);
-  };
-
-  const filteredBalances = balances.filter((item) => Number(ethers.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
-  const filteredNfts = nfts.filter((item) =>
-    (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.token_id.includes(searchQuery) // Enhanced for token_id search
-  );
-
-  const renderBalanceItem = ({ item }: { item: any }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
-      <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_ticker_symbol} {item.contract_name ? `(${item.contract_name})` : ''}</Text>
-        <Text style={styles.assetBalance}>{Number(ethers.formatEther(item.balance)).toFixed(8)} {item.contract_ticker_symbol}</Text>
-      </View>
-      <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
-    </View>
-  );
-
-  const renderNFTItem = ({ item }: { item: any }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
-      <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_name || 'NFT'}</Text>
-        <Text style={styles.assetBalance}>Token ID: {item.token_id}</Text>
-      </View>
-      <Text style={styles.assetValue}>Value: N/A</Text>
-    </View>
-  );
-
-  const EmptyState = () => (
-    <View style={styles.center}>
-      <Text style={styles.empty}>No tokens to display yet</Text>
-      <TouchableOpacity onPress={onRefresh}>
-        <Ionicons name="refresh-circle" size={50} color="#0A84FF" />
-      </TouchableOpacity>
-    </View>
-  );
-
-  if (loadError) return <View style={styles.center}><Text style={styles.errorText}>{loadError}</Text><TouchableOpacity onPress={loadAddress}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
+  if (!walletAddress) return <Text>Loading wallet address...</Text>;
+  if (loading) return <ActivityIndicator size="large" color="#0A84FF" />;
+  if (error) return <Text>Error: {error}</Text>;
+  if (balances.length === 0) return <Text>No balances found for {chains[selectedChain].name}.</Text>;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.heading}>Home</Text>
-      <Text style={styles.totalLabel}>Total Balance:</Text>
-      <Text style={styles.totalValue}>${totalValue} {currency}</Text>
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
-        <TextInput style={styles.searchInput} placeholder="Search your assets..." value={searchQuery} onChangeText={setSearchQuery} />
-      </View>
-      <View style={styles.switchButtons}>
-        <TouchableOpacity style={viewMode === 'crypto' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('crypto')}>
-          <Text style={viewMode === 'crypto' ? styles.activeToggleText : styles.inactiveToggleText}>CRYPTOs</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={viewMode === 'nfts' ? styles.activeToggle : styles.inactiveToggle} onPress={() => setViewMode('nfts')}>
-          <Text style={viewMode === 'nfts' ? styles.activeToggleText : styles.inactiveToggleText}>NFTs</Text>
-        </TouchableOpacity>
-      </View>
-      {/* Picker Row - Side-by-side, compact, dropdown mode for visible labels */}
-      <View style={styles.pickerRow}>
-        <Picker
-          selectedValue={currentChain}
-          onValueChange={(itemValue) => setCurrentChain(itemValue)}
-          style={styles.picker}
-          itemStyle={styles.pickerItem}
-          mode="dropdown"  // Fix: Shows selected value always on Android
-        >
-          {Object.keys(chains).map((key) => (
-            <Picker.Item key={key} label={chains[key].name} value={key} />
-          ))}
-        </Picker>
-        <Picker
-          selectedValue={currency}
-          onValueChange={(itemValue) => setCurrency(itemValue)}
-          style={styles.picker}
-          itemStyle={styles.pickerItem}
-          mode="dropdown"  // Fix: Shows selected value always on Android
-        >
-          <Picker.Item label="NZD" value="NZD" />
-          <Picker.Item label="USD" value="USD" />
-        </Picker>
-      </View>
-      {error && <Text style={styles.errorText}>{error} <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity></Text>}
-      {loading ? (
-        <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />
-      ) : (
-        <FlatList
-          style={styles.assetList}  // flex: 1 for full expansion
-          data={viewMode === 'crypto' ? filteredBalances : filteredNfts}
-          renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
-          keyExtractor={(item) => item.contract_address + (item.token_id || '')}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          ListEmptyComponent={EmptyState}
-        />
-      )}
-      <View style={styles.logoutContainer}>
-        <Button title="LOGOUT" color="red" onPress={handleLogout} />
-      </View>
+      <Picker selectedValue={selectedChain} onValueChange={setSelectedChain} style={styles.picker}>
+        <Picker.Item label="Sepolia (ETH)" value="eth" />
+        <Picker.Item label="BSC Testnet" value="bsc" />
+        <Picker.Item label="Polygon Amoy" value="polygon" />
+      </Picker>
+      <FlatList
+        data={balances}
+        keyExtractor={(item) => item.contract_address || 'native'}
+        renderItem={({ item }) => (
+          <View style={styles.item}>
+            <Text>{item.contract_name}: {item.balance}</Text>
+          </View>
+        )}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  heading: { fontSize: 36, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 20 },
-  totalLabel: { fontSize: 20, color: '#000', textAlign: 'center', marginBottom: 5 },
-  totalValue: { fontSize: 27, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginBottom: 5 },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#ccc', borderRadius: 20, paddingHorizontal: 5, marginHorizontal: 10, marginBottom: 5 },
-  searchIcon: { marginRight: 5 },
-  searchInput: { flex: 1, padding: 5 },
-  switchButtons: { flexDirection: 'row', justifyContent: 'center', marginBottom: 5 },
-  activeToggle: { borderBottomWidth: 2, borderBottomColor: '#0A84FF', padding: 5, marginHorizontal: 10 },
-  inactiveToggle: { padding: 5, marginHorizontal: 10 },
-  activeToggleText: { color: '#0A84FF', fontWeight: 'bold' },
-  inactiveToggleText: { color: '#888' },
-  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', marginHorizontal: 10, marginBottom: 5 },
-  picker: { height: 30, width: '48%', color: '#0A84FF' },
-  pickerItem: { height: 30, fontSize: 12, color: '#0A84FF' },
-  assetList: { flex: 1 },
-  balanceItem: { flexDirection: 'row', alignItems: 'center', padding: 10, backgroundColor: '#f1f7deff', borderRadius: 8, shadowColor: '#0004ffff', shadowOpacity: 0.1, shadowRadius: 12, elevation: 4, marginBottom:10 },
-  tokenLogo: { width: 60, height: 80, borderRadius: 0, marginRight: 20 },
-  tokenInfo: { flex: 1 },
-  assetName: { fontWeight: 'bold', fontSize: 20, color: '#0A84FF' },
-  assetBalance: { color: 'gray', fontSize: 12 },
-  assetValue: { fontWeight: 'bold', fontSize: 20, color: '#0A84FF' },
-  empty: { textAlign: 'center', color: '#888', marginTop: 50 },
-  errorText: { color: 'red', textAlign: 'center', marginBottom: 5 },
-  retry: { color: '#0A84FF', marginTop: 5 },
-  logoutContainer: { padding: 10, position: 'absolute', bottom: 20, left: 0, right: 0 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
+  picker: { marginBottom: 16 },
+  item: { padding: 8, borderBottomWidth: 1, borderBottomColor: '#eee' },
 });
 
 export default Wallet;
