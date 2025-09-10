@@ -1,15 +1,23 @@
 import { useState, useEffect } from 'react';
 import * as ethers from 'ethers';
-import { chains, ChainKey } from './chains';
 
-// Explicit return type for the hook (fixes export squiggle if strict TS)
-interface UseAssetsReturn {
-  balances: any[];
-  loading: boolean;
-  error: string | null;
-}
+// Inline chain configs (simple, no new files)
+export const chains = {
+  eth: {
+    chainId: '11155111', // Sepolia
+    nativeCurrency: 'ETH',
+    rpc: process.env.ETH_RPC_URL,
+  },
+  polygon: {
+    chainId: '80002', // Amoy
+    nativeCurrency: 'POL',
+    rpc: process.env.POLYGON_RPC_URL,
+  },
+};
 
-const useAssets = (chain: ChainKey = 'eth', walletAddress: string): UseAssetsReturn => {
+export type ChainKey = keyof typeof chains;
+
+const useAssets = (chain: ChainKey = 'eth', walletAddress: string) => {
   const [balances, setBalances] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +38,7 @@ const useAssets = (chain: ChainKey = 'eth', walletAddress: string): UseAssetsRet
         const data = await response.json();
         let items = data.data?.items || [];
 
-        console.log(`Covalent response for ${chain}:`, items); // Debug log
+        console.log(`Covalent response for ${chain}:`, items); // Debug
 
         if (items.length === 0) {
           console.log(`Fallback to provider for ${chain}`);
@@ -39,7 +47,7 @@ const useAssets = (chain: ChainKey = 'eth', walletAddress: string): UseAssetsRet
           items = [{
             contract_name: config.nativeCurrency,
             balance: ethers.formatEther(balance),
-            quote_rate: 0, // Rates later
+            quote_rate: 0, // NZD/USD stubs in Wallet.tsx
           }];
         }
 
