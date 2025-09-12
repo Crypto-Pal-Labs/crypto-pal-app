@@ -60,7 +60,7 @@ const HistoryTab = () => {
   }, []);
 
   const getValueDisplay = (tx: any) => {
-    const ethValueStr = tx.value ? ethers.formatEther(tx.value) : '0';
+    const ethValueStr = tx.value ? ethers.utils.formatEther(tx.value) : '0';
     const ethValueNum = Number(ethValueStr);
     const stored = txDetailsMap[tx.tx_hash];
     if (stored) {
@@ -100,7 +100,7 @@ const HistoryTab = () => {
         <Text style={styles.txFromTo}>
           To: {item.to_address ? item.to_address.slice(0, 6) + '...' + item.to_address.slice(-4) : 'N/A'}
         </Text>
-        <Text style={styles.txFee}>Fee: {ethers.formatEther(item.gas_spent || '0')} ETH</Text>
+        <Text style={styles.txFee}>Fee: {ethers.utils.formatEther(item.gas_spent || '0')} ETH</Text>
       </View>
     </TouchableOpacity>
   );

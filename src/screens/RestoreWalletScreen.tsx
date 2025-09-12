@@ -8,13 +8,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ethers } from 'ethers';
 import { saveMnemonic } from '../utils/wallet';
 import { resetRoot } from '../navigation/RootNavigation';
 import { Ionicons } from '@expo/vector-icons';
 
 function normalizeMnemonic(raw: string) {
-  
   return raw.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
@@ -37,9 +37,14 @@ export default function RestoreWalletScreen() {
       setBusy(true);
 
       // Will throw if invalid (checksum/words)
-      const wallet = ethers.Wallet.fromPhrase(phrase);
+      const wallet = ethers.Wallet.fromMnemonic(phrase);
+      console.log('Mnemonic derivation success:', wallet.address);
 
       await saveMnemonic(phrase);
+
+      // Save address and default chain to AsyncStorage for app state (fixes "No address or chain" log)
+      await AsyncStorage.setItem('walletAddress', wallet.address);
+      await AsyncStorage.setItem('currentChain', 'eth');
 
       // Optional: show derived address once
       Alert.alert('Wallet restored', `Address:\n${wallet.address}`);

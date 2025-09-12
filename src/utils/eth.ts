@@ -16,7 +16,7 @@ export function getProvider(chainId: ChainId) {
 export async function getSigner(chainId: ChainId) {
   const phrase = await getSavedMnemonic();
   if (!phrase) throw new Error('No wallet found. Please create or restore.');
-  const wallet = ethers.Wallet.fromPhrase(phrase);
+  const wallet = ethers.Wallet.fromMnemonic(phrase);
   return wallet.connect(getProvider(chainId));
 }
 

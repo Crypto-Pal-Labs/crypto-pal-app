@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { Wallet } from 'ethers';            // ✅ v6 API
+import { ethers } from 'ethers'; // Fix: v5 import - import { ethers } from 'ethers'
 import { getSavedMnemonic } from '../../utils/wallet';
 
 export default function ReceiveTab() {
@@ -16,11 +16,13 @@ export default function ReceiveTab() {
         if (!mnemonic) {
           setError('No wallet found. Create or restore a wallet first.');
           setAddress(null);
+          setLoading(false);
           return;
         }
-        // ✅ ethers v6 uses fromPhrase (not fromMnemonic)
-        const wallet = Wallet.fromPhrase(mnemonic);
+        // Fix: v5 syntax - ethers.Wallet.fromMnemonic (not fromPhrase)
+        const wallet = ethers.Wallet.fromMnemonic(mnemonic);
         setAddress(wallet.address);
+        console.log('ReceiveTab derive address success:', wallet.address); // Debug log
       } catch (e) {
         console.error('ReceiveTab derive address failed:', e);
         setError('Could not load your address.');
@@ -71,5 +73,3 @@ const styles = StyleSheet.create({
   address:   { marginTop: 16, fontSize: 16, color: '#333', textAlign: 'center' },
   muted:     { marginTop: 8, color: '#666' },
 });
-
-

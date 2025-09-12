@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button, Image, RefreshControl, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ethers } from 'ethers';
 import { useAssets } from '../hooks/useAssets';
 import { resetRoot } from '../navigation/RootNavigation';
@@ -12,7 +13,7 @@ import { useChain } from '../hooks/useChain';  // For chain state
 const Wallet = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
   const { currentChain, setCurrentChain, chains } = useChain();  // Get chain state
-  const { balances, nfts, loading, error, refetch } = useAssets();  // No param, multi-chain internal
+  const { balances, nfts, loading, error, refresh } = useAssets();  // Correct 'refresh' from hook type
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('crypto');
   const [refreshing, setRefreshing] = useState(false);
@@ -24,6 +25,14 @@ const Wallet = () => {
     loadAddress();
   }, [setAddress]);
 
+  // Separate useEffect to refresh after address is set (fixes "refresh is not a function" timing)
+  useEffect(() => {
+    if (localAddress && refresh) {
+      console.log('Refreshing assets for address:', localAddress); // Debug
+      refresh();
+    }
+  }, [localAddress, refresh]);
+
   const loadAddress = async () => {
     setLoadError(null);
     try {
@@ -31,10 +40,22 @@ const Wallet = () => {
       if (currentAddress) {
         setAddress(currentAddress);
         setLocalAddress(currentAddress);
+        console.log('Address loaded from getWalletAddress:', currentAddress); // Debug log
       } else {
-        throw new Error('No address returned from secure store.');
+        // Fallback load from AsyncStorage (from restore)
+        const storedAddress = await AsyncStorage.getItem('walletAddress');
+        const storedChain = await AsyncStorage.getItem('currentChain') || 'eth';
+        if (storedAddress) {
+          setAddress(storedAddress);
+          setLocalAddress(storedAddress);
+          setCurrentChain(storedChain);
+          console.log('Fallback address from AsyncStorage:', storedAddress, 'Chain:', storedChain); // Debug log, fixes "No address or chain"
+        } else {
+          throw new Error('No address returned from secure store or storage.');
+        }
       }
     } catch (err) {
+      console.log('Load address error:', err); // Debug log
       setLoadError((err as Error).message || 'Failed to load wallet address.');
     }
   };
@@ -50,11 +71,13 @@ const Wallet = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
+    if (refresh) {
+      await refresh();
+    }
     setRefreshing(false);
   };
 
-  const filteredBalances = balances.filter((item) => Number(ethers.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredBalances = balances.filter((item) => Number(ethers.utils.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredNfts = nfts.filter((item) =>
     (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.token_id.includes(searchQuery) // Enhanced for token_id search
@@ -65,7 +88,7 @@ const Wallet = () => {
       <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
       <View style={styles.tokenInfo}>
         <Text style={styles.assetName}>{item.contract_ticker_symbol} {item.contract_name ? `(${item.contract_name})` : ''}</Text>
-        <Text style={styles.assetBalance}>{Number(ethers.formatEther(item.balance)).toFixed(8)} {item.contract_ticker_symbol}</Text>
+        <Text style={styles.assetBalance}>{Number(ethers.utils.formatEther(item.balance)).toFixed(8)} {item.contract_ticker_symbol}</Text>
       </View>
       <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
     </View>
@@ -92,6 +115,19 @@ const Wallet = () => {
   );
 
   if (loadError) return <View style={styles.center}><Text style={styles.errorText}>{loadError}</Text><TouchableOpacity onPress={loadAddress}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
+
+  // Guard for no address: Show loading/retry instead of spinner hang
+  if (!localAddress) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color="#0A84FF" />
+        <Text style={styles.empty}>Loading wallet address...</Text>
+        <TouchableOpacity onPress={loadAddress}>
+          <Text style={styles.retry}>Retry Load</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -135,6 +171,7 @@ const Wallet = () => {
         </Picker>
       </View>
       {error && <Text style={styles.errorText}>{error} <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity></Text>}
+      {/* Guard spinner: Only show if address ready but still loading */}
       {loading ? (
         <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />
       ) : (
