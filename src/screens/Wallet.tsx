@@ -12,7 +12,7 @@ import { useChain } from '../hooks/useChain';  // For chain state
 const Wallet = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
   const { currentChain, setCurrentChain, chains } = useChain();  // Get chain state
-  const { balances, nfts, loading, error, refetch } = useAssets();  // No param, multi-chain internal
+  const { balances, nfts, loading, error, refresh } = useAssets();  // refresh for pull
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('crypto');
   const [refreshing, setRefreshing] = useState(false);
@@ -50,11 +50,11 @@ const Wallet = () => {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await refetch();
+    await refresh();
     setRefreshing(false);
   };
 
-  const filteredBalances = balances.filter((item) => Number(ethers.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
+  const filteredBalances = balances.filter((item) => Number(ethers.utils.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredNfts = nfts.filter((item) =>
     (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     item.token_id.includes(searchQuery) // Enhanced for token_id search
@@ -65,7 +65,7 @@ const Wallet = () => {
       <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
       <View style={styles.tokenInfo}>
         <Text style={styles.assetName}>{item.contract_ticker_symbol} {item.contract_name ? `(${item.contract_name})` : ''}</Text>
-        <Text style={styles.assetBalance}>{Number(ethers.formatEther(item.balance)).toFixed(8)} {item.contract_ticker_symbol}</Text>
+        <Text style={styles.assetBalance}>{Number(ethers.utils.formatEther(item.balance)).toFixed(8)} {item.contract_ticker_symbol}</Text>
       </View>
       <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
     </View>

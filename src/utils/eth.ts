@@ -10,13 +10,13 @@ const RPC: Record<ChainId, string> = {
 };
 
 export function getProvider(chainId: ChainId) {
-  return new ethers.JsonRpcProvider(RPC[chainId]);
+  return new ethers.providers.JsonRpcProvider(RPC[chainId]);
 }
 
 export async function getSigner(chainId: ChainId) {
   const phrase = await getSavedMnemonic();
   if (!phrase) throw new Error('No wallet found. Please create or restore.');
-  const wallet = ethers.Wallet.fromPhrase(phrase);
+  const wallet = ethers.Wallet.fromMnemonic(phrase);
   return wallet.connect(getProvider(chainId));
 }
 
@@ -24,13 +24,14 @@ export function isEthAddress(addr: string) {
   return /^0x[a-fA-F0-9]{40}$/.test(addr);
 }
 
-export const { parseUnits, formatUnits } = ethers;
+export const parseUnits = ethers.utils.parseUnits;
+export const formatUnits = ethers.utils.formatUnits;
 
 export async function estimateNativeSend(
   chainId: ChainId,
   to: string,
-  valueWei: bigint
-): Promise<{ feeWei: bigint; gas: bigint }> {
+  valueWei: ethers.BigNumber
+): Promise<{ feeWei: ethers.BigNumber; gas: ethers.BigNumber }> {
   const signer = await getSigner(chainId);
   const from = await signer.getAddress();
   const provider = signer.provider!;
@@ -38,13 +39,13 @@ export async function estimateNativeSend(
   const feeData = await provider.getFeeData();
   const price = feeData.maxFeePerGas ?? feeData.gasPrice;
   if (!price) throw new Error('Unable to fetch gas price.');
-  return { feeWei: gas * price, gas };
+  return { feeWei: gas.mul(price), gas };
 }
 
 export async function sendNative(
   chainId: ChainId,
   to: string,
-  valueWei: bigint
+  valueWei: ethers.BigNumber
 ): Promise<string> {
   const signer = await getSigner(chainId);
   const tx = await signer.sendTransaction({ to, value: valueWei });
@@ -59,7 +60,7 @@ export async function sendErc20(
   chainId: ChainId,
   tokenAddr: string,
   to: string,
-  amountWei: bigint
+  amountWei: ethers.BigNumber
 ): Promise<string> {
   const signer = await getSigner(chainId);
   const c = new ethers.Contract(tokenAddr, erc20Abi, signer);
@@ -72,4 +73,3 @@ export function scannerTxUrl(chainId: ChainId, hash: string) {
     ? `https://bscscan.com/tx/${hash}`
     : `https://etherscan.io/tx/${hash}`;
 }
-

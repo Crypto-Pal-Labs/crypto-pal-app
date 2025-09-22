@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack'; // Typed for nav/route
 import { getSavedMnemonic } from '../utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
+import { RootStackParamList } from '../types/navigation'; // Types file (updated)
 
-export default function MnemonicBackupScreen() {
-  const navigation          = useNavigation();
-  const { params }          = useRoute<any>();
-  const isRestore           = params?.isRestore ?? false;
+type Props = NativeStackScreenProps<RootStackParamList, 'MnemonicBackup'>;
+
+export default function MnemonicBackupScreen({ route, navigation }: Props) {
+  const { isRestore = false } = route.params || {}; // Typed params
   const [mnemonic, setMnemonic] = useState<string>('');
 
   useEffect(() => {
@@ -26,7 +28,7 @@ export default function MnemonicBackupScreen() {
         <Text selectable style={styles.phraseText}>{mnemonic}</Text>
       </ScrollView>
 
-      <TouchableOpacity style={styles.button} onPress={() => navigation.replace('WalletRoot')}>
+      <TouchableOpacity style={styles.button} onPress={() => navigation.replace('AppTabs')}>
         <Text style={styles.buttonText}>I’ve backed it up — Go to Wallet</Text>
       </TouchableOpacity>
     </View>

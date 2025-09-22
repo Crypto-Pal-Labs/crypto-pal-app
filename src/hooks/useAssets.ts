@@ -83,7 +83,7 @@ export const useAssets = () => {
 
     const chain = chains[currentChain] || {};  // Safe access
     const chainId = chain.covalentChainId;
-    const checksumAddress = ethers.getAddress(address); // Checksum for API
+    const checksumAddress = ethers.utils.getAddress(address); // Fixed: utils.getAddress
 
     let covalentData: any = null;  // Fix: Add 'any' type to covalentData
     try {
@@ -187,7 +187,7 @@ export const useAssets = () => {
       const ticker = item.contract_ticker_symbol?.toUpperCase() ?? '';
       const id = tickerToIdMap[ticker] || '';
       const decimals = item.contract_decimals || chain.nativeCurrency?.decimals || 18;
-      const parsedBalance = Number(ethers.formatUnits(item.balance || '0', decimals)) || 0;
+      const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0; // Fixed: utils.formatUnits
       let quoteNzd = parsedBalance * (prices[id]?.nzd || 0);
       let quoteUsd = parsedBalance * (prices[id]?.usd || 0);
       return {

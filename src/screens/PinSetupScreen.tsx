@@ -1,66 +1,85 @@
 import React, { useState } from 'react';
-import {
-  SafeAreaView,
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack'; // Updated imports
+import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuthStore } from '../store/useAuthStore';
+import { RootStackParamList } from '../types/navigation'; // New types
 
-export default function PinSetupScreen() {
-  const navigation = useNavigation();
+type Props = NativeStackScreenProps<RootStackParamList, 'Pin'>; // Updated for route/nav
+
+export default function PinSetupScreen({ route, navigation }: Props) {
+  const { isSetup = true } = route.params || {}; // Typed via Props
+  const { hasMnemonic, setAuthenticated, setHasPin } = useAuthStore();
   const [pin, setPin] = useState('');
   const [confirm, setConfirm] = useState('');
+  const pinsMatch = isSetup ? (pin.length === 6 && pin === confirm) : pin.length === 6;
 
-  const pinsMatch = pin.length === 6 && pin === confirm;
-
-  const handleContinue = () => {
-    navigation.replace('CreateWallet');
+  const handleSubmit = async () => {
+    if (isSetup) {
+      try {
+        await SecureStore.setItemAsync('user_pin', pin);
+        setHasPin(true);
+        if (hasMnemonic) {
+          navigation.reset({ index: 0, routes: [{ name: 'RestoreWallet' }] });
+        } else {
+          navigation.reset({ index: 0, routes: [{ name: 'CreateWallet' }] });
+        }
+      } catch (error) {
+        Alert.alert('Error', 'Failed to save PIN.');
+      }
+    } else {
+      try {
+        const storedPin = await SecureStore.getItemAsync('user_pin');
+        if (pin === storedPin) {
+          setAuthenticated(true);
+          navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
+        } else {
+          Alert.alert('Invalid PIN', 'Try again.');
+          setPin('');
+        }
+      } catch (error) {
+        Alert.alert('Error', 'Failed to verify PIN.');
+      }
+    }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
         <Ionicons name="lock-closed-outline" size={64} color="#0A84FF" style={styles.icon} />
-        <Text style={styles.title}>Create a 6-digit PIN</Text>
-
+        <Text style={styles.title}>{isSetup ? 'Create a 6-digit PIN' : 'Enter your PIN'}</Text>
         <Text style={styles.subtitle}>
-          Your PIN protects your wallet on this device. Keep it secret and never share it for maximum security.
+          {isSetup ? 'Your PIN protects your wallet on this device. Keep it secret and never share it for maximum security.' : 'Enter your PIN to unlock.'}
         </Text>
-
         <TextInput
           secureTextEntry
           keyboardType="number-pad"
           maxLength={6}
-          placeholder="Enter PIN"
+          placeholder={isSetup ? 'Enter PIN' : 'Enter your PIN'}
           value={pin}
           onChangeText={setPin}
           style={styles.input}
         />
-
-        <TextInput
-          secureTextEntry
-          keyboardType="number-pad"
-          maxLength={6}
-          placeholder="Confirm PIN"
-          value={confirm}
-          onChangeText={setConfirm}
-          style={styles.input}
-        />
-
+        {isSetup && (
+          <TextInput
+            secureTextEntry
+            keyboardType="number-pad"
+            maxLength={6}
+            placeholder="Confirm PIN"
+            value={confirm}
+            onChangeText={setConfirm}
+            style={styles.input}
+          />
+        )}
         <TouchableOpacity
-          style={[
-            styles.button,
-            { opacity: pinsMatch ? 1 : 0.4 },
-          ]}
+          style={[styles.button, { opacity: pinsMatch ? 1 : 0.4 }]}
           activeOpacity={0.8}
           disabled={!pinsMatch}
-          onPress={handleContinue}
+          onPress={handleSubmit}
         >
-          <Text style={styles.buttonText}>Continue</Text>
+          <Text style={styles.buttonText}>{isSetup ? 'Continue' : 'Unlock'}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -69,44 +88,11 @@ export default function PinSetupScreen() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: '#F5F5F5' },
-  container: {
-    flex: 1,
-    padding: 24,
-    justifyContent: 'center',
-  },
+  container: { flex: 1, padding: 24, justifyContent: 'center' },
   icon: { marginBottom: 16, alignSelf: 'center' },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#0A84FF',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#333',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    fontSize: 18,
-    marginBottom: 16,
-  },
-  button: {
-    backgroundColor: '#0A84FF',
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  buttonText: {
-    textAlign: 'center',
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
+  title: { fontSize: 28, fontWeight: '700', color: '#0A84FF', marginBottom: 16, textAlign: 'center' },
+  subtitle: { fontSize: 16, color: '#333', textAlign: 'center', marginBottom: 24 },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, fontSize: 18, marginBottom: 16 },
+  button: { backgroundColor: '#0A84FF', paddingVertical: 16, borderRadius: 12, marginTop: 8 },
+  buttonText: { textAlign: 'center', color: '#fff', fontSize: 18, fontWeight: '600' },
 });

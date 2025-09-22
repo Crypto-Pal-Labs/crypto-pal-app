@@ -19,7 +19,7 @@ export default function ReceiveTab() {
           return;
         }
         // ✅ ethers v6 uses fromPhrase (not fromMnemonic)
-        const wallet = Wallet.fromPhrase(mnemonic);
+        const wallet = Wallet.fromMnemonic(mnemonic);
         setAddress(wallet.address);
       } catch (e) {
         console.error('ReceiveTab derive address failed:', e);

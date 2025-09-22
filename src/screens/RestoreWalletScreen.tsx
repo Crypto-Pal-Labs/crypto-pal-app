@@ -1,108 +1,60 @@
-import React, { useCallback, useState } from 'react';
-import {
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ethers } from 'ethers';
-import { saveMnemonic } from '../utils/wallet';
-import { resetRoot } from '../navigation/RootNavigation';
 import { Ionicons } from '@expo/vector-icons';
+import { saveMnemonic } from '../utils/wallet';
+import { useWalletStore } from '../store/useWalletStore';
+import { useAuthStore } from '../store/useAuthStore';
+import { RootStackParamList } from '../types/navigation';
 
-function normalizeMnemonic(raw: string) {
-  
-  return raw.toLowerCase().replace(/\s+/g, ' ').trim();
-}
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function RestoreWalletScreen() {
-  const [input, setInput] = useState('');
-  const [busy, setBusy] = useState(false);
+  const navigation = useNavigation<NavigationProp>();
+  const setAddress = useWalletStore((state) => state.setAddress);
+  const setHasMnemonic = useAuthStore((state) => state.setHasMnemonic);
+  const [phrase, setPhrase] = useState('');
 
-  const onRestore = useCallback(async () => {
-    if (busy) return; 
-
-    const phrase = normalizeMnemonic(input);
-    const words = phrase ? phrase.split(' ') : [];
-
-    if (words.length !== 12) {
-      Alert.alert('Invalid phrase', 'Please enter exactly 12 words.');
-      return;
-    }
-
+  const handleRestore = async () => {
     try {
-      setBusy(true);
-
-      // Will throw if invalid (checksum/words)
-      const wallet = ethers.Wallet.fromPhrase(phrase);
-
+      const wallet = ethers.Wallet.fromMnemonic(phrase);
       await saveMnemonic(phrase);
-
-      // Optional: show derived address once
-      Alert.alert('Wallet restored', `Address:\n${wallet.address}`);
-
-      // Jump into the app
-      resetRoot([{ name: 'WalletRoot' }]);
+      setAddress(wallet.address);
+      setHasMnemonic(true);
+      navigation.replace('AppTabs'); // Go to Wallet Tab
     } catch (e: any) {
-      console.log('[RestoreWalletScreen] restore failed:', e);
-      const msg =
-        typeof e?.message === 'string'
-          ? e.message
-          : 'Please check your phrase and try again.';
-      Alert.alert('Restore failed', msg);
-    } finally {
-      setBusy(false);
+      Alert.alert('Error', e?.message ?? 'Invalid phrase—try again.');
     }
-  }, [busy, input]);
+  };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, padding: 20, backgroundColor: '#F5F5F5', marginTop: 40 }} // Light gray background, moved down 2 lines
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <Ionicons name="key-outline" size={64} color="#0A84FF" style={{ marginBottom: 16, alignSelf: 'center' }} />
-      <Text style={{ fontSize: 28, fontWeight: '800', marginBottom: 16, color: '#0A84FF', textAlign: 'center' }}>Restore From Backup</Text>
-
-      <Text style={{ color: '#444', marginBottom: 12, textAlign: 'center' }}>Enter your 12 word recovery phrase below. Words can be separated by spaces or new lines. This will securely restore your wallet and your assets, make sure you're in a private location.</Text>
-
+    <View style={styles.container}>
+      <Ionicons name="refresh-circle-outline" size={64} color="#0A84FF" style={styles.icon} />
+      <Text style={styles.title}>Restore Wallet</Text>
+      <Text style={styles.subtitle}>Enter your 12-word recovery phrase to restore your wallet. Words are case-sensitive and space-separated.</Text>
       <TextInput
-        value={input}
-        onChangeText={setInput}
-        autoCapitalize="none"
-        autoCorrect={false}
+        style={styles.input}
         multiline
-        textAlignVertical="top"
-        placeholder="Enter your 12 word recovery phrase here separated by spaces no commas"
-        editable={!busy}
-        style={{
-          minHeight: 140,
-          borderWidth: 1,
-          borderColor: '#ddd',
-          borderRadius: 12,
-          padding: 12,
-          fontSize: 16,
-        }}
+        numberOfLines={3}
+        placeholder="Enter recovery phrase"
+        value={phrase}
+        onChangeText={setPhrase}
       />
-
-      <TouchableOpacity
-        disabled={busy}
-        onPress={onRestore}
-        style={{
-          marginTop: 20,
-          backgroundColor: busy ? '#9ec5ff' : '#1d6ef2',
-          paddingVertical: 14,
-          borderRadius: 12,
-          alignItems: 'center',
-        }}
-        activeOpacity={0.8}
-      >
-        <Text style={{ color: 'white', fontWeight: '700', fontSize: 16 }}>
-          {busy ? 'Restoring…' : 'Restore Wallet'}
-        </Text>
+      <TouchableOpacity style={styles.button} disabled={phrase.split(' ').length !== 12} onPress={handleRestore}>
+        <Text style={styles.buttonText}>Restore</Text>
       </TouchableOpacity>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, padding: 24, backgroundColor: '#F5F5F5', justifyContent: 'center' },
+  icon: { marginBottom: 16, alignSelf: 'center' },
+  title: { fontSize: 28, fontWeight: '700', color: '#0A84FF', textAlign: 'center', marginBottom: 16 },
+  subtitle: { fontSize: 16, color: '#333', textAlign: 'center', marginBottom: 24 },
+  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 12, padding: 16, fontSize: 18, marginBottom: 24 },
+  button: { backgroundColor: '#0A84FF', paddingVertical: 16, borderRadius: 12 },
+  buttonText: { textAlign: 'center', color: '#fff', fontSize: 18, fontWeight: '600' },
+});

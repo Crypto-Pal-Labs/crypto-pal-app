@@ -28,7 +28,9 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.crwmlw.cryptopalapp",
-      "permissions": ["CAMERA"]
+      "permissions": [
+        "CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -55,7 +57,8 @@
         }
       ],
       "expo-localization",
-      "expo-camera"
+      "expo-camera",
+      "expo-font"
     ]
   }
 }

@@ -53,7 +53,7 @@ export async function getWalletAddress(): Promise<string> {
     console.warn('No mnemonic found in SecureStore');
     return ''; // Or throw error if preferred
   }
-  const wallet = ethers.Wallet.fromPhrase(mnemonic);
+  const wallet = ethers.Wallet.fromMnemonic(mnemonic);
   return wallet.address; // Derives main ETH/BSC address
 }
 
@@ -67,7 +67,7 @@ export async function getWalletSigner(chain = 'ETH') {
   if (!mnemonic) {
     throw new Error('No wallet found. Please create or restore a wallet.');
   }
-  const wallet = ethers.Wallet.fromPhrase(mnemonic);
+  const wallet = ethers.Wallet.fromMnemonic(mnemonic);
   const rpcUrl = chain === 'BSC' ? BSC_RPC_URL : ETH_RPC_URL;
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   return wallet.connect(provider);
