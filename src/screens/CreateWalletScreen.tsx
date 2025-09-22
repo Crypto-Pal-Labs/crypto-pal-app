@@ -1,14 +1,12 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack'; // Typed nav
-import { StackActions } from '@react-navigation/native'; // For replace
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ethers } from 'ethers';
-
-import { saveMnemonic } from '../utils/wallet';
-import { useWalletStore } from '../store/useWalletStore';
 import { Ionicons } from '@expo/vector-icons';
-import { RootStackParamList } from '../types/navigation'; // Types file
+import { saveMnemonic, getWalletAddress } from '../utils/wallet';
+import { useWalletStore } from '../store/useWalletStore';
+import { RootStackParamList } from '../types/navigation';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -19,22 +17,17 @@ export default function CreateWalletScreen() {
   const handleCreate = async () => {
     try {
       const wallet = ethers.Wallet.createRandom();
-      const phrase = wallet.mnemonic?.phrase; // Null guard
-      if (!phrase) {
-        throw new Error('Failed to generate mnemonic.');
-      }
-
+      const phrase = wallet.mnemonic.phrase;
       await saveMnemonic(phrase);
       setAddress(wallet.address);
-
-      navigation.dispatch(StackActions.replace('MnemonicBackup')); // Use dispatch for replace
+      navigation.replace('MnemonicBackup');
     } catch (e: any) {
       Alert.alert('Error', e?.message ?? 'Failed to create wallet.');
     }
   };
 
   const handleRestore = () => {
-    navigation.navigate('RestoreWallet'); // Typed, no params needed
+    navigation.navigate('RestoreWallet');
   };
 
   return (
