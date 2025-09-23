@@ -11,12 +11,12 @@ import { RootStackParamList } from '../types/navigation';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-type InitialRoute = {
+type InitialRouteProp = {
   name: keyof RootStackParamList;
   params?: { isSetup: boolean };
 };
 
-export default function AppNavigator({ initialRoute = { name: 'Welcome' } as InitialRoute }) {
+export default function AppNavigator({ initialRoute = { name: 'Welcome' } as InitialRouteProp }) {
   return (
     <NavigationContainer>
       <Stack.Navigator initialRouteName={initialRoute.name} screenOptions={{ headerShown: false }}>
@@ -24,7 +24,7 @@ export default function AppNavigator({ initialRoute = { name: 'Welcome' } as Ini
         <Stack.Screen
           name="Pin"
           component={PinSetupScreen}
-          initialParams={initialRoute.params || { isSetup: true }} // Fixed: Typed params
+          initialParams={initialRoute.params || { isSetup: true }}
         />
         <Stack.Screen name="CreateWallet" component={CreateWalletScreen} />
         <Stack.Screen name="RestoreWallet" component={RestoreWalletScreen} />

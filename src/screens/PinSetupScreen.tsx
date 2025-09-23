@@ -17,6 +17,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
   const pinsMatch = isSetup ? (pin.length === 6 && pin === confirm) : pin.length === 6;
 
   const handleSubmit = async () => {
+    console.log('PinSetup handleSubmit: isSetup=', isSetup, 'hasMnemonic=', hasMnemonic); // Log for debug
     if (isSetup) {
       try {
         await SecureStore.setItemAsync('user_pin', pin);

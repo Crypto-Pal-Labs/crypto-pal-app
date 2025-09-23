@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button, Image, RefreshControl, TouchableOpacity } from 'react-native';
+import { View, Text, FlatList, ActivityIndicator, Alert, TextInput, StyleSheet, Button, Image, RefreshControl, TouchableOpacity } from 'react-native';
 import { ethers } from 'ethers';
 import { useAssets } from '../hooks/useAssets';
 import { resetRoot } from '../navigation/RootNavigation';
@@ -40,10 +40,15 @@ const Wallet = () => {
   };
 
   const handleLogout = async () => {
-    await clearWallet(); // Clear storage for reset to Option 1
+  try {
+    await clearWallet();
     console.log('Logout: Cleared storage, nav to Welcome');
     resetRoot([{ name: 'Welcome' }]);
-  };
+  } catch (error) {
+    console.error('Logout error:', error);
+    Alert.alert('Error', 'Failed to logout.');
+  }
+};
 
   const totalValue = balances.reduce((sum, item) => {
     const quote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
