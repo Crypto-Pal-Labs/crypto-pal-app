@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/useAuthStore';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../types/navigation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Pin'>;
@@ -21,8 +21,9 @@ export default function PinSetupScreen({ route, navigation }: Props) {
       try {
         await SecureStore.setItemAsync('user_pin', pin);
         setHasPin(true);
-        console.log('PIN set for setup—nav to', hasMnemonic ? 'RestoreWallet' : 'CreateWallet');
-        navigation.reset({ index: 0, routes: [{ name: hasMnemonic ? 'RestoreWallet' : 'CreateWallet' }] });
+        const nextScreen = hasMnemonic ? 'RestoreWallet' : 'CreateWallet';
+        console.log('PIN setup—nav to', nextScreen);
+        navigation.reset({ index: 0, routes: [{ name: nextScreen }] });
       } catch (error) {
         Alert.alert('Error', 'Failed to save PIN.');
       }
@@ -31,7 +32,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
         const storedPin = await SecureStore.getItemAsync('user_pin');
         if (pin === storedPin) {
           setAuthenticated(true);
-          console.log('PIN verified for unlock—nav to AppTabs');
+          console.log('PIN unlock—nav to AppTabs');
           navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
         } else {
           Alert.alert('Invalid PIN', 'Try again.');

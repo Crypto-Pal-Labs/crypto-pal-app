@@ -40,13 +40,9 @@ const Wallet = () => {
   };
 
   const handleLogout = async () => {
-    try {
-      await clearWallet(); // Added: Clear SecureStore for reset to New User
-      console.log('Logout: Cleared storage, nav to Welcome');
-      resetRoot([{ name: 'Welcome' }]);
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
+    await clearWallet(); // Clear storage for reset to Option 1
+    console.log('Logout: Cleared storage, nav to Welcome');
+    resetRoot([{ name: 'Welcome' }]);
   };
 
   const totalValue = balances.reduce((sum, item) => {

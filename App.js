@@ -38,14 +38,14 @@ export default function App() {
     checkAuth();
 
     // Env logging (unchanged)
-    const redact = (v?: string) =>
-      typeof v === 'string' && v.length > 14 ? `${v.slice(0, 10)}…` : v ?? 'undefined';
+    const redact = (v) =>
+      typeof v === 'string' && v.length > 14 ? `${v.slice(0, 10)}…` : v || 'undefined'; // Fixed: Removed ? and : string
     console.log('🔧 Env check:');
     console.log('  COVALENT_KEY  :', redact(COVALENT_KEY));
     console.log('  ETH_RPC_URL   :', redact(ETH_RPC_URL));
     console.log('  BSC_RPC_URL   :', redact(BSC_RPC_URL));
-    console.log('  ETHERSCAN_BASE:', ETHERSCAN_BASE || 'undefined');
-    console.log('  BSCSCAN_BASE  :', BSCSCAN_BASE || 'undefined');
+    console.log('  ETHERSCAN_BASE:', redact(ETHERSCAN_BASE));
+    console.log('  BSCSCAN_BASE  :', redact(BSCSCAN_BASE));
     if (!COVALENT_KEY) console.warn('⚠️ Missing COVALENT_KEY');
     if (!ETH_RPC_URL) console.warn('⚠️ Missing ETH_RPC_URL');
     if (!BSC_RPC_URL) console.warn('⚠️ Missing BSC_RPC_URL');
@@ -64,5 +64,4 @@ export default function App() {
 
 const styles = StyleSheet.create({
   loading: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  container: { flex: 1, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
 });
