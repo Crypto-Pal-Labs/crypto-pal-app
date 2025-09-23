@@ -1,30 +1,37 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, FlatList, ActivityIndicator, Alert, TextInput, StyleSheet, Button, Image, RefreshControl, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button, Image, RefreshControl, TouchableOpacity, Alert } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { StackActions } from '@react-navigation/native';
 import { ethers } from 'ethers';
 import { useAssets } from '../hooks/useAssets';
-import { resetRoot } from '../navigation/RootNavigation';
-import { getWalletAddress, clearWallet } from '../utils/wallet'; // Added clearWallet
+import { getWalletAddress, clearWallet } from '../utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
 import { useChain } from '../hooks/useChain';  // For chain state
 
 const Wallet = () => {
+  const navigation = useNavigation(); // Moved to top level
+  const isMounted = useRef(true); // Track mounted state
   const setAddress = useWalletStore((state) => state.setAddress);
-  const { currentChain, setCurrentChain, chains } = useChain();  // Get chain state
-  const { balances, nfts, loading, error, refresh } = useAssets();  // refresh for pull
+  const { currentChain, setCurrentChain, chains } = useChain();
+  const { balances, nfts, loading, error, refresh } = useAssets();
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('crypto');
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [localAddress, setLocalAddress] = useState('');
-  const [currency, setCurrency] = useState('NZD'); // Default to NZD per NZ focus
+  const [currency, setCurrency] = useState('NZD');
 
   useEffect(() => {
     loadAddress();
+    return () => {
+      isMounted.current = false; // Cleanup on unmount
+    };
   }, [setAddress]);
 
   const loadAddress = async () => {
+    if (!isMounted.current) return; // Prevent updates if unmounted
     setLoadError(null);
     try {
       const currentAddress = await getWalletAddress();
@@ -35,20 +42,23 @@ const Wallet = () => {
         throw new Error('No address returned from secure store.');
       }
     } catch (err) {
-      setLoadError((err as Error).message || 'Failed to load wallet address.');
+      if (isMounted.current) setLoadError((err as Error).message || 'Failed to load wallet address.');
     }
   };
 
   const handleLogout = async () => {
-  try {
-    await clearWallet();
-    console.log('Logout: Cleared storage, nav to Welcome');
-    resetRoot([{ name: 'Welcome' }]);
-  } catch (error) {
-    console.error('Logout error:', error);
-    Alert.alert('Error', 'Failed to logout.');
-  }
-};
+    if (!isMounted.current) return; // Prevent updates if unmounted
+    try {
+      await clearWallet();
+      console.log('Logout: Cleared storage, dispatching nav to Welcome');
+      navigation.dispatch(StackActions.replace('Welcome')); // Use stored navigation
+    } catch (error) {
+      if (isMounted.current) {
+        console.error('Logout error:', error);
+        Alert.alert('Error', 'Failed to logout.');
+      }
+    }
+  };
 
   const totalValue = balances.reduce((sum, item) => {
     const quote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
@@ -56,15 +66,16 @@ const Wallet = () => {
   }, 0).toFixed(2);
 
   const onRefresh = async () => {
+    if (!isMounted.current) return;
     setRefreshing(true);
     await refresh();
-    setRefreshing(false);
+    if (isMounted.current) setRefreshing(false);
   };
 
   const filteredBalances = balances.filter((item) => Number(ethers.utils.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredNfts = nfts.filter((item) =>
     (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    item.token_id.includes(searchQuery) // Enhanced for token_id search
+    item.token_id.includes(searchQuery)
   );
 
   const renderBalanceItem = ({ item }: { item: any }) => (
@@ -117,14 +128,13 @@ const Wallet = () => {
           <Text style={viewMode === 'nfts' ? styles.activeToggleText : styles.inactiveToggleText}>NFTs</Text>
         </TouchableOpacity>
       </View>
-      {/* Picker Row - Side-by-side, compact, dropdown mode for visible labels */}
       <View style={styles.pickerRow}>
         <Picker
           selectedValue={currentChain}
           onValueChange={(itemValue) => setCurrentChain(itemValue)}
           style={styles.picker}
           itemStyle={styles.pickerItem}
-          mode="dropdown"  // Fix: Shows selected value always on Android
+          mode="dropdown"
         >
           {Object.keys(chains).map((key) => (
             <Picker.Item key={key} label={chains[key].name} value={key} />
@@ -135,7 +145,7 @@ const Wallet = () => {
           onValueChange={(itemValue) => setCurrency(itemValue)}
           style={styles.picker}
           itemStyle={styles.pickerItem}
-          mode="dropdown"  // Fix: Shows selected value always on Android
+          mode="dropdown"
         >
           <Picker.Item label="NZD" value="NZD" />
           <Picker.Item label="USD" value="USD" />
@@ -146,7 +156,7 @@ const Wallet = () => {
         <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />
       ) : (
         <FlatList
-          style={styles.assetList}  // flex: 1 for full expansion
+          style={styles.assetList}
           data={viewMode === 'crypto' ? filteredBalances : filteredNfts}
           renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
           keyExtractor={(item) => item.contract_address + (item.token_id || '')}
