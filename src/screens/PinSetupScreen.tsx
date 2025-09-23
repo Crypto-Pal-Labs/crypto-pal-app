@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
 import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
-import { NativeStackNavigationProp, NativeStackScreenProps } from '@react-navigation/native-stack'; // Updated imports
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../store/useAuthStore';
-import { RootStackParamList } from '../types/navigation'; // New types
+import { RootStackParamList } from '../types/navigation';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Pin'>; // Updated for route/nav
+type Props = NativeStackScreenProps<RootStackParamList, 'Pin'>;
 
 export default function PinSetupScreen({ route, navigation }: Props) {
-  const { isSetup = true } = route.params || {}; // Typed via Props
+  const { isSetup = true } = route.params || {};
   const { hasMnemonic, setAuthenticated, setHasPin } = useAuthStore();
   const [pin, setPin] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -21,11 +21,8 @@ export default function PinSetupScreen({ route, navigation }: Props) {
       try {
         await SecureStore.setItemAsync('user_pin', pin);
         setHasPin(true);
-        if (hasMnemonic) {
-          navigation.reset({ index: 0, routes: [{ name: 'RestoreWallet' }] });
-        } else {
-          navigation.reset({ index: 0, routes: [{ name: 'CreateWallet' }] });
-        }
+        console.log('PIN set for setup—nav to', hasMnemonic ? 'RestoreWallet' : 'CreateWallet');
+        navigation.reset({ index: 0, routes: [{ name: hasMnemonic ? 'RestoreWallet' : 'CreateWallet' }] });
       } catch (error) {
         Alert.alert('Error', 'Failed to save PIN.');
       }
@@ -34,6 +31,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
         const storedPin = await SecureStore.getItemAsync('user_pin');
         if (pin === storedPin) {
           setAuthenticated(true);
+          console.log('PIN verified for unlock—nav to AppTabs');
           navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
         } else {
           Alert.alert('Invalid PIN', 'Try again.');

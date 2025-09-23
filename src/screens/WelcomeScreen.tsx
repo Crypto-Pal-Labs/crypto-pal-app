@@ -13,12 +13,12 @@ export default function WelcomeScreen() {
   const { hasMnemonic, hasPin } = useAuthStore();
 
   useEffect(() => {
-    if (hasMnemonic && hasPin) {
-      navigation.reset({ index: 0, routes: [{ name: 'Pin', params: { isSetup: false } }] });
-    } else if (hasMnemonic && !hasPin) {
+    console.log('Welcome loaded: hasMnemonic=', hasMnemonic, 'hasPin=', hasPin); // Debug
+    if (hasMnemonic && hasPin) return; // Guard: Skip if authenticated (Option 2 handled by App.js)
+    if (hasMnemonic && !hasPin) {
       navigation.navigate('Pin', { isSetup: true });
     }
-    // Else: Stay for new users
+    // Else: Stay for new users (Option 1)
   }, [hasMnemonic, hasPin, navigation]);
 
   return (

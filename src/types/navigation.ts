@@ -6,11 +6,9 @@ export type RootStackParamList = {
   CreateWallet: undefined;
   RestoreWallet: undefined;
   MnemonicBackup: undefined;
-  WalletRoot: undefined; // If still needed
-  AppTabs: undefined; // Change to undefined—no params for stack entry
+  AppTabs: undefined;
 };
 
-// Keep AppTabParamList for tabs if needed
 export type AppTabParamList = {
   Wallet: undefined;
   Buy: undefined;

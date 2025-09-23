@@ -26,7 +26,7 @@ export default function App() {
         setHasMnemonic(hasMn);
         setHasPin(hasP);
         setAuthenticated(hasMn && hasP);
-        console.log('Auth check: hasMnemonic=', hasMn, 'hasPin=', hasP); // Debug
+        console.log('Auth check: hasMnemonic=', hasMn, 'hasPin=', hasP);
         setInitialRoute(hasMn && hasP ? 'Pin' : 'Welcome');
       } catch (error) {
         console.error('Auth check error:', error);

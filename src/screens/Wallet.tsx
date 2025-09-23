@@ -3,7 +3,7 @@ import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button,
 import { ethers } from 'ethers';
 import { useAssets } from '../hooks/useAssets';
 import { resetRoot } from '../navigation/RootNavigation';
-import { getWalletAddress } from '../utils/wallet';
+import { getWalletAddress, clearWallet } from '../utils/wallet'; // Added clearWallet
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
@@ -39,8 +39,14 @@ const Wallet = () => {
     }
   };
 
-  const handleLogout = () => {
-    resetRoot([{ name: 'Welcome' }]);
+  const handleLogout = async () => {
+    try {
+      await clearWallet(); // Added: Clear SecureStore for reset to New User
+      console.log('Logout: Cleared storage, nav to Welcome');
+      resetRoot([{ name: 'Welcome' }]);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   };
 
   const totalValue = balances.reduce((sum, item) => {
