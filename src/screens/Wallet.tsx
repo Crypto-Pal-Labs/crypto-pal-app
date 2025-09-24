@@ -9,6 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
 import { useChain } from '../hooks/useChain';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Added for localBalance
 
 const Wallet = () => {
   const navigation = useNavigation();
@@ -22,13 +23,26 @@ const Wallet = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [localAddress, setLocalAddress] = useState('');
   const [currency, setCurrency] = useState('USD'); // Fixed: Hardcode 'USD' default
+  const [localBalanceDelta, setLocalBalanceDelta] = useState(0); // Added: For mock deducts (in ETH)
 
   useEffect(() => {
     loadAddress();
+    loadLocalDelta(); // Added: Initial load
     return () => {
       isMounted.current = false;
     };
   }, [setAddress]);
+
+  const loadLocalDelta = async () => {
+    try {
+      const storedDelta = await AsyncStorage.getItem('localBalance');
+      if (isMounted.current) {
+        setLocalBalanceDelta(storedDelta ? parseFloat(storedDelta) : 0);
+      }
+    } catch (e) {
+      console.error('Local delta fetch error:', e);
+    }
+  };
 
   const loadAddress = async () => {
     if (!isMounted.current) return;
@@ -61,6 +75,12 @@ const Wallet = () => {
   };
 
   const totalValue = balances.reduce((sum, item) => {
+    let adjustedBalance = item.balance;
+    if (item.contract_ticker_symbol === 'ETH') { // Deduct for native ETH
+      const originalEth = ethers.utils.formatEther(item.balance);
+      const adjustedEth = (parseFloat(originalEth) + localBalanceDelta).toString();
+      adjustedBalance = ethers.utils.parseEther(adjustedEth).toString(); // Back to wei
+    }
     const quote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
     return sum + quote;
   }, 0).toFixed(2);
@@ -69,6 +89,7 @@ const Wallet = () => {
     if (!isMounted.current) return;
     setRefreshing(true);
     await refresh();
+    await loadLocalDelta(); // Added: Reload delta on refresh
     if (isMounted.current) setRefreshing(false);
   };
 
@@ -78,16 +99,26 @@ const Wallet = () => {
     item.token_id.includes(searchQuery)
   );
 
-  const renderBalanceItem = ({ item }: { item: any }) => (
-    <View style={styles.balanceItem}>
-      <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
-      <View style={styles.tokenInfo}>
-        <Text style={styles.assetName}>{item.contract_ticker_symbol} {item.contract_name ? `(${item.contract_name})` : ''}</Text>
-        <Text style={styles.assetBalance}>{Number(ethers.utils.formatEther(item.balance)).toFixed(8)} {item.contract_ticker_symbol}</Text>
+  const renderBalanceItem = ({ item }: { item: any }) => {
+    let adjustedBalance = item.balance;
+    if (item.contract_ticker_symbol === 'ETH') { // Deduct for native ETH
+      const originalEth = ethers.utils.formatEther(item.balance);
+      const adjustedEth = (parseFloat(originalEth) + localBalanceDelta).toString();
+      adjustedBalance = ethers.utils.parseEther(adjustedEth).toString(); // Back to wei
+    }
+    const adjustedEthDisplay = ethers.utils.formatEther(adjustedBalance);
+
+    return (
+      <View style={styles.balanceItem}>
+        <Image source={{ uri: item.logo_url || 'https://placeholder.com/40x40' }} style={styles.tokenLogo} />
+        <View style={styles.tokenInfo}>
+          <Text style={styles.assetName}>{item.contract_ticker_symbol} {item.contract_name ? `(${item.contract_name})` : ''}</Text>
+          <Text style={styles.assetBalance}>{Number(adjustedEthDisplay).toFixed(8)} {item.contract_ticker_symbol}</Text>
+        </View>
+        <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
       </View>
-      <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
-    </View>
-  );
+    );
+  };
 
   const renderNFTItem = ({ item }: { item: any }) => (
     <View style={styles.balanceItem}>
