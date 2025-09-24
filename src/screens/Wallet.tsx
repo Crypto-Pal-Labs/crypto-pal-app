@@ -8,11 +8,11 @@ import { getWalletAddress, clearWallet } from '../utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
-import { useChain } from '../hooks/useChain';  // For chain state
+import { useChain } from '../hooks/useChain';
 
 const Wallet = () => {
-  const navigation = useNavigation(); // Moved to top level
-  const isMounted = useRef(true); // Track mounted state
+  const navigation = useNavigation();
+  const isMounted = useRef(true);
   const setAddress = useWalletStore((state) => state.setAddress);
   const { currentChain, setCurrentChain, chains } = useChain();
   const { balances, nfts, loading, error, refresh } = useAssets();
@@ -21,17 +21,17 @@ const Wallet = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [localAddress, setLocalAddress] = useState('');
-  const [currency, setCurrency] = useState('NZD');
+  const [currency, setCurrency] = useState('USD'); // Fixed: Hardcode 'USD' default
 
   useEffect(() => {
     loadAddress();
     return () => {
-      isMounted.current = false; // Cleanup on unmount
+      isMounted.current = false;
     };
   }, [setAddress]);
 
   const loadAddress = async () => {
-    if (!isMounted.current) return; // Prevent updates if unmounted
+    if (!isMounted.current) return;
     setLoadError(null);
     try {
       const currentAddress = await getWalletAddress();
@@ -47,11 +47,11 @@ const Wallet = () => {
   };
 
   const handleLogout = async () => {
-    if (!isMounted.current) return; // Prevent updates if unmounted
+    if (!isMounted.current) return;
     try {
       await clearWallet();
       console.log('Logout: Cleared storage, dispatching nav to Welcome');
-      navigation.dispatch(StackActions.replace('Welcome')); // Use stored navigation
+      navigation.dispatch(StackActions.replace('Welcome'));
     } catch (error) {
       if (isMounted.current) {
         console.error('Logout error:', error);
