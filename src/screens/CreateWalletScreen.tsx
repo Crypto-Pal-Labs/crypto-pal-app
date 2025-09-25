@@ -6,6 +6,7 @@ import { ethers } from 'ethers';
 import { Ionicons } from '@expo/vector-icons';
 import { saveMnemonic, getWalletAddress } from '../utils/wallet';
 import { useWalletStore } from '../store/useWalletStore';
+import { useAuthStore } from '../store/useAuthStore'; // Added for setHasMnemonic
 import { RootStackParamList } from '../types/navigation';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -13,16 +14,21 @@ type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export default function CreateWalletScreen() {
   const navigation = useNavigation<NavigationProp>();
   const setAddress = useWalletStore((state) => state.setAddress);
+  const setHasMnemonic = useAuthStore((state) => state.setHasMnemonic);
 
   const handleCreate = async () => {
     try {
       const wallet = ethers.Wallet.createRandom();
       const phrase = wallet.mnemonic.phrase;
+      console.log('Generating mnemonic:', phrase); // Debug
       await saveMnemonic(phrase);
+      console.log('Mnemonic saved successfully'); // Debug
       setAddress(wallet.address);
+      setHasMnemonic(true); // Set true on success
       navigation.replace('MnemonicBackup');
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Failed to create wallet.');
+      console.error('Create error:', e); // Debug
+      Alert.alert('Error', e?.message ?? 'Failed to create and store wallet. Check storage permissions.');
     }
   };
 

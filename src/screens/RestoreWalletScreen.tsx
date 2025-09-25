@@ -19,13 +19,16 @@ export default function RestoreWalletScreen() {
 
   const handleRestore = async () => {
     try {
+      console.log('Restoring phrase:', phrase); // Debug
       const wallet = ethers.Wallet.fromMnemonic(phrase);
       await saveMnemonic(phrase);
+      console.log('Mnemonic saved successfully'); // Debug
       setAddress(wallet.address);
-      setHasMnemonic(true);
+      setHasMnemonic(true); // Set true on success
       navigation.replace('AppTabs'); // Go to Wallet Tab
     } catch (e: any) {
-      Alert.alert('Error', e?.message ?? 'Invalid phrase—try again.');
+      console.error('Restore error:', e); // Debug
+      Alert.alert('Error', e?.message ?? 'Invalid phrase or storage failed—try again.');
     }
   };
 

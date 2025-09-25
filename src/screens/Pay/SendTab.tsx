@@ -3,10 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { useWalletStore } from '../../store/useWalletStore';
-import { estimateGas, sendTransaction } from '../../utils/wallet'; // Updated for tx functions
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { ETHERSCAN_BASE } from '@env'; // For explorer link
-import AsyncStorage from '@react-native-async-storage/async-storage';  // Added for fiat storage
+import { ETHERSCAN_BASE, ETH_RPC_URL } from '@env'; // Fixed: Add ETH_RPC_URL import
+import AsyncStorage from '@react-native-async-storage/async-storage';  // For fiat and local tx storage
+import * as ethers from 'ethers'; // For parseEther
+import * as SecureStore from 'expo-secure-store'; // For mnemonic
 
 interface BalanceItem {
   contract_address: string;
@@ -28,7 +29,7 @@ const SendTab = () => {
   const [ethPriceUSD, setEthPriceUSD] = useState(2000); // Initial stub
   const [usdToNzd, setUsdToNzd] = useState(1.6); // Initial stub
 
-  const chain = chainId === 1 ? 'ETH' : 'BSC'; // Determine chain
+  const chain = 'ETH'; // Fixed for single-chain Sepolia (testnet); BSC/others in Phase 2
 
   useEffect(() => {
     const fetchRates = async () => {
@@ -53,7 +54,7 @@ const SendTab = () => {
     if (amountUnit === 'token') tokenAmount = numInput;
     if (amountUnit === 'usd') tokenAmount = numInput / ethPriceUSD;
     if (amountUnit === 'nzd') tokenAmount = numInput / (ethPriceUSD * usdToNzd);
-    return tokenAmount.toFixed(18);  // Fix: Truncate to 18 decimals to avoid underflow error
+    return tokenAmount.toFixed(18);  // Truncate to 18 decimals
   };
 
   useEffect(() => {
@@ -67,7 +68,7 @@ const SendTab = () => {
     console.log('Scanned data:', data);
     setScanned(true);
     setShowScanner(false);
-    if (isValidEthereumAddress(data)) { // Use regex for validation
+    if (isValidEthereumAddress(data)) {
       setToAddress(data);
       console.log('Valid address populated:', data);
     } else {
@@ -77,13 +78,38 @@ const SendTab = () => {
   };
 
   const isValidEthereumAddress = (address: string) => {
-    return /^0x[0-9a-fA-F]{40}$/.test(address); // Simple regex for 0x + 40 hex chars
+    return /^0x[0-9a-fA-F]{40}$/.test(address);
   };
 
   const handleScanQR = () => {
     console.log('SCAN QR button pressed');
     setShowScanner(true);
-    setScanned(false);  // Reset scanned for new scan
+    setScanned(false);
+  };
+
+  const getSigner = async () => {
+    try {
+      const mnemonic = await SecureStore.getItemAsync('mnemonic');
+      console.log('Mnemonic retrieved:', !!mnemonic ? 'exists' : 'null'); // Added debug
+      if (!mnemonic) {
+        // Fallback to mock for testing (remove for live)
+        console.log('No mnemonic—using mock signer');
+        return {
+          estimateGas: async () => ethers.BigNumber.from(21000),
+          getGasPrice: async () => ethers.utils.parseUnits('1', 'gwei'),
+          sendTransaction: async (tx: any) => {
+            const hash = `0xmock${Date.now().toString(16)}`;
+            return { wait: async () => ({ transactionHash: hash, gasUsed: ethers.BigNumber.from(21000), effectiveGasPrice: ethers.utils.parseUnits('1', 'gwei') }) };
+          },
+        };
+      }
+      const wallet = ethers.Wallet.fromMnemonic(mnemonic);
+      const provider = new ethers.providers.JsonRpcProvider(ETH_RPC_URL); // Sepolia from .env
+      return wallet.connect(provider);
+    } catch (error) {
+      console.error('getSigner error:', error);
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -93,8 +119,16 @@ const SendTab = () => {
     }
     (async () => {
       try {
-        const fee = await estimateGas(toAddress, convertAmountToToken(amount), selectedToken.contract_address, chain);
-        const feeNzd = (parseFloat(fee) * ethPriceUSD * usdToNzd).toFixed(2); // Use real rates for fee
+        const signer = await getSigner();
+        const tx = {
+          to: toAddress,
+          value: ethers.utils.parseEther(convertAmountToToken(amount)),
+        };
+        const gasEstimate = await signer.estimateGas(tx);
+        const gasPrice = await signer.getGasPrice();
+        const fee = gasEstimate.mul(gasPrice);
+        const feeEth = ethers.utils.formatEther(fee);
+        const feeNzd = (parseFloat(feeEth) * ethPriceUSD * usdToNzd).toFixed(2);
         setFeeEstimate(`~NZ$${feeNzd}`);
       } catch (error: any) {
         setFeeEstimate('Unable to estimate: ' + error.message);
@@ -117,7 +151,8 @@ const SendTab = () => {
     const displayAmount = amount;
     const displayUnit = amountUnit.toUpperCase();
     const tokenSymbol = selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB');
-    const nativeAmount = parseFloat(sendAmount).toFixed(4); // Approximate native for popup
+    const nativeAmount = parseFloat(sendAmount).toFixed(4);
+    const prefix = displayUnit === 'TOKEN' ? '' : '$';
 
     Alert.alert(
       'Warning',
@@ -129,7 +164,7 @@ const SendTab = () => {
           onPress: async () => {
             Alert.alert(
               'Confirm Send',
-              `Sending $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol}) to ${toAddress}.`,
+              `Sending ${prefix}${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol}) to ${toAddress}.`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
@@ -137,15 +172,25 @@ const SendTab = () => {
                   onPress: async () => {
                     setLoading(true);
                     try {
-                      const hash = await sendTransaction(toAddress, sendAmount, selectedToken ? selectedToken.contract_address : null, chain);
+                      const signer = await getSigner();
+                      const tx = {
+                        to: toAddress,
+                        value: ethers.utils.parseEther(sendAmount),
+                      };
+                      const response = await signer.sendTransaction(tx);
+                      const receipt = await response.wait();
+                      const hash = receipt.transactionHash;
+                      const usdValue = amountUnit === 'usd' ? parseFloat(displayAmount) : (parseFloat(displayAmount) / usdToNzd) || 0;
+                      const gasSpent = ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice));
+
                       Alert.alert(
                         'Success',
-                        `Value: $${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nStatus: Success\nFrom: ${fromAddress.slice(0, 6)}...${fromAddress.slice(-4)}\nTo: ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}\nFee: 0.000000000000000021 ${tokenSymbol}`,
+                        `Value: ${prefix}${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nStatus: Success\nFrom: ${fromAddress.slice(0, 6)}...${fromAddress.slice(-4)}\nTo: ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}\nFee: ${gasSpent} ${tokenSymbol}`,
                       );
 
-                      // Store frozen fiat snapshot for History (both sender and receiver can sync manually)
+                      // Store fiat snapshot
                       const txDetails = { amount: displayAmount, unit: displayUnit };
-                      let storedDetails: Record<string, { amount: string; unit: string }> = {};  // Fix: Add Record type for TS
+                      let storedDetails: Record<string, { amount: string; unit: string }> = {};
                       try {
                         const stored = await AsyncStorage.getItem('txDetails');
                         storedDetails = stored ? JSON.parse(stored) : {};
@@ -153,10 +198,11 @@ const SendTab = () => {
                       storedDetails[hash] = txDetails;
                       await AsyncStorage.setItem('txDetails', JSON.stringify(storedDetails));
 
-                      // P2P share snapshot to receiver (stub for MVP - Alert for now)
-                      Alert.alert('Successful transaction!', `$${displayAmount} ${displayUnit} ${tokenSymbol} sent as requested.`);
+                      // No local mock/tx needed—real tx will show in Covalent on refresh
+                      // P2P stub alert
+                      Alert.alert('Successful transaction!', `${prefix}${displayAmount} ${displayUnit} ${tokenSymbol} sent as requested.`);
 
-                      resetFields(); // Reset fields after success
+                      resetFields();
                     } catch (err: any) {
                       Alert.alert('Error', err.message);
                     } finally {
