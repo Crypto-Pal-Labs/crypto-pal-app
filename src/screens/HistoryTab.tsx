@@ -1,5 +1,5 @@
 // src/screens/HistoryTab.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ActivityIndicator, FlatList, StyleSheet, Linking, TouchableOpacity, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,6 +7,7 @@ import { useHistory } from '../hooks/useHistory';
 import { useWalletStore } from '../store/useWalletStore';
 import { getWalletAddress } from '../utils/wallet';
 import * as ethers from 'ethers'; // Corrected star import for TS
+import { useFocusEffect } from '@react-navigation/native'; // For auto-refresh
 
 interface TxDetails {
   amount: string;
@@ -21,6 +22,8 @@ const HistoryTab = () => {
   const [usdToNzd, setUsdToNzd] = useState(1.6);
   const [displayUnit, setDisplayUnit] = useState('TOKEN');
   const [txDetailsMap, setTxDetailsMap] = useState<Record<string, TxDetails>>({});
+  const [mergedTransactions, setMergedTransactions] = useState<any[]>([]); // Merged API + local
+  const [isRefreshing, setIsRefreshing] = useState(false); // Debounce flag
 
   useEffect(() => {
     const loadAddress = async () => {
@@ -47,24 +50,49 @@ const HistoryTab = () => {
     fetchRates();
   }, []);
 
+  const mergeTransactions = useCallback(async () => {
+    try {
+      const storedDetails = await AsyncStorage.getItem('txDetails');
+      setTxDetailsMap(storedDetails ? JSON.parse(storedDetails) : {});
+
+      const storedLocalTxs = await AsyncStorage.getItem('localTxs');
+      const localTxs = storedLocalTxs ? JSON.parse(storedLocalTxs) : [];
+
+      // Merge local with API txs, dedup by tx_hash, sort descending by date
+      const allTxs = [...transactions, ...localTxs];
+      const uniqueTxs = allTxs.reduce((acc: any[], tx: any) => {
+        if (!acc.some((t) => t.tx_hash === tx.tx_hash)) acc.push(tx);
+        return acc;
+      }, []);
+      uniqueTxs.sort((a, b) => new Date(b.block_signed_at).getTime() - new Date(a.block_signed_at).getTime());
+      setMergedTransactions(uniqueTxs);
+    } catch (e) {
+      console.error('AsyncStorage fetch error:', e);
+    }
+  }, [transactions]); // Dep: Only on transactions
+
   useEffect(() => {
-    const fetchTxDetails = async () => {
-      try {
-        const stored = await AsyncStorage.getItem('txDetails');
-        setTxDetailsMap(stored ? JSON.parse(stored) : {});
-      } catch (e) {
-        console.error('AsyncStorage fetch error:', e);
-      }
-    };
-    fetchTxDetails();
-  }, []);
+    mergeTransactions(); // Run merge when transactions change
+  }, [transactions, mergeTransactions]); // Fixed: No loading dep to avoid loop
+
+  useFocusEffect(
+    React.useCallback(() => {
+      if (isRefreshing || loading) return; // Guard: Skip if already refreshing or loading
+      setIsRefreshing(true);
+      const timer = setTimeout(() => {
+        refetch().finally(() => setIsRefreshing(false)); // Await refetch complete
+      }, 1000); // Debounce
+      return () => clearTimeout(timer);
+    }, [refetch, isRefreshing, loading]) // Deps: Include loading to guard
+  );
 
   const getValueDisplay = (tx: any) => {
     const ethValueStr = tx.value ? ethers.utils.formatEther(tx.value) : '0';
     const ethValueNum = Number(ethValueStr);
     const stored = txDetailsMap[tx.tx_hash];
     if (stored) {
-      return `$${stored.amount} ${stored.unit} (${ethValueNum.toFixed(4)} ETH)`;
+      const prefix = stored.unit === 'TOKEN' ? '' : '$'; 
+      return `${prefix}${stored.amount} ${stored.unit} (${ethValueNum.toFixed(4)} ETH)`;
     }
     if (displayUnit === 'TOKEN') return `${ethValueNum.toFixed(4)} ETH`;
     const usdValue = tx.value_quote || (ethValueNum * ethPriceUSD); // Use value_quote if available
@@ -111,7 +139,6 @@ const HistoryTab = () => {
     </View>
   );
 
-  if (loading) return <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>;
   if (error) return <View style={styles.center}><Text style={styles.errorText}>Failed to load history. Pull to refresh.</Text><TouchableOpacity onPress={refetch}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
 
   return (
@@ -128,14 +155,18 @@ const HistoryTab = () => {
           <Text style={displayUnit === 'NZD' ? styles.unitTextActive : styles.unitText}>NZD</Text>
         </TouchableOpacity>
       </View>
-      <FlatList
-        data={transactions}
-        renderItem={renderTxItem}
-        keyExtractor={(item) => item.tx_hash}
-        ListEmptyComponent={EmptyState}
-        contentContainerStyle={styles.listContainer}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} colors={['#0A84FF']} />}
-      />
+      {loading ? (
+        <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>
+      ) : (
+        <FlatList
+          data={mergedTransactions} // Use merged list
+          renderItem={renderTxItem}
+          keyExtractor={(item) => item.tx_hash}
+          ListEmptyComponent={EmptyState}
+          contentContainerStyle={styles.listContainer}
+          refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} colors={['#0A84FF']} />}
+        />
+      )}
     </View>
   );
 };
