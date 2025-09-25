@@ -8,6 +8,7 @@ import { useWalletStore } from '../store/useWalletStore';
 import { getWalletAddress } from '../utils/wallet';
 import * as ethers from 'ethers'; // Corrected star import for TS
 import { useFocusEffect } from '@react-navigation/native'; // For auto-refresh
+import { ETHERSCAN_BASE } from '@env'; // Added: For explorer links (e.g., Sepolia Etherscan)
 
 interface TxDetails {
   amount: string;
@@ -51,21 +52,48 @@ const HistoryTab = () => {
   }, []);
 
   const mergeTransactions = useCallback(async () => {
+    console.log('Merging transactions...');
     try {
       const storedDetails = await AsyncStorage.getItem('txDetails');
       setTxDetailsMap(storedDetails ? JSON.parse(storedDetails) : {});
 
       const storedLocalTxs = await AsyncStorage.getItem('localTxs');
-      const localTxs = storedLocalTxs ? JSON.parse(storedLocalTxs) : [];
+      let localTxs = storedLocalTxs ? JSON.parse(storedLocalTxs) : [];
+      console.log('LocalTxs length:', localTxs.length); // Debug: Local length
 
-      // Merge local with API txs, dedup by tx_hash, sort descending by date
+      // Standardize local keys to match Covalent (tx_hash, from_address, etc.)
+      localTxs = localTxs.map((tx: any) => ({
+        tx_hash: tx.hash || tx.tx_hash || `local-${Date.now()}`, // Standard to tx_hash
+        from_address: tx.from,
+        to_address: tx.to,
+        value: tx.value,
+        block_signed_at: tx.timestamp,
+        successful: true,
+        gas_spent: '0', // Stub; update if gas known
+        value_quote: 0, // Stub
+        fiatSnapshot: tx.fiatSnapshot,
+      }));
+
+      console.log('API transactions length:', transactions.length); // Debug: API length
+      // Merge local with API txs, dedup by tx_hash
       const allTxs = [...transactions, ...localTxs];
       const uniqueTxs = allTxs.reduce((acc: any[], tx: any) => {
-        if (!acc.some((t) => t.tx_hash === tx.tx_hash)) acc.push(tx);
+        if (tx.tx_hash && !acc.some((t) => t.tx_hash === tx.tx_hash)) {
+          acc.push(tx);
+        }
         return acc;
       }, []);
+
+      // Sort by block_signed_at desc
       uniqueTxs.sort((a, b) => new Date(b.block_signed_at).getTime() - new Date(a.block_signed_at).getTime());
+
+      console.log('Merged uniqueTxs length:', uniqueTxs.length); // Debug: Final merged length
       setMergedTransactions(uniqueTxs);
+
+      // Optional: Cleanup synced locals (remove from storage if in API)
+      const syncedHashes = transactions.map((tx) => tx.tx_hash);
+      localTxs = localTxs.filter((tx: any) => !syncedHashes.includes(tx.tx_hash));
+      await AsyncStorage.setItem('localTxs', JSON.stringify(localTxs));
     } catch (e) {
       console.error('AsyncStorage fetch error:', e);
     }
@@ -77,22 +105,30 @@ const HistoryTab = () => {
 
   useFocusEffect(
     React.useCallback(() => {
-      if (isRefreshing || loading) return; // Guard: Skip if already refreshing or loading
+      if (isRefreshing || loading) {
+        console.log('Skipping focus refetch—already refreshing/loading'); // Debug
+        return;
+      }
+      console.log('Focus refetch triggered'); // Debug
       setIsRefreshing(true);
       const timer = setTimeout(() => {
-        refetch().finally(() => setIsRefreshing(false)); // Await refetch complete
-      }, 1000); // Debounce
+        refetch()
+          .then(mergeTransactions) // Merge after refetch
+          .finally(() => setIsRefreshing(false));
+      }, 500); // 500ms debounce to prevent rapid fire
+
       return () => clearTimeout(timer);
-    }, [refetch, isRefreshing, loading]) // Deps: Include loading to guard
+    }, [refetch, mergeTransactions, isRefreshing, loading]) // Deps: Include merge
   );
 
   const getValueDisplay = (tx: any) => {
     const ethValueStr = tx.value ? ethers.utils.formatEther(tx.value) : '0';
     const ethValueNum = Number(ethValueStr);
-    const stored = txDetailsMap[tx.tx_hash];
+    const stored = txDetailsMap[tx.tx_hash] || tx.fiatSnapshot; // Use stored or local fiatSnapshot
     if (stored) {
-      const prefix = stored.unit === 'TOKEN' ? '' : '$'; 
-      return `${prefix}${stored.amount} ${stored.unit} (${ethValueNum.toFixed(4)} ETH)`;
+      const prefix = typeof stored === 'string' ? '' : (stored.unit === 'TOKEN' ? '' : '$');
+      const display = typeof stored === 'string' ? stored : `${prefix}${stored.amount} ${stored.unit}`;
+      return `${display} (${ethValueNum.toFixed(4)} ETH)`;
     }
     if (displayUnit === 'TOKEN') return `${ethValueNum.toFixed(4)} ETH`;
     const usdValue = tx.value_quote || (ethValueNum * ethPriceUSD); // Use value_quote if available
@@ -116,10 +152,10 @@ const HistoryTab = () => {
   };
 
   const renderTxItem = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.txItem} onPress={() => Linking.openURL(`${item.explorer}${item.tx_hash}`)}>
+    <TouchableOpacity style={styles.txItem} onPress={() => Linking.openURL(`${ETHERSCAN_BASE}${item.tx_hash}`)}>
       <Ionicons name={getIconName(item)} size={24} color={getIconColor(item)} style={styles.icon} />
       <View style={styles.txInfo}>
-        <Text style={styles.txDate}>{new Date(item.block_signed_at).toLocaleString()}</Text>
+        <Text style={styles.txDate}>{item.block_signed_at ? new Date(item.block_signed_at).toLocaleString() : 'Unknown Date'}</Text>
         <Text style={styles.txValue}>Value: {getValueDisplay(item)}</Text>
         <Text style={[styles.txStatus, { color: item.successful ? 'green' : 'red' }]}>Status: {item.successful ? 'Success' : 'Failed'}</Text>
         <Text style={styles.txFromTo}>
@@ -161,7 +197,7 @@ const HistoryTab = () => {
         <FlatList
           data={mergedTransactions} // Use merged list
           renderItem={renderTxItem}
-          keyExtractor={(item) => item.tx_hash}
+          keyExtractor={(item) => item.tx_hash || item.block_signed_at} // Fallback to timestamp if no hash
           ListEmptyComponent={EmptyState}
           contentContainerStyle={styles.listContainer}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} colors={['#0A84FF']} />}

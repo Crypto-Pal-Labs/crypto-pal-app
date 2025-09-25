@@ -198,6 +198,25 @@ const SendTab = () => {
                       storedDetails[hash] = txDetails;
                       await AsyncStorage.setItem('txDetails', JSON.stringify(storedDetails));
 
+                      // Add local tx for History merge
+                      const localTx = {
+                        hash: hash,
+                        from: fromAddress,
+                        to: toAddress,
+                        value: ethers.utils.parseEther(sendAmount).toString(), // Wei
+                        timestamp: new Date().toISOString(),
+                        isSend: true,
+                        fiatSnapshot: `${prefix}${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})`,
+                      };
+                      const localTxs = JSON.parse(await AsyncStorage.getItem('localTxs') || '[]');
+                      localTxs.push(localTx);
+                      await AsyncStorage.setItem('localTxs', JSON.stringify(localTxs));
+
+                      // Add local balance delta for Wallet deduct
+                      const delta = -parseFloat(sendAmount);
+                      const currentDelta = parseFloat(await AsyncStorage.getItem('localBalanceDelta') || '0');
+                      await AsyncStorage.setItem('localBalanceDelta', (currentDelta + delta).toString());
+
                       // No local mock/tx needed—real tx will show in Covalent on refresh
                       // P2P stub alert
                       Alert.alert('Successful transaction!', `${prefix}${displayAmount} ${displayUnit} ${tokenSymbol} sent as requested.`);

@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
 import { useChain } from '../hooks/useChain';
-import AsyncStorage from '@react-native-async-storage/async-storage'; // Added for localBalance
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Added for localBalanceDelta
 import { useFocusEffect } from '@react-navigation/native'; // Added for auto-refresh
 
 const Wallet = () => {
@@ -36,7 +36,7 @@ const Wallet = () => {
 
   const loadLocalDelta = async () => {
     try {
-      const storedDelta = await AsyncStorage.getItem('localBalance');
+      const storedDelta = await AsyncStorage.getItem('localBalanceDelta');
       if (isMounted.current) {
         setLocalBalanceDelta(storedDelta ? parseFloat(storedDelta) : 0);
       }
@@ -76,21 +76,22 @@ const Wallet = () => {
   };
 
   const totalValue = balances.reduce((sum, item) => {
-    let adjustedBalance = item.balance;
-    if (item.contract_ticker_symbol === 'ETH') { // Deduct for native ETH
-      const originalEth = ethers.utils.formatEther(item.balance);
-      const adjustedEth = (parseFloat(originalEth) + localBalanceDelta).toString();
-      adjustedBalance = ethers.utils.parseEther(adjustedEth).toString(); // Back to wei
+    let adjustedQuote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
+    if (item.contract_ticker_symbol === 'ETH') { // Adjust quote for delta
+      const originalEth = parseFloat(ethers.utils.formatEther(item.balance));
+      const adjustedEth = originalEth + localBalanceDelta;
+      const pricePerEth = adjustedQuote / originalEth || 0; // Derive price
+      adjustedQuote = pricePerEth * adjustedEth;
     }
-    const quote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
-    return sum + quote;
+    return sum + adjustedQuote;
   }, 0).toFixed(2);
 
   const onRefresh = async () => {
     if (!isMounted.current) return;
     setRefreshing(true);
     await refresh();
-    await loadLocalDelta(); // Added: Reload delta on refresh
+    await AsyncStorage.removeItem('localBalanceDelta'); // Clear delta after API sync
+    await loadLocalDelta(); // Reload (should be 0)
     if (isMounted.current) setRefreshing(false);
   };
 
