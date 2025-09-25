@@ -10,6 +10,7 @@ import { useWalletStore } from '../store/useWalletStore';
 import { Picker } from '@react-native-picker/picker';
 import { useChain } from '../hooks/useChain';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Added for localBalance
+import { useFocusEffect } from '@react-navigation/native'; // Added for auto-refresh
 
 const Wallet = () => {
   const navigation = useNavigation();
@@ -92,6 +93,12 @@ const Wallet = () => {
     await loadLocalDelta(); // Added: Reload delta on refresh
     if (isMounted.current) setRefreshing(false);
   };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      onRefresh(); // Auto-refresh on tab focus
+    }, [])
+  ); // Added: Auto-refresh on focus
 
   const filteredBalances = balances.filter((item) => Number(ethers.utils.formatEther(item.balance)) > 0 && item.contract_ticker_symbol.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredNfts = nfts.filter((item) =>
