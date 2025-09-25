@@ -63,19 +63,19 @@ const HistoryTab = () => {
 
       // Standardize local keys to match Covalent (tx_hash, from_address, etc.)
       localTxs = localTxs.map((tx: any) => ({
-        tx_hash: tx.hash || tx.tx_hash || `local-${Date.now()}`, // Standard to tx_hash
+        tx_hash: tx.hash || tx.tx_hash || `local-${Date.now()}`,
         from_address: tx.from,
         to_address: tx.to,
         value: tx.value,
         block_signed_at: tx.timestamp,
         successful: true,
-        gas_spent: '0', // Stub; update if gas known
+        gas_spent: '0', // Stub
         value_quote: 0, // Stub
         fiatSnapshot: tx.fiatSnapshot,
       }));
 
       console.log('API transactions length:', transactions.length); // Debug: API length
-      // Merge local with API txs, dedup by tx_hash
+      // Merge: Add local not in API (dedup by tx_hash)
       const allTxs = [...transactions, ...localTxs];
       const uniqueTxs = allTxs.reduce((acc: any[], tx: any) => {
         if (tx.tx_hash && !acc.some((t) => t.tx_hash === tx.tx_hash)) {
@@ -90,48 +90,48 @@ const HistoryTab = () => {
       console.log('Merged uniqueTxs length:', uniqueTxs.length); // Debug: Final merged length
       setMergedTransactions(uniqueTxs);
 
-      // Optional: Cleanup synced locals (remove from storage if in API)
-      const syncedHashes = transactions.map((tx) => tx.tx_hash);
+      // Cleanup: Only remove locals if exact match in API and successful/mined
+      const syncedHashes = transactions.filter(tx => tx.successful).map((tx) => tx.tx_hash);
       localTxs = localTxs.filter((tx: any) => !syncedHashes.includes(tx.tx_hash));
       await AsyncStorage.setItem('localTxs', JSON.stringify(localTxs));
     } catch (e) {
       console.error('AsyncStorage fetch error:', e);
     }
-  }, [transactions]); // Dep: Only on transactions
+  }, [transactions]);
 
   useEffect(() => {
     mergeTransactions(); // Run merge when transactions change
-  }, [transactions, mergeTransactions]); // Fixed: No loading dep to avoid loop
+  }, [transactions, mergeTransactions]);
 
   useFocusEffect(
     React.useCallback(() => {
       if (isRefreshing || loading) {
-        console.log('Skipping focus refetch—already refreshing/loading'); // Debug
+        console.log('Skipping focus refetch—already refreshing/loading');
         return;
       }
-      console.log('Focus refetch triggered'); // Debug
+      console.log('Focus refetch triggered');
       setIsRefreshing(true);
       const timer = setTimeout(() => {
         refetch()
-          .then(mergeTransactions) // Merge after refetch
+          .then(mergeTransactions)
           .finally(() => setIsRefreshing(false));
-      }, 500); // 500ms debounce to prevent rapid fire
+      }, 500);
 
       return () => clearTimeout(timer);
-    }, [refetch, mergeTransactions, isRefreshing, loading]) // Deps: Include merge
+    }, [refetch, mergeTransactions, isRefreshing, loading])
   );
 
   const getValueDisplay = (tx: any) => {
     const ethValueStr = tx.value ? ethers.utils.formatEther(tx.value) : '0';
     const ethValueNum = Number(ethValueStr);
-    const stored = txDetailsMap[tx.tx_hash] || tx.fiatSnapshot; // Use stored or local fiatSnapshot
+    const stored = txDetailsMap[tx.tx_hash] || tx.fiatSnapshot;
     if (stored) {
       const prefix = typeof stored === 'string' ? '' : (stored.unit === 'TOKEN' ? '' : '$');
       const display = typeof stored === 'string' ? stored : `${prefix}${stored.amount} ${stored.unit}`;
       return `${display} (${ethValueNum.toFixed(4)} ETH)`;
     }
     if (displayUnit === 'TOKEN') return `${ethValueNum.toFixed(4)} ETH`;
-    const usdValue = tx.value_quote || (ethValueNum * ethPriceUSD); // Use value_quote if available
+    const usdValue = tx.value_quote || (ethValueNum * ethPriceUSD);
     if (displayUnit === 'USD') return `$${usdValue.toFixed(2)} USD (${ethValueNum.toFixed(4)} ETH)`;
     const nzdValue = usdValue * usdToNzd;
     return `$${nzdValue.toFixed(2)} NZD (${ethValueNum.toFixed(4)} ETH)`;

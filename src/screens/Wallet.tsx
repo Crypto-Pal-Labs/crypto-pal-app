@@ -11,6 +11,7 @@ import { Picker } from '@react-native-picker/picker';
 import { useChain } from '../hooks/useChain';
 import AsyncStorage from '@react-native-async-storage/async-storage'; // Added for localBalanceDelta
 import { useFocusEffect } from '@react-navigation/native'; // Added for auto-refresh
+import * as Localization from 'expo-localization'; // Added for local currency
 
 const Wallet = () => {
   const navigation = useNavigation();
@@ -23,12 +24,21 @@ const Wallet = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [localAddress, setLocalAddress] = useState('');
-  const [currency, setCurrency] = useState('USD'); // Fixed: Hardcode 'USD' default
-  const [localBalanceDelta, setLocalBalanceDelta] = useState(0); // Added: For mock deducts (in ETH)
+  const [currency, setCurrency] = useState('USD'); // Default USD
+  const [localBalanceDelta, setLocalBalanceDelta] = useState(0); // For mock deducts (in ETH)
+  const [currencyOptions, setCurrencyOptions] = useState(['USD']); // Dynamic options
 
   useEffect(() => {
     loadAddress();
-    loadLocalDelta(); // Added: Initial load
+    loadLocalDelta(); // Initial load
+    // Dynamic local currency
+    const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
+    const localCurrency = locale.currencyCode || 'USD';
+    const options = ['USD'];
+    if (localCurrency !== 'USD') options.push(localCurrency);
+    if (!options.includes('NZD')) options.push('NZD'); // Keep NZD
+    setCurrencyOptions(options);
+    setCurrency('USD'); // Always default USD
     return () => {
       isMounted.current = false;
     };
@@ -76,7 +86,7 @@ const Wallet = () => {
   };
 
   const totalValue = balances.reduce((sum, item) => {
-    let adjustedQuote = currency === 'NZD' ? (item.quote || 0) : (item.quoteUsd || 0);
+    let adjustedQuote = currency === 'USD' ? (item.quoteUsd || 0) : (item.quoteLocal || 0); // Use quoteLocal for non-USD
     if (item.contract_ticker_symbol === 'ETH') { // Adjust quote for delta
       const originalEth = parseFloat(ethers.utils.formatEther(item.balance));
       const adjustedEth = originalEth + localBalanceDelta;
@@ -123,7 +133,7 @@ const Wallet = () => {
           <Text style={styles.assetName}>{item.contract_ticker_symbol} {item.contract_name ? `(${item.contract_name})` : ''}</Text>
           <Text style={styles.assetBalance}>{Number(adjustedEthDisplay).toFixed(8)} {item.contract_ticker_symbol}</Text>
         </View>
-        <Text style={styles.assetValue}>${currency === 'NZD' ? (item.quote ? item.quote.toFixed(2) : 'N/A') : (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A')} {currency}</Text>
+        <Text style={styles.assetValue}>${currency === 'USD' ? (item.quoteUsd ? item.quoteUsd.toFixed(2) : 'N/A') : (item.quoteLocal ? item.quoteLocal.toFixed(2) : 'N/A')} {currency}</Text>
       </View>
     );
   };
@@ -186,8 +196,9 @@ const Wallet = () => {
           itemStyle={styles.pickerItem}
           mode="dropdown"
         >
-          <Picker.Item label="NZD" value="NZD" />
-          <Picker.Item label="USD" value="USD" />
+          {currencyOptions.map(opt => (
+            <Picker.Item key={opt} label={opt} value={opt} />
+          ))}
         </Picker>
       </View>
       {error && <Text style={styles.errorText}>{error} <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity></Text>}

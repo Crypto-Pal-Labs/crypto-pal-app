@@ -5,6 +5,9 @@ import { COVALENT_KEY, ALCHEMY_KEY } from '@env';
 import { ethers } from 'ethers';
 import { useChain } from '../hooks/useChain';  // New: To get current chain internally
 import { getProvider } from '../config/chains';  // New: For fallback provider
+import { useFocusEffect } from '@react-navigation/native'; // Added for poll
+import { useCallback } from 'react'; // Added: For useFocusEffect wrapper
+import * as Localization from 'expo-localization'; // Added for local currency
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -21,7 +24,7 @@ interface CovalentItem {
 export type BalanceItem = {
   contract_ticker_symbol: string;
   balance: string;
-  quote: number;
+  quoteLocal: number; // Renamed for local currency
   quoteUsd: number;
   logo_url: string;
 };
@@ -41,6 +44,9 @@ export const useAssets = () => {
   const [nfts, setNfts] = useState<NFTItem[]>([]);  // Default empty array
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
+  const localCurrency = (locale.currencyCode || 'usd').toLowerCase(); // Null-safe with default 'usd'
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -160,7 +166,7 @@ export const useAssets = () => {
       }
     }
 
-    // Fetch prices
+    // Fetch prices with local currency
     const tickerToIdMap: { [key: string]: string } = {
       'ETH': 'ethereum',
       'USDC': 'usd-coin',
@@ -172,7 +178,8 @@ export const useAssets = () => {
     let prices: any = {};
     if (uniqueIds.length > 0) {
       try {
-        const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(',')}&vs_currencies=nzd,usd`;
+        const vsCurrencies = `usd,${localCurrency}`;
+        const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(',')}&vs_currencies=${vsCurrencies}`;
         const priceResp = await fetchWithTimeout(priceUrl);
         if (priceResp.ok) {
           prices = await priceResp.json();
@@ -188,12 +195,12 @@ export const useAssets = () => {
       const id = tickerToIdMap[ticker] || '';
       const decimals = item.contract_decimals || chain.nativeCurrency?.decimals || 18;
       const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0; // Fixed: utils.formatUnits
-      let quoteNzd = parsedBalance * (prices[id]?.nzd || 0);
+      let quoteLocal = parsedBalance * (prices[id]?.[localCurrency] || 0);
       let quoteUsd = parsedBalance * (prices[id]?.usd || 0);
       return {
         contract_ticker_symbol: item.contract_ticker_symbol ?? 'Unknown',
         balance: item.balance || '0',
-        quote: quoteNzd,
+        quoteLocal: quoteLocal,
         quoteUsd: quoteUsd,
         logo_url: item.logo_url ?? 'https://placeholder.com/40x40'
       };
