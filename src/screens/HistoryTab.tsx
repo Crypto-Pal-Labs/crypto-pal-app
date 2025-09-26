@@ -63,7 +63,7 @@ const HistoryTab = () => {
 
       // Standardize local keys to match Covalent (tx_hash, from_address, etc.)
       localTxs = localTxs.map((tx: any) => ({
-        tx_hash: tx.hash || tx.tx_hash || `local-${Date.now()}`,
+        tx_hash: tx.hash || tx.tx_hash || `local-${Date.now()}`, // Standard to tx_hash
         from_address: tx.from,
         to_address: tx.to,
         value: tx.value,
@@ -90,7 +90,7 @@ const HistoryTab = () => {
       console.log('Merged uniqueTxs length:', uniqueTxs.length); // Debug: Final merged length
       setMergedTransactions(uniqueTxs);
 
-      // Cleanup: Only remove locals if exact match in API and successful/mined
+      // Cleanup: Remove locals only if API has the exact hash and it's successful/mined
       const syncedHashes = transactions.filter(tx => tx.successful).map((tx) => tx.tx_hash);
       localTxs = localTxs.filter((tx: any) => !syncedHashes.includes(tx.tx_hash));
       await AsyncStorage.setItem('localTxs', JSON.stringify(localTxs));
@@ -113,7 +113,7 @@ const HistoryTab = () => {
       setIsRefreshing(true);
       const timer = setTimeout(() => {
         refetch()
-          .then(mergeTransactions)
+          .then(mergeTransactions) // Merge after refetch
           .finally(() => setIsRefreshing(false));
       }, 500);
 

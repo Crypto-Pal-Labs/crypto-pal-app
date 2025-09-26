@@ -5,7 +5,7 @@ export type RootStackParamList = {
   Pin: { isSetup?: boolean };
   CreateWallet: undefined;
   RestoreWallet: undefined;
-  MnemonicBackup: undefined;
+  MnemonicBackup: { phrase?: string; isRestore?: boolean };
   AppTabs: undefined;
 };
 

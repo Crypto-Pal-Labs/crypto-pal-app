@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ethers } from 'ethers';
 import { Ionicons } from '@expo/vector-icons';
-import { saveMnemonic, getWalletAddress } from '../utils/wallet';
+import { saveMnemonic, getMnemonic, getWalletAddress } from '../utils/wallet'; // Updated for getMnemonic
 import { useWalletStore } from '../store/useWalletStore';
 import { useAuthStore } from '../store/useAuthStore'; // Added for setHasMnemonic
 import { RootStackParamList } from '../types/navigation';
@@ -23,12 +23,20 @@ export default function CreateWalletScreen() {
       console.log('Generating mnemonic:', phrase); // Debug
       await saveMnemonic(phrase);
       console.log('Mnemonic saved successfully'); // Debug
+
+      // Check if saved correctly
+      const retrieved = await getMnemonic();
+      if (!retrieved) {
+        throw new Error('Mnemonic save failed—retrieval returned null.');
+      }
+      console.log('Mnemonic check successful: exists');
+
       setAddress(wallet.address);
       setHasMnemonic(true); // Set true on success
-      navigation.replace('MnemonicBackup');
+      navigation.replace('MnemonicBackup', { phrase }); // Pass phrase as param
     } catch (e: any) {
       console.error('Create error:', e); // Debug
-      Alert.alert('Error', e?.message ?? 'Failed to create and store wallet. Check storage permissions.');
+      Alert.alert('Error', e?.message ?? 'Failed to create and store wallet. Check storage permissions and try again.');
     }
   };
 

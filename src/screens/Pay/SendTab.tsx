@@ -1,8 +1,8 @@
-// src/screens/SendTab.tsx
+// src/screens/Pay/SendTab.tsx  // Note path per screenshot
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { useWalletStore } from '../../store/useWalletStore';
+import { useWalletStore } from '../../store/useWalletStore'; // Fixed path: Up two levels to src/store
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ETHERSCAN_BASE, ETH_RPC_URL } from '@env'; // Fixed: Add ETH_RPC_URL import
 import AsyncStorage from '@react-native-async-storage/async-storage';  // For fiat and local tx storage
@@ -92,16 +92,17 @@ const SendTab = () => {
       const mnemonic = await SecureStore.getItemAsync('mnemonic');
       console.log('Mnemonic retrieved:', !!mnemonic ? 'exists' : 'null'); // Added debug
       if (!mnemonic) {
-        // Fallback to mock for testing (remove for live)
-        console.log('No mnemonic—using mock signer');
-        return {
-          estimateGas: async () => ethers.BigNumber.from(21000),
-          getGasPrice: async () => ethers.utils.parseUnits('1', 'gwei'),
-          sendTransaction: async (tx: any) => {
-            const hash = `0xmock${Date.now().toString(16)}`;
-            return { wait: async () => ({ transactionHash: hash, gasUsed: ethers.BigNumber.from(21000), effectiveGasPrice: ethers.utils.parseUnits('1', 'gwei') }) };
-          },
-        };
+        throw new Error('No mnemonic found—cannot send real transaction.');
+        // Remove or comment mock for real tx—use only for test if no mnemonic
+        // console.log('No mnemonic—using mock signer');
+        // return {
+        //   estimateGas: async () => ethers.BigNumber.from(21000),
+        //   getGasPrice: async () => ethers.utils.parseUnits('1', 'gwei'),
+        //   sendTransaction: async (tx: any) => {
+        //     const hash = `0xmock${Date.now().toString(16)}`;
+        //     return { wait: async () => ({ transactionHash: hash, gasUsed: ethers.BigNumber.from(21000), effectiveGasPrice: ethers.utils.parseUnits('1', 'gwei') }) };
+        //   },
+        // };
       }
       const wallet = ethers.Wallet.fromMnemonic(mnemonic);
       const provider = new ethers.providers.JsonRpcProvider(ETH_RPC_URL); // Sepolia from .env

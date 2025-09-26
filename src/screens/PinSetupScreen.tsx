@@ -20,7 +20,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
     console.log('PinSetup handleSubmit: isSetup=', isSetup, 'hasMnemonic=', hasMnemonic); // Log for debug
     if (isSetup) {
       try {
-        await SecureStore.setItemAsync('user_pin', pin);
+        await SecureStore.setItemAsync('pin', pin); // Standardized
         setHasPin(true);
         const nextScreen = hasMnemonic ? 'RestoreWallet' : 'CreateWallet';
         console.log('PIN setup—nav to', nextScreen);
@@ -30,7 +30,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
       }
     } else {
       try {
-        const storedPin = await SecureStore.getItemAsync('user_pin');
+        const storedPin = await SecureStore.getItemAsync('pin'); // Standardized
         if (pin === storedPin) {
           setAuthenticated(true);
           console.log('PIN unlock—nav to AppTabs');
