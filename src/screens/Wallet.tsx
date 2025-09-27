@@ -34,10 +34,8 @@ const Wallet = () => {
     // Dynamic local currency
     const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
     const localCurrency = locale.currencyCode || 'USD';
-    const options = ['USD'];
-    if (localCurrency !== 'USD') options.push(localCurrency);
-    if (!options.includes('NZD')) options.push('NZD'); // Keep NZD
-    setCurrencyOptions(options);
+    const uniqueOptions = [...new Set(['USD', localCurrency, 'NZD'])]; // Unique via Set
+    setCurrencyOptions(uniqueOptions);
     setCurrency('USD'); // Always default USD
     return () => {
       isMounted.current = false;
@@ -86,7 +84,7 @@ const Wallet = () => {
   };
 
   const totalValue = balances.reduce((sum, item) => {
-    let adjustedQuote = currency === 'USD' ? (item.quoteUsd || 0) : (item.quoteLocal || 0); // Use quoteLocal for non-USD
+    let adjustedQuote = currency === 'USD' ? (item.quoteUsd ?? 0) : (item.quoteLocal ?? 0); // Use ?? for undefined
     if (item.contract_ticker_symbol === 'ETH') { // Adjust quote for delta
       const originalEth = parseFloat(ethers.utils.formatEther(item.balance));
       const adjustedEth = originalEth + localBalanceDelta;
@@ -209,7 +207,7 @@ const Wallet = () => {
           style={styles.assetList}
           data={viewMode === 'crypto' ? filteredBalances : filteredNfts}
           renderItem={viewMode === 'crypto' ? renderBalanceItem : renderNFTItem}
-          keyExtractor={(item) => item.contract_address + (item.token_id || '')}
+          keyExtractor={(item) => (item.contract_address ? String(item.contract_address) : '') + (item.token_id ? String(item.token_id) : String(Math.random()))} // Fallback key fix
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           ListEmptyComponent={EmptyState}
         />
