@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Platform } from 'react-native';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import { useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
@@ -37,7 +37,25 @@ const BuyRoute = () => {
 
   if (loading) return <ActivityIndicator />;
   if (isRestricted) return <Text style={styles.restrictedText}>Buy feature unavailable in your region.</Text>;
-  return <WebView source={{ uri }} style={{ flex: 1 }} cacheMode="LOAD_NO_CACHE" key="buy" />;
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+      <WebView
+        source={{ uri }}
+        style={{ flex: 1 }}
+        cacheMode="LOAD_NO_CACHE"
+        key="buy"
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
+        originWhitelist={['*']}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        scrollEnabled={true}
+        onError={(syntheticEvent) => console.error('WebView error:', syntheticEvent.nativeEvent)}
+        useWebKit={Platform.OS === 'ios'}  // Better camera support on iOS
+      />
+    </ScrollView>
+  );
 };
 
 const SellRoute = () => {
@@ -69,7 +87,25 @@ const SellRoute = () => {
 
   if (loading) return <ActivityIndicator />;
   if (isRestricted) return <Text style={styles.restrictedText}>Sell feature unavailable in your region.</Text>;
-  return <WebView source={{ uri }} style={{ flex: 1 }} cacheMode="LOAD_NO_CACHE" key="sell" />;
+
+  return (
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+      <WebView
+        source={{ uri }}
+        style={{ flex: 1 }}
+        cacheMode="LOAD_NO_CACHE"
+        key="sell"
+        allowsInlineMediaPlayback={true}
+        mediaPlaybackRequiresUserAction={false}
+        originWhitelist={['*']}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        scrollEnabled={true}
+        onError={(syntheticEvent) => console.error('WebView error:', syntheticEvent.nativeEvent)}
+        useWebKit={Platform.OS === 'ios'}  // Better camera support on iOS
+      />
+    </ScrollView>
+  );
 };
 
 const Buy = () => {
