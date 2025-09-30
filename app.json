@@ -2,24 +2,24 @@
   "expo": {
     "name": "Crypto Pal",
     "slug": "crypto-pal-app",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
-    },
-    "updates": {
-      "fallbackToCacheTimeout": 0
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.cryptopal.app",
+      "buildNumber": "1.0.1",
       "infoPlist": {
-        "NSCameraUsageDescription": "Scan QR codes to send crypto."
+        "NSCameraUsageDescription": "This app uses the camera for scanning QR codes and KYC verification."
       }
     },
     "android": {
@@ -27,7 +27,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.crwmlw.cryptopalapp",
+      "package": "com.cryptopal.app",
+      "versionCode": 2,
       "permissions": [
         "CAMERA"
       ]
@@ -35,31 +36,25 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "runtimeVersion": "1.0.0",
-    "extra": {
-      "eas": {
-        "projectId": "6c753f76-cdce-4f42-8301-4b22267269c4"
-      }
-    },
     "plugins": [
       "expo-secure-store",
       [
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-            "minSdkVersion": 24,
-            "buildToolsVersion": "35.0.0",
-            "gradlePluginVersion": "8.9.1",
-            "enableEdgeToEdge": false,
-            "permissions": ["CAMERA"]
+            "kotlinVersion": "1.9.10"
           }
         }
       ],
       "expo-localization",
       "expo-camera",
       "expo-font"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "your-eas-project-id-if-any"
+      }
+    },
+    "sdkVersion": "53.0.0"
   }
 }
