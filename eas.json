@@ -18,8 +18,12 @@
       }
     },
     "production": {
+      "env": {
+        "COVALENT_KEY": "$(COVALENT_KEY)",
+        "TRANSAK_API_KEY": "$(TRANSAK_API_KEY)"
+      },
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "apk"
       }
     }
   }
