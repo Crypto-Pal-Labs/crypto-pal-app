@@ -38,14 +38,7 @@
     },
     "plugins": [
       "expo-secure-store",
-      [
-        "expo-build-properties",
-        {
-          "android": {
-            "kotlinVersion": "1.9.23"
-          }
-        }
-      ],
+      "expo-build-properties",
       "expo-localization",
       "expo-camera",
       "expo-font"
@@ -54,7 +47,6 @@
       "eas": {
         "projectId": "6c753f76-cdce-4f42-8301-4b22267269c4"
       }
-    },
-    "sdkVersion": "53.0.0"
+    }
   }
 }
