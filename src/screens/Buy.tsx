@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, Platform } from 'react-native';
 import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import { useWindowDimensions } from 'react-native';
@@ -7,15 +7,17 @@ import { getWalletAddress } from '../utils/wallet';
 import { TRANSAK_API_KEY } from '@env';
 import { useFocusEffect } from '@react-navigation/native';  // For reload on focus
 import * as Localization from 'expo-localization';  // For geo and currency
+import { useAssets } from '../hooks/useAssets';  // For refresh after buy
 
 const BuyRoute = () => {
   const [address, setAddress] = useState('');
   const [loading, setLoading] = useState(true);
   const [uri, setUri] = useState('');
   const [isRestricted, setIsRestricted] = useState(false);
+  const { refresh } = useAssets();  // Correct hook method for refresh
 
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       const locale = Localization.getLocales()[0] || { regionCode: 'US', currencyCode: 'USD' };  // Default US/USD
       const region = locale.regionCode || 'US';
       const restrictedCountries = ['US', 'CA'];  // Add restricted regions
@@ -35,6 +37,14 @@ const BuyRoute = () => {
     }, [])
   );
 
+  // Detect buy completion in WebView (e.g., success URL)
+  const handleNavigationChange = (navState: { url: string }) => {
+    if (navState.url.includes('transak.com/success') || navState.url.includes('transaction/success')) {  // Adjust for staging success pattern
+      refresh();  // Auto-refresh Wallet (balances update); History polls automatically
+      console.log('Buy complete—refreshing assets');
+    }
+  };
+
   if (loading) return <ActivityIndicator />;
   if (isRestricted) return <Text style={styles.restrictedText}>Buy feature unavailable in your region.</Text>;
 
@@ -53,6 +63,7 @@ const BuyRoute = () => {
         scrollEnabled={true}
         onError={(syntheticEvent) => console.error('WebView error:', syntheticEvent.nativeEvent)}
         useWebKit={Platform.OS === 'ios'}  // Better camera support on iOS
+        onNavigationStateChange={handleNavigationChange}  // Detect success for refresh
       />
     </ScrollView>
   );
@@ -63,9 +74,10 @@ const SellRoute = () => {
   const [loading, setLoading] = useState(true);
   const [uri, setUri] = useState('');
   const [isRestricted, setIsRestricted] = useState(false);
+  const { refresh } = useAssets();  // Correct hook method for refresh (optional for Sell)
 
   useFocusEffect(
-    React.useCallback(() => {
+    useCallback(() => {
       const locale = Localization.getLocales()[0] || { regionCode: 'US', currencyCode: 'USD' };
       const region = locale.regionCode || 'US';
       const restrictedCountries = ['US', 'CA'];
@@ -85,6 +97,14 @@ const SellRoute = () => {
     }, [])
   );
 
+  // Detect sell completion in WebView (optional, add if Sell needs refresh)
+  const handleNavigationChange = (navState: { url: string }) => {
+    if (navState.url.includes('transak.com/success') || navState.url.includes('transaction/success')) {
+      refresh();
+      console.log('Sell complete—refreshing assets');
+    }
+  };
+
   if (loading) return <ActivityIndicator />;
   if (isRestricted) return <Text style={styles.restrictedText}>Sell feature unavailable in your region.</Text>;
 
@@ -103,6 +123,7 @@ const SellRoute = () => {
         scrollEnabled={true}
         onError={(syntheticEvent) => console.error('WebView error:', syntheticEvent.nativeEvent)}
         useWebKit={Platform.OS === 'ios'}  // Better camera support on iOS
+        onNavigationStateChange={handleNavigationChange}  // Detect success for refresh (optional for Sell)
       />
     </ScrollView>
   );
