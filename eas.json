@@ -20,7 +20,8 @@
     "production": {
       "env": {
         "COVALENT_KEY": "$(COVALENT_KEY)",
-        "TRANSAK_API_KEY": "$(TRANSAK_API_KEY)"
+        "TRANSAK_API_KEY": "$(TRANSAK_API_KEY)",
+        "ETH_RPC_URL": "$(ETH_RPC_URL)"
       },
       "android": {
         "buildType": "apk"
