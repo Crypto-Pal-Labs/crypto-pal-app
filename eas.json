@@ -1,6 +1,7 @@
 {
   "cli": {
-    "appVersionSource": "remote"
+    "appVersionSource": "remote",
+    "version": ">= 12.0.0"
   },
   "build": {
     "development": {
@@ -18,13 +19,22 @@
       }
     },
     "production": {
+      "distribution": "store",
       "env": {
         "COVALENT_KEY": "$(COVALENT_KEY)",
         "TRANSAK_API_KEY": "$(TRANSAK_API_KEY)",
         "ETH_RPC_URL": "$(ETH_RPC_URL)"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "serviceAccountKeyPath": "path/to/your/service-account-key.json",
+        "track": "internal"
       }
     }
   }
