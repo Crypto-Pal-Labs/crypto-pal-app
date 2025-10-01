@@ -1,4 +1,3 @@
-// src/screens/Pay/SendTab.tsx  // Note path per screenshot
 import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
@@ -22,6 +21,8 @@ const SendTab = () => {
   const [amount, setAmount] = useState('');
   const [amountUnit, setAmountUnit] = useState('token'); // 'token', 'usd', 'nzd'
   const [feeEstimate, setFeeEstimate] = useState('Calculating...');
+  const [gasPrice, setGasPrice] = useState<ethers.BigNumber | null>(null); // For fee details
+  const [gasEstimate, setGasEstimate] = useState<ethers.BigNumber | null>(null); // For fee details
   const [loading, setLoading] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -125,9 +126,11 @@ const SendTab = () => {
           to: toAddress,
           value: ethers.utils.parseEther(convertAmountToToken(amount)),
         };
-        const gasEstimate = await signer.estimateGas(tx);
-        const gasPrice = await signer.getGasPrice();
-        const fee = gasEstimate.mul(gasPrice);
+        const gasEstimateValue = await signer.estimateGas(tx);
+        const gasPriceValue = await signer.getGasPrice();
+        setGasEstimate(gasEstimateValue);
+        setGasPrice(gasPriceValue);
+        const fee = gasEstimateValue.mul(gasPriceValue);
         const feeEth = ethers.utils.formatEther(fee);
         const feeNzd = (parseFloat(feeEth) * ethPriceUSD * usdToNzd).toFixed(2);
         setFeeEstimate(`~NZ$${feeNzd}`);
@@ -238,6 +241,15 @@ const SendTab = () => {
     );
   };
 
+  const showFeeDetails = () => {
+    if (!gasPrice || !gasEstimate) return Alert.alert('Fee Details', 'Unable to show details—enter amount/address first.');
+    const gasPriceGwei = ethers.utils.formatUnits(gasPrice, 'gwei');
+    const gasLimit = gasEstimate.toString();
+    const totalFeeEth = ethers.utils.formatEther(gasEstimate.mul(gasPrice));
+    const totalFeeNzd = (parseFloat(totalFeeEth) * ethPriceUSD * usdToNzd).toFixed(2);
+    Alert.alert('Fee Details', `Gas Price: ${gasPriceGwei} Gwei\nGas Limit: ${gasLimit}\nTotal Fee: ~NZ$${totalFeeNzd}`);
+  };
+
   const amountPlaceholder = amountUnit === 'token' ? 'Enter Crypto Amount' : amountUnit === 'usd' ? 'Enter USD Amount' : 'Enter NZD Amount';
 
   return (
@@ -254,7 +266,7 @@ const SendTab = () => {
       {/* Section 2: What crypto... */}
       <View style={styles.section}>
         <Text style={styles.label}>What crypto currency would you like to send them</Text>
-        <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>
+        <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker} as any>  // Type assertion for TS fix
           <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
         </Picker>
       </View>
@@ -279,7 +291,9 @@ const SendTab = () => {
           onChangeText={setAmount}
           keyboardType="numeric"
         />
-        <Button title={`ESTIMATE FEE: $${feeEstimate}`} onPress={() => {}} disabled color="#ccc" />
+        <TouchableOpacity style={styles.feeButton} onPress={showFeeDetails}>
+          <Text style={styles.feeText}>ESTIMATE FEE: ${feeEstimate}</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={loading}>
           <Text style={styles.sendButtonText}>SEND</Text>
         </TouchableOpacity>
@@ -336,6 +350,8 @@ const styles = StyleSheet.create({
   unitText: { color: '#0A84FF', fontWeight: 'bold' },
   unitTextActive: { color: '#fff', fontWeight: 'bold' },
   amountInput: { borderWidth: 1, padding: 8, borderColor: '#ddd', borderRadius: 4, height: 40 }, // Slimmer height
+  feeButton: { padding: 8, backgroundColor: '#ccc', borderRadius: 4, alignItems: 'center', marginTop: 8 },
+  feeText: { color: '#333', fontWeight: 'bold' },
   sendButton: { backgroundColor: '#0A84FF', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 16 },
   sendButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   scannerContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center' },  // Full screen modal
