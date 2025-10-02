@@ -3,7 +3,7 @@ import { useState, useCallback, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ethers from 'ethers';
 import Constants from 'expo-constants';  // Added for build env fallback
-import { COVALENT_KEY, ALCHEMY_KEY, ETH_RPC_URL } from '@env';  // Added back for dev fallback
+import { COVALENT_KEY, ALCHEMY_KEY, ETH_RPC_URL } from '@env';  // For dev fallback
 import { useWalletStore } from '../store/useWalletStore';  // Import for useWalletStore
 import { useChain } from '../hooks/useChain';  // New: To get current chain internally
 import { getProvider } from '../config/chains';  // New: For fallback provider
