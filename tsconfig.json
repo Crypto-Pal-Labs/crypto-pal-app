@@ -1,6 +1,8 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "strict": true
-  }
+    "strict": true,
+    "noImplicitAny": true,  // Enforces typing, but fix below
+    "skipLibCheck": true  // Add this line
+  },
 }
