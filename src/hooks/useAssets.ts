@@ -1,13 +1,20 @@
 // src/hooks/useAssets.ts
-import { useState, useEffect } from 'react';
-import { useWalletStore } from '../store/useWalletStore';
-import { COVALENT_KEY, ALCHEMY_KEY } from '@env';
-import { ethers } from 'ethers';
+import { useState, useCallback, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ethers from 'ethers';
+import Constants from 'expo-constants';  // Added for build env fallback
+import { COVALENT_KEY, ALCHEMY_KEY, ETH_RPC_URL } from '@env';  // Added back for dev fallback
+import { useWalletStore } from '../store/useWalletStore';  // Import for useWalletStore
 import { useChain } from '../hooks/useChain';  // New: To get current chain internally
 import { getProvider } from '../config/chains';  // New: For fallback provider
 import { useFocusEffect } from '@react-navigation/native'; // Added for poll
-import { useCallback } from 'react'; // Added: For useFocusEffect wrapper
 import * as Localization from 'expo-localization'; // Added for local currency
+
+// Added: Type for Zustand state to fix implicit 'any'
+interface WalletState {
+  address: string | null;
+  // Add other store fields if needed (e.g., mnemonic: string | null)
+}
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -38,7 +45,7 @@ export type NFTItem = {
 };
 
 export const useAssets = () => {
-  const address = useWalletStore((state) => state.address);
+  const address = useWalletStore((state: WalletState) => state.address);  // Fixed: Typed state param
   const { currentChain, chains } = useChain();  // Get current chain from hook
   const [balances, setBalances] = useState<BalanceItem[]>([]);  // Default empty array
   const [nfts, setNfts] = useState<NFTItem[]>([]);  // Default empty array
@@ -47,6 +54,11 @@ export const useAssets = () => {
 
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase(); // Null-safe with default 'usd'
+
+  // Env access: Constants for builds (EAS secrets), @env/process.env for dev
+  const covalentKey = Constants.expoConfig?.extra?.COVALENT_KEY || COVALENT_KEY;
+  const alchemyKey = Constants.expoConfig?.extra?.ALCHEMY_KEY || ALCHEMY_KEY;
+  const ethRpcUrl = Constants.expoConfig?.extra?.ETH_RPC_URL || ETH_RPC_URL;
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -94,7 +106,7 @@ export const useAssets = () => {
     let covalentData: any = null;  // Fix: Add 'any' type to covalentData
     try {
       covalentData = await retryFetch(async () => {
-        const url = `https://api.covalenthq.com/v1/${chainId}/address/${checksumAddress}/balances_v2/?nft=true&key=${COVALENT_KEY}`;
+        const url = `https://api.covalenthq.com/v1/${chainId}/address/${checksumAddress}/balances_v2/?nft=true&key=${covalentKey}`;
         const resp = await fetchWithTimeout(url);
         if (resp.status === 503) {
           throw new Error(`Covalent fetch failed with status: 503 - Service Unavailable.`);
@@ -121,7 +133,7 @@ export const useAssets = () => {
       for (let nft of nftItems) {
         if (!nft.contract_name) {
           try {
-            const metaUrl = `https://api.covalenthq.com/v1/${chainId}/nft/${nft.contract_address}/metadata/?key=${COVALENT_KEY}`;
+            const metaUrl = `https://api.covalenthq.com/v1/${chainId}/nft/${nft.contract_address}/metadata/?key=${covalentKey}`;
             const metaResp = await fetchWithTimeout(metaUrl);
             if (metaResp.ok) {
               const metaData = await metaResp.json();

@@ -1,4 +1,3 @@
-// src/screens/HistoryTab.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, ActivityIndicator, FlatList, StyleSheet, Linking, TouchableOpacity, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -8,7 +7,7 @@ import { useWalletStore } from '../store/useWalletStore';
 import { getWalletAddress } from '../utils/wallet';
 import * as ethers from 'ethers'; // Corrected star import for TS
 import { useFocusEffect } from '@react-navigation/native'; // For auto-refresh
-import { ETHERSCAN_BASE } from '@env'; // Added: For explorer links (e.g., Sepolia Etherscan)
+import Constants from 'expo-constants';  // Added for build env fallback
 
 interface TxDetails {
   amount: string;
@@ -25,6 +24,8 @@ const HistoryTab = () => {
   const [txDetailsMap, setTxDetailsMap] = useState<Record<string, TxDetails>>({});
   const [mergedTransactions, setMergedTransactions] = useState<any[]>([]); // Merged API + local
   const [isRefreshing, setIsRefreshing] = useState(false); // Debounce flag
+
+  const ETHERSCAN_BASE = Constants.expoConfig?.extra?.ETHERSCAN_BASE || process.env.ETHERSCAN_BASE;  // Build/dev fallback
 
   useEffect(() => {
     const loadAddress = async () => {
@@ -122,19 +123,13 @@ const HistoryTab = () => {
   );
 
   const getValueDisplay = (tx: any) => {
-    const ethValueStr = tx.value ? ethers.utils.formatEther(tx.value) : '0';
-    const ethValueNum = Number(ethValueStr);
-    const stored = txDetailsMap[tx.tx_hash] || tx.fiatSnapshot;
-    if (stored) {
-      const prefix = typeof stored === 'string' ? '' : (stored.unit === 'TOKEN' ? '' : '$');
-      const display = typeof stored === 'string' ? stored : `${prefix}${stored.amount} ${stored.unit}`;
-      return `${display} (${ethValueNum.toFixed(4)} ETH)`;
+    const ethValueNum = Number(ethers.utils.formatEther(tx.value || '0'));
+    if (tx.fiatSnapshot) {
+      return `${tx.fiatSnapshot.amount} ${tx.fiatSnapshot.unit} (${ethValueNum.toFixed(4) } ETH)`;
     }
-    if (displayUnit === 'TOKEN') return `${ethValueNum.toFixed(4)} ETH`;
-    const usdValue = tx.value_quote || (ethValueNum * ethPriceUSD);
-    if (displayUnit === 'USD') return `$${usdValue.toFixed(2)} USD (${ethValueNum.toFixed(4)} ETH)`;
-    const nzdValue = usdValue * usdToNzd;
-    return `$${nzdValue.toFixed(2)} NZD (${ethValueNum.toFixed(4)} ETH)`;
+    if (displayUnit === 'NZD') return `$${ (ethValueNum * ethPriceUSD * usdToNzd).toFixed(2) } NZD (${ethValueNum.toFixed(4)} ETH)`;
+    if (displayUnit === 'USD') return `$${ (ethValueNum * ethPriceUSD).toFixed(2) } USD (${ethValueNum.toFixed(4)} ETH)`;
+    return `${ethValueNum.toFixed(4)} ETH`;
   };
 
   const getIconName = (tx: any) => {
