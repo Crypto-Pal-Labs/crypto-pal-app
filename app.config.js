@@ -21,7 +21,8 @@ module.exports = ({ config }) => {
     android: {
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        package: "com.cryptopallabs.cryptopal"
       }
     },
     web: {
