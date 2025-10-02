@@ -1,20 +1,23 @@
 // src/utils/eth.ts
 import { ethers } from 'ethers';
-import { getSavedMnemonic } from './wallet';
+import Constants from 'expo-constants';
+import * as SecureStore from 'expo-secure-store';
 
 export type ChainId = 1 | 56;
 
 const RPC: Record<ChainId, string> = {
-  1:  'https://ethereum.publicnode.com',      // Mainnet
-  56: 'https://bsc.publicnode.com',           // BSC
+  1: Constants.expoConfig?.extra?.EXPO_PUBLIC_ETH_RPC_URL || process.env.EXPO_PUBLIC_ETH_RPC_URL || 'https://ethereum.publicnode.com',
+  56: 'https://bsc.publicnode.com',
 };
 
 export function getProvider(chainId: ChainId) {
-  return new ethers.providers.JsonRpcProvider(RPC[chainId]);
+  const rpcUrl = RPC[chainId];
+  console.log('Using RPC for chain', chainId, ':', rpcUrl);
+  return new ethers.providers.JsonRpcProvider(rpcUrl);
 }
 
 export async function getSigner(chainId: ChainId) {
-  const phrase = await getSavedMnemonic();
+  const phrase = await SecureStore.getItemAsync('mnemonic');
   if (!phrase) throw new Error('No wallet found. Please create or restore.');
   const wallet = ethers.Wallet.fromMnemonic(phrase);
   return wallet.connect(getProvider(chainId));
