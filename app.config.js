@@ -16,13 +16,14 @@ module.exports = ({ config }) => {
     },
     assetBundlePatterns: ['**/*'],
     ios: {
-      supportsTablet: true
+      supportsTablet: true,
+      bundleIdentifier: 'com.cryptopallabs.cryptopal'  // Added for iOS prep (matches android)
     },
     android: {
+      package: 'com.cryptopallabs.cryptopal',  // Moved here from adaptiveIcon (required top-level for builds)
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
-        backgroundColor: '#ffffff',
-        package: "com.cryptopallabs.cryptopal"
+        backgroundColor: '#ffffff'
       }
     },
     web: {
