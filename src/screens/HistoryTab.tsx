@@ -8,6 +8,7 @@ import { getWalletAddress } from '../utils/wallet';
 import * as ethers from 'ethers'; // Corrected star import for TS
 import { useFocusEffect } from '@react-navigation/native'; // For auto-refresh
 import Constants from 'expo-constants';  // Added for build env fallback
+import { ETHERSCAN_BASE } from '@env';  // Added for dev fallback
 
 interface TxDetails {
   amount: string;
@@ -25,7 +26,7 @@ const HistoryTab = () => {
   const [mergedTransactions, setMergedTransactions] = useState<any[]>([]); // Merged API + local
   const [isRefreshing, setIsRefreshing] = useState(false); // Debounce flag
 
-  const ETHERSCAN_BASE = Constants.expoConfig?.extra?.ETHERSCAN_BASE || process.env.ETHERSCAN_BASE;  // Build/dev fallback
+  const etherscanBase: string = Constants.expoConfig?.extra?.ETHERSCAN_BASE || process.env.ETHERSCAN_BASE || 'https://sepolia.etherscan.io';  // Fixed: Typed const, use process.env for dev fallback, default string for safety
 
   useEffect(() => {
     const loadAddress = async () => {
@@ -147,7 +148,7 @@ const HistoryTab = () => {
   };
 
   const renderTxItem = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.txItem} onPress={() => Linking.openURL(`${ETHERSCAN_BASE}${item.tx_hash}`)}>
+    <TouchableOpacity style={styles.txItem} onPress={() => Linking.openURL(`${etherscanBase}${item.tx_hash}`)}>
       <Ionicons name={getIconName(item)} size={24} color={getIconColor(item)} style={styles.icon} />
       <View style={styles.txInfo}>
         <Text style={styles.txDate}>{item.block_signed_at ? new Date(item.block_signed_at).toLocaleString() : 'Unknown Date'}</Text>
