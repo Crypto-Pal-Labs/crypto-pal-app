@@ -19,6 +19,7 @@ module.exports = ({ config }) => {
       supportsTablet: true
     },
     android: {
+      package: "com.cryptopal.app", // Unique, change if needed (e.g., com.yourname.cryptopal)
       adaptiveIcon: {
         foregroundImage: './assets/adaptive-icon.png',
         backgroundColor: '#ffffff'
