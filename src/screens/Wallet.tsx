@@ -24,17 +24,17 @@ const Wallet = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [localAddress, setLocalAddress] = useState('');
-  const [currency, setCurrency] = useState('USD'); // Default USD
+  const [currency, setCurrency] = useState('USD'); // Default USD as requested
   const [localBalanceDelta, setLocalBalanceDelta] = useState(0); // For mock deducts (in ETH)
   const [currencyOptions, setCurrencyOptions] = useState(['USD']); // Dynamic options
 
   useEffect(() => {
     loadAddress();
     loadLocalDelta(); // Initial load
-    // Dynamic local currency
+    // Dynamic local currency (only USD + user local, no hardcoded NZD unless local)
     const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
-    const localCurrency = locale.currencyCode || 'USD';
-    const uniqueOptions = [...new Set(['USD', localCurrency, 'NZD'])]; // Unique via Set
+    const localCurrency = locale.currencyCode?.toUpperCase() || 'USD';
+    const uniqueOptions = [...new Set(['USD', localCurrency])]; // Only USD + local (no duplicates if local=USD)
     setCurrencyOptions(uniqueOptions);
     setCurrency('USD'); // Always default USD
     return () => {
