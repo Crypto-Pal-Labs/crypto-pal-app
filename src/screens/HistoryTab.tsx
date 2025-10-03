@@ -1,5 +1,5 @@
 // src/screens/HistoryTab.tsx
-import React, { useEffect, useState, useCallback, useRef } from 'react'; // Added useRef
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, ActivityIndicator, FlatList, StyleSheet, Linking, TouchableOpacity, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,7 @@ import { getWalletAddress } from '../utils/wallet';
 import * as ethers from 'ethers';
 import { useFocusEffect } from '@react-navigation/native';
 import { ETHERSCAN_BASE } from '@env';
+import * as Localization from 'expo-localization'; // Added for dynamic local currency
 
 interface TxDetails {
   amount: string;
@@ -20,12 +21,16 @@ const HistoryTab = () => {
   const { transactions, loading, error, refetch } = useHistory();
   const address = useWalletStore((state) => state.address);
   const [ethPriceUSD, setEthPriceUSD] = useState(0);
-  const [usdToNzd, setUsdToNzd] = useState(1.6);
-  const [displayUnit, setDisplayUnit] = useState('TOKEN');
+  const [ethPriceLocal, setEthPriceLocal] = useState(0); // Generalized from usdToNzd
+  const [displayUnit, setDisplayUnit] = useState('TOKEN'); // Defaults to TOKEN as requested
   const [txDetailsMap, setTxDetailsMap] = useState<Record<string, TxDetails>>({});
   const [mergedTransactions, setMergedTransactions] = useState<any[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const isActiveRef = useRef(true);
+
+  // Get user local currency (dynamic, not hard-fixed to NZD)
+  const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
+  const localCurrency = (locale.currencyCode || 'USD').toUpperCase(); // E.g., 'NZD', 'EUR'; fallback USD if null
 
   useEffect(() => {
     const loadAddress = async () => {
@@ -38,19 +43,17 @@ const HistoryTab = () => {
   useEffect(() => {
     const fetchRates = async () => {
       try {
-        const ethResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
-        const ethData = await ethResponse.json();
-        setEthPriceUSD(ethData?.ethereum?.usd || 2000);
-
-        const nzdResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=usdt&vs_currencies=nzd');
-        const nzdData = await nzdResponse.json();
-        setUsdToNzd(nzdData?.usdt?.nzd || 1.6);
+        const vsCurrencies = `usd,${localCurrency.toLowerCase()}`;
+        const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=${vsCurrencies}`);
+        const data = await response.json();
+        setEthPriceUSD(data?.ethereum?.usd || 2000);
+        setEthPriceLocal(data?.ethereum?.[localCurrency.toLowerCase()] || data?.ethereum?.usd || 2000); // Fallback to USD if local fails
       } catch (e) {
-        console.warn('Rate fetch error:', e); // Warn only
+        console.warn('Rate fetch error:', e);
       }
     };
     fetchRates();
-  }, []);
+  }, [localCurrency]); // Re-fetch if local changes (rare)
 
   const mergeTransactions = useCallback(async () => {
     try {
@@ -70,11 +73,32 @@ const HistoryTab = () => {
         gas_spent: '0',
         value_quote: 0,
         fiatSnapshot: tx.fiatSnapshot,
+        frozenUsd: tx.frozenUsd, // Preserve if already frozen
+        frozenLocal: tx.frozenLocal,
       }));
 
       const allTxs = [...transactions, ...localTxs];
       const uniqueTxs = allTxs.reduce((acc: any[], tx: any) => {
         if (tx.tx_hash && !acc.some((t) => t.tx_hash === tx.tx_hash)) {
+          // Freeze fiat values if not already set
+          const ethValueNum = Number(ethers.utils.formatEther(tx.value || '0'));
+          if (!tx.frozenUsd) {
+            tx.frozenUsd = ethValueNum * ethPriceUSD;
+          }
+          if (!tx.frozenLocal) {
+            tx.frozenLocal = ethValueNum * ethPriceLocal;
+          }
+          // Prioritize fiatSnapshot for sender-side if present
+          if (tx.fiatSnapshot) {
+            // Parse snapshot for USD/local (assume format like "$3 USD (0.0015 ETH)")
+            const match = tx.fiatSnapshot.match(/\$([\d.]+) (\w+)/);
+            if (match) {
+              const amount = parseFloat(match[1]);
+              const unit = match[2].toUpperCase();
+              if (unit === 'USD') tx.frozenUsd = amount;
+              if (unit === localCurrency) tx.frozenLocal = amount;
+            }
+          }
           acc.push(tx);
         }
         return acc;
@@ -92,7 +116,7 @@ const HistoryTab = () => {
     } catch (e) {
       console.warn('AsyncStorage fetch error:', e);
     }
-  }, [transactions]);
+  }, [transactions, ethPriceUSD, ethPriceLocal, localCurrency]);
 
   useEffect(() => {
     mergeTransactions();
@@ -137,10 +161,11 @@ const HistoryTab = () => {
       return `${details.amount} ${details.unit} (${ethValueNum.toFixed(4)} ETH)`;
     }
     if (displayUnit === 'TOKEN') return `${ethValueNum.toFixed(4)} ETH`;
-    const usdValue = tx.value_quote || (ethValueNum * ethPriceUSD);
+    // Use frozen values if available, else fallback to current calculation
+    const usdValue = tx.frozenUsd ?? (ethValueNum * ethPriceUSD);
     if (displayUnit === 'USD') return `$${usdValue.toFixed(2)} USD (${ethValueNum.toFixed(4)} ETH)`;
-    const nzdValue = usdValue * usdToNzd;
-    return `$${nzdValue.toFixed(2)} NZD (${ethValueNum.toFixed(4)} ETH)`;
+    const localValue = tx.frozenLocal ?? (ethValueNum * ethPriceLocal);
+    return `$${localValue.toFixed(2)} ${localCurrency} (${ethValueNum.toFixed(4)} ETH)`;
   };
 
   const getIconName = (tx: any) => {
@@ -193,8 +218,8 @@ const HistoryTab = () => {
         <TouchableOpacity style={displayUnit === 'USD' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('USD')}>
           <Text style={displayUnit === 'USD' ? styles.unitTextActive : styles.unitText}>USD</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={displayUnit === 'NZD' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('NZD')}>
-          <Text style={displayUnit === 'NZD' ? styles.unitTextActive : styles.unitText}>NZD</Text>
+        <TouchableOpacity style={displayUnit === localCurrency ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit(localCurrency)}>
+          <Text style={displayUnit === localCurrency ? styles.unitTextActive : styles.unitText}>{localCurrency}</Text>
         </TouchableOpacity>
       </View>
       {loading ? (
