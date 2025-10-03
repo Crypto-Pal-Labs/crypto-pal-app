@@ -1,13 +1,13 @@
 // src/hooks/useAssets.ts
-import { useState, useEffect } from 'react';
+import { useState, useRef } from 'react'; // Added useRef for active flag
 import { useWalletStore } from '../store/useWalletStore';
 import { COVALENT_KEY, ALCHEMY_KEY } from '@env';
-import { ethers } from 'ethers';
-import { useChain } from '../hooks/useChain';  // New: To get current chain internally
-import { getProvider } from '../config/chains';  // New: For fallback provider
-import { useFocusEffect } from '@react-navigation/native'; // Added for poll
-import { useCallback } from 'react'; // Added: For useFocusEffect wrapper
-import * as Localization from 'expo-localization'; // Added for local currency
+import * as ethers from 'ethers'; // Star import for TS
+import { useChain } from '../hooks/useChain';
+import { getProvider } from '../config/chains';
+import { useFocusEffect } from '@react-navigation/native'; // Correct import
+import { useCallback } from 'react';
+import * as Localization from 'expo-localization';
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -18,13 +18,13 @@ interface CovalentItem {
   contract_address?: string;
   nft_data?: any[];
   contract_name?: string;
-  contract_decimals?: number;  // Added for formatUnits safety
+  contract_decimals?: number;
 }
 
 export type BalanceItem = {
   contract_ticker_symbol: string;
   balance: string;
-  quoteLocal: number; // Renamed for local currency
+  quoteLocal: number;
   quoteUsd: number;
   logo_url: string;
 };
@@ -39,22 +39,22 @@ export type NFTItem = {
 
 export const useAssets = () => {
   const address = useWalletStore((state) => state.address);
-  const { currentChain, chains } = useChain();  // Get current chain from hook
-  const [balances, setBalances] = useState<BalanceItem[]>([]);  // Default empty array
-  const [nfts, setNfts] = useState<NFTItem[]>([]);  // Default empty array
+  const { currentChain, chains } = useChain();
+  const [balances, setBalances] = useState<BalanceItem[]>([]);
+  const [nfts, setNfts] = useState<NFTItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const isActiveRef = useRef(true); // Ref to track if component is mounted/focused
 
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
-  const localCurrency = (locale.currencyCode || 'usd').toLowerCase(); // Null-safe with default 'usd'
+  const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        console.log(`Attempt ${attempt} for fetch...`);  // Debug
         return await fn();
       } catch (err: unknown) {
-        console.log(`Retry attempt ${attempt} failed:`, (err as Error).message);
+        console.warn(`Retry attempt ${attempt} failed:`, (err as Error).message); // Warn only
         if (attempt === retries) throw err;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -74,24 +74,24 @@ export const useAssets = () => {
     }
   };
 
-  const fetchAssets = async () => {
+  const fetchAssetsInternal = async () => {
+    if (!isActiveRef.current) return; // Guard: Skip if unfocused/unmounted
     setLoading(true);
     setError(null);
-    setBalances([]);  // Reset to empty
-    setNfts([]);  // Reset to empty
+    setBalances([]);
+    setNfts([]);
 
     if (!address || !currentChain) {
-      console.log('No address or chain:', { address, currentChain });  // Debug log
       setError('No wallet address or chain found.');
       setLoading(false);
       return;
     }
 
-    const chain = chains[currentChain] || {};  // Safe access
+    const chain = chains[currentChain] || {};
     const chainId = chain.covalentChainId;
-    const checksumAddress = ethers.utils.getAddress(address); // Fixed: utils.getAddress
+    const checksumAddress = ethers.utils.getAddress(address);
 
-    let covalentData: any = null;  // Fix: Add 'any' type to covalentData
+    let covalentData: any = null;
     try {
       covalentData = await retryFetch(async () => {
         const url = `https://api.covalenthq.com/v1/${chainId}/address/${checksumAddress}/balances_v2/?nft=true&key=${COVALENT_KEY}`;
@@ -104,9 +104,8 @@ export const useAssets = () => {
         }
         return await resp.json();
       });
-      console.log('Covalent success for chainId', chainId, 'items:', covalentData?.data?.items?.length || 0);
     } catch (err: unknown) {
-      console.log('Covalent failed:', (err as Error).message);
+      console.warn('Covalent failed:', (err as Error).message); // Warn only
       setError('Covalent fetch failed—using fallback.');
     }
 
@@ -117,7 +116,6 @@ export const useAssets = () => {
       const items: CovalentItem[] = covalentData.data.items || [];
       tempBalances = items.filter((item) => item.type !== 'nft');
       nftItems = items.filter((item) => item.type === 'nft');
-      // Metadata for NFTs
       for (let nft of nftItems) {
         if (!nft.contract_name) {
           try {
@@ -132,7 +130,7 @@ export const useAssets = () => {
           } catch (metaErr: unknown) {
             nft.contract_name = 'Unknown NFT';
             nft.logo_url = 'https://placeholder.com/40x40';
-            console.log('NFT meta failed:', (metaErr as Error).message);
+            console.warn('NFT meta failed:', (metaErr as Error).message);
           }
         }
         allNfts.push({
@@ -145,7 +143,6 @@ export const useAssets = () => {
       }
     }
 
-    // Always force fallback if tempBalances empty or Covalent failed
     if (tempBalances.length === 0 || !covalentData) {
       try {
         const provider = getProvider(currentChain);
@@ -159,20 +156,17 @@ export const useAssets = () => {
           contract_address: '0x0',
           contract_decimals: chain.nativeCurrency?.decimals || 18,
         });
-        console.log('Forced fallback success for', currentChain, 'balance:', nativeBalance.toString());
       } catch (forceFallbackErr: unknown) {
-        console.log('Forced fallback failed:', (forceFallbackErr as Error).message);
+        console.warn('Forced fallback failed:', (forceFallbackErr as Error).message);
         setError('Failed to load balances. Pull to refresh.');
       }
     }
 
-    // Fetch prices with local currency
     const tickerToIdMap: { [key: string]: string } = {
       'ETH': 'ethereum',
       'USDC': 'usd-coin',
       'BNB': 'binancecoin',
       'MATIC': 'matic-network',
-      // Add more
     };
     const uniqueIds = [...new Set(tempBalances.map(item => tickerToIdMap[item.contract_ticker_symbol?.toUpperCase() ?? ''] || ''))].filter(id => id);
     let prices: any = {};
@@ -189,12 +183,11 @@ export const useAssets = () => {
       }
     }
 
-    // Map prices with defaults
     const pricedBalances = tempBalances.map((item) => {
       const ticker = item.contract_ticker_symbol?.toUpperCase() ?? '';
       const id = tickerToIdMap[ticker] || '';
       const decimals = item.contract_decimals || chain.nativeCurrency?.decimals || 18;
-      const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0; // Fixed: utils.formatUnits
+      const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0;
       let quoteLocal = parsedBalance * (prices[id]?.[localCurrency] || 0);
       let quoteUsd = parsedBalance * (prices[id]?.usd || 0);
       return {
@@ -206,14 +199,40 @@ export const useAssets = () => {
       };
     });
 
-    setBalances(pricedBalances);
-    setNfts(allNfts);
-    setLoading(false);
+    if (isActiveRef.current) { // Only update if still active
+      setBalances(pricedBalances);
+      setNfts(allNfts);
+      setLoading(false);
+    }
   };
 
-  useEffect(() => {
-    fetchAssets();
-  }, [address, currentChain]);  // Re-fetch on chain/address change
+  // Debounce wrapper to limit fetch rate (prevents rapid calls)
+  const debounce = (fn: () => void, ms: number) => {
+    let timeout: NodeJS.Timeout | null = null;
+    return () => {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(fn, ms);
+    };
+  };
+  const debouncedFetch = debounce(fetchAssetsInternal, 500); // 500ms debounce
 
-  return { balances, nfts, loading, error, refresh: fetchAssets };
+  useFocusEffect(
+    useCallback(() => {
+      isActiveRef.current = true;
+      debouncedFetch(); // Initial debounced fetch
+
+      const interval = setInterval(() => {
+        if (!loading && isActiveRef.current) {
+          debouncedFetch(); // Debounced auto-refresh
+        }
+      }, 10000);
+
+      return () => {
+        isActiveRef.current = false;
+        clearInterval(interval);
+      };
+    }, []) // Empty deps: Run once per focus, no re-create on loading change
+  );
+
+  return { balances, nfts, loading, error, refresh: debouncedFetch };
 };

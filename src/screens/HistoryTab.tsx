@@ -1,14 +1,14 @@
 // src/screens/HistoryTab.tsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react'; // Added useRef
 import { View, Text, ActivityIndicator, FlatList, StyleSheet, Linking, TouchableOpacity, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useHistory } from '../hooks/useHistory';
 import { useWalletStore } from '../store/useWalletStore';
 import { getWalletAddress } from '../utils/wallet';
-import * as ethers from 'ethers'; // Corrected star import for TS
-import { useFocusEffect } from '@react-navigation/native'; // For auto-refresh
-import { ETHERSCAN_BASE } from '@env'; // Added: For explorer links (e.g., Sepolia Etherscan)
+import * as ethers from 'ethers';
+import { useFocusEffect } from '@react-navigation/native';
+import { ETHERSCAN_BASE } from '@env';
 
 interface TxDetails {
   amount: string;
@@ -23,8 +23,9 @@ const HistoryTab = () => {
   const [usdToNzd, setUsdToNzd] = useState(1.6);
   const [displayUnit, setDisplayUnit] = useState('TOKEN');
   const [txDetailsMap, setTxDetailsMap] = useState<Record<string, TxDetails>>({});
-  const [mergedTransactions, setMergedTransactions] = useState<any[]>([]); // Merged API + local
-  const [isRefreshing, setIsRefreshing] = useState(false); // Debounce flag
+  const [mergedTransactions, setMergedTransactions] = useState<any[]>([]);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const isActiveRef = useRef(true);
 
   useEffect(() => {
     const loadAddress = async () => {
@@ -45,37 +46,32 @@ const HistoryTab = () => {
         const nzdData = await nzdResponse.json();
         setUsdToNzd(nzdData?.usdt?.nzd || 1.6);
       } catch (e) {
-        console.error('Rate fetch error:', e);
+        console.warn('Rate fetch error:', e); // Warn only
       }
     };
     fetchRates();
   }, []);
 
   const mergeTransactions = useCallback(async () => {
-    console.log('Merging transactions...');
     try {
       const storedDetails = await AsyncStorage.getItem('txDetails');
       setTxDetailsMap(storedDetails ? JSON.parse(storedDetails) : {});
 
       const storedLocalTxs = await AsyncStorage.getItem('localTxs');
       let localTxs = storedLocalTxs ? JSON.parse(storedLocalTxs) : [];
-      console.log('LocalTxs length:', localTxs.length); // Debug: Local length
 
-      // Standardize local keys to match Covalent (tx_hash, from_address, etc.)
       localTxs = localTxs.map((tx: any) => ({
-        tx_hash: tx.hash || tx.tx_hash || `local-${Date.now()}`, // Standard to tx_hash
+        tx_hash: tx.hash || tx.tx_hash || `local-${Date.now()}`,
         from_address: tx.from,
         to_address: tx.to,
         value: tx.value,
         block_signed_at: tx.timestamp,
         successful: true,
-        gas_spent: '0', // Stub
-        value_quote: 0, // Stub
+        gas_spent: '0',
+        value_quote: 0,
         fiatSnapshot: tx.fiatSnapshot,
       }));
 
-      console.log('API transactions length:', transactions.length); // Debug: API length
-      // Merge: Add local not in API (dedup by tx_hash)
       const allTxs = [...transactions, ...localTxs];
       const uniqueTxs = allTxs.reduce((acc: any[], tx: any) => {
         if (tx.tx_hash && !acc.some((t) => t.tx_hash === tx.tx_hash)) {
@@ -84,51 +80,61 @@ const HistoryTab = () => {
         return acc;
       }, []);
 
-      // Sort by block_signed_at desc
       uniqueTxs.sort((a, b) => new Date(b.block_signed_at).getTime() - new Date(a.block_signed_at).getTime());
 
-      console.log('Merged uniqueTxs length:', uniqueTxs.length); // Debug: Final merged length
-      setMergedTransactions(uniqueTxs);
+      if (isActiveRef.current) {
+        setMergedTransactions(uniqueTxs);
+      }
 
-      // Cleanup: Remove locals only if API has the exact hash and it's successful/mined
       const syncedHashes = transactions.filter(tx => tx.successful).map((tx) => tx.tx_hash);
       localTxs = localTxs.filter((tx: any) => !syncedHashes.includes(tx.tx_hash));
       await AsyncStorage.setItem('localTxs', JSON.stringify(localTxs));
     } catch (e) {
-      console.error('AsyncStorage fetch error:', e);
+      console.warn('AsyncStorage fetch error:', e);
     }
   }, [transactions]);
 
   useEffect(() => {
-    mergeTransactions(); // Run merge when transactions change
+    mergeTransactions();
   }, [transactions, mergeTransactions]);
 
-  useFocusEffect(
-    React.useCallback(() => {
-      if (isRefreshing || loading) {
-        console.log('Skipping focus refetch—already refreshing/loading');
-        return;
-      }
-      console.log('Focus refetch triggered');
-      setIsRefreshing(true);
-      const timer = setTimeout(() => {
-        refetch()
-          .then(mergeTransactions) // Merge after refetch
-          .finally(() => setIsRefreshing(false));
-      }, 500);
+  // Debounce wrapper for refetch
+  const debounce = (fn: () => Promise<void>, ms: number) => {
+    let timeout: NodeJS.Timeout | null = null;
+    return () => {
+      if (timeout) clearTimeout(timeout);
+      timeout = setTimeout(fn, ms);
+    };
+  };
+  const debouncedRefetch = debounce(async () => {
+    await refetch();
+    await mergeTransactions();
+  }, 500);
 
-      return () => clearTimeout(timer);
-    }, [refetch, mergeTransactions, isRefreshing, loading])
+  useFocusEffect(
+    useCallback(() => {
+      isActiveRef.current = true;
+      debouncedRefetch(); // Initial debounced refetch
+
+      const interval = setInterval(() => {
+        if (!isRefreshing && !loading && isActiveRef.current) {
+          debouncedRefetch(); // Debounced auto-refresh
+        }
+      }, 10000);
+
+      return () => {
+        isActiveRef.current = false;
+        clearInterval(interval);
+      };
+    }, []) // Empty deps for single run per focus
   );
 
   const getValueDisplay = (tx: any) => {
-    const ethValueStr = tx.value ? ethers.utils.formatEther(tx.value) : '0';
-    const ethValueNum = Number(ethValueStr);
-    const stored = txDetailsMap[tx.tx_hash] || tx.fiatSnapshot;
-    if (stored) {
-      const prefix = typeof stored === 'string' ? '' : (stored.unit === 'TOKEN' ? '' : '$');
-      const display = typeof stored === 'string' ? stored : `${prefix}${stored.amount} ${stored.unit}`;
-      return `${display} (${ethValueNum.toFixed(4)} ETH)`;
+    const ethValue = tx.value || '0';
+    const ethValueNum = Number(ethers.utils.formatEther(ethValue));
+    const details = txDetailsMap[tx.tx_hash] || {};
+    if (details.amount && details.unit) {
+      return `${details.amount} ${details.unit} (${ethValueNum.toFixed(4)} ETH)`;
     }
     if (displayUnit === 'TOKEN') return `${ethValueNum.toFixed(4)} ETH`;
     const usdValue = tx.value_quote || (ethValueNum * ethPriceUSD);
@@ -195,9 +201,9 @@ const HistoryTab = () => {
         <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>
       ) : (
         <FlatList
-          data={mergedTransactions} // Use merged list
+          data={mergedTransactions}
           renderItem={renderTxItem}
-          keyExtractor={(item) => item.tx_hash || item.block_signed_at} // Fallback to timestamp if no hash
+          keyExtractor={(item) => item.tx_hash || item.block_signed_at}
           ListEmptyComponent={EmptyState}
           contentContainerStyle={styles.listContainer}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} colors={['#0A84FF']} />}
