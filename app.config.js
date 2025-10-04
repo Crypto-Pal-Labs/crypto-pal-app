@@ -39,6 +39,7 @@ module.exports = ({ config }) => {
         projectId: '6c753f76-cdce-4f42-8301-4b22267269c4'
       },
       COVALENT_KEY: process.env.COVALENT_KEY,
+      COVALENT_KEY: process.env.EXPO_PUBLIC_COVALENT_KEY,
       TRANSAK_API_KEY: process.env.TRANSAK_API_KEY,
       ETHERSCAN_BASE: process.env.ETHERSCAN_BASE,
       ETH_RPC_URL: process.env.ETH_RPC_URL,

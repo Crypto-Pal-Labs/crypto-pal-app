@@ -1,13 +1,14 @@
 // src/hooks/useAssets.ts
 import { useState, useRef } from 'react'; // Added useRef for active flag
 import { useWalletStore } from '../store/useWalletStore';
-import { COVALENT_KEY, ALCHEMY_KEY } from '@env';
 import * as ethers from 'ethers'; // Star import for TS
 import { useChain } from '../hooks/useChain';
 import { getProvider } from '../config/chains';
 import { useFocusEffect } from '@react-navigation/native'; // Correct import
 import { useCallback } from 'react';
-import * as Localization from 'expo-localization';
+import * as Localization from 'expo-localization'; // For local currency
+import Constants from 'expo-constants'; // Added for bundled env in builds
+import { Alert } from 'react-native'; // Added for user-friendly error alerts
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -49,6 +50,9 @@ export const useAssets = () => {
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
+  // Use Constants for bundled env in standalone builds (fixes APK key missing)
+  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY || 'fallback_covalent_key_for_dev'; // Stub for dev if not set
+
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -82,12 +86,14 @@ export const useAssets = () => {
     setNfts([]);
 
     if (!address || !currentChain) {
-      setError('No wallet address or chain found.');
+      const errMsg = 'No wallet address or chain found.';
+      setError(errMsg);
+      Alert.alert('Error', errMsg); // User-friendly alert
       setLoading(false);
       return;
     }
 
-    const chain = chains[currentChain] || {};
+    const chain = chains[currentChain] || {};  // Safe access
     const chainId = chain.covalentChainId;
     const checksumAddress = ethers.utils.getAddress(address);
 
@@ -105,8 +111,10 @@ export const useAssets = () => {
         return await resp.json();
       });
     } catch (err: unknown) {
-      console.warn('Covalent failed:', (err as Error).message); // Warn only
+      const errMsg = (err as Error).message || 'Unknown error';
+      console.warn('Covalent failed:', errMsg); // Warn only
       setError('Covalent fetch failed—using fallback.');
+      Alert.alert('Covalent Error', errMsg + ' Using fallback.'); // Alert for debug
     }
 
     let tempBalances: CovalentItem[] = [];
@@ -157,8 +165,10 @@ export const useAssets = () => {
           contract_decimals: chain.nativeCurrency?.decimals || 18,
         });
       } catch (forceFallbackErr: unknown) {
-        console.warn('Forced fallback failed:', (forceFallbackErr as Error).message);
+        const errMsg = (forceFallbackErr as Error).message || 'Unknown error';
+        console.warn('Forced fallback failed:', errMsg);
         setError('Failed to load balances. Pull to refresh.');
+        Alert.alert('Fallback Error', errMsg);
       }
     }
 

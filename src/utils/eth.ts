@@ -3,17 +3,51 @@ import { ethers } from 'ethers';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
-export type ChainId = 1 | 56;
+export type ChainId = 11155111 | 97 | 80002; // Sepolia (ETH testnet), BSC Testnet, Polygon Amoy
 
 const RPC: Record<ChainId, string> = {
-  1: Constants.expoConfig?.extra?.EXPO_PUBLIC_ETH_RPC_URL || process.env.EXPO_PUBLIC_ETH_RPC_URL || 'https://ethereum.publicnode.com',
-  56: 'https://bsc.publicnode.com',
+  11155111: Constants.expoConfig?.extra?.ETH_RPC_URL || process.env.ETH_RPC_URL || 'https://rpc.sepolia.org', // Public Sepolia fallback
+  97: Constants.expoConfig?.extra?.BSC_RPC_URL || process.env.BSC_RPC_URL || 'https://bsc-testnet.publicnode.com', // BSC Testnet fallback
+  80002: Constants.expoConfig?.extra?.POLYGON_RPC_URL || process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology', // Amoy fallback
 };
 
 export function getProvider(chainId: ChainId) {
-  const rpcUrl = RPC[chainId];
-  console.log('Using RPC for chain', chainId, ':', rpcUrl);
-  return new ethers.providers.JsonRpcProvider(rpcUrl);
+  let rpcUrl = RPC[chainId];
+  console.log('Using RPC for chain', chainId, ':', rpcUrl ? `Set (length: ${rpcUrl.length})` : 'Missing'); // Debug log
+
+  // Safeguard: Check if Alchemy URL has valid key (32 chars)
+  if (rpcUrl.includes('alchemy.com') && rpcUrl.split('/').pop()?.length !== 32) {
+    console.warn('Invalid Alchemy key detected (expected 32 chars)—switching to public fallback');
+    switch (chainId) {
+      case 11155111:
+        rpcUrl = 'https://rpc.sepolia.org';
+        break;
+      case 97:
+        rpcUrl = 'https://bsc-testnet.publicnode.com';
+        break;
+      case 80002:
+        rpcUrl = 'https://rpc-amoy.polygon.technology';
+        break;
+    }
+  }
+
+  try {
+    const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+    // Force network detection with timeout to catch early errors
+    setTimeout(async () => {
+      try {
+        await provider.detectNetwork();
+        console.log('Network detected successfully for chain', chainId);
+      } catch (detectErr) {
+        console.error('Network detection failed:', detectErr);
+      }
+    }, 1000);
+    return provider;
+  } catch (err) {
+    console.error('Provider init failed:', err);
+    // Ultimate fallback to a reliable public node
+    return new ethers.providers.JsonRpcProvider('https://rpc.sepolia.org'); // Default to Sepolia as primary
+  }
 }
 
 export async function getSigner(chainId: ChainId) {
@@ -72,7 +106,12 @@ export async function sendErc20(
 }
 
 export function scannerTxUrl(chainId: ChainId, hash: string) {
-  return chainId === 56
-    ? `https://bscscan.com/tx/${hash}`
-    : `https://etherscan.io/tx/${hash}`;
+  switch (chainId) {
+    case 97:
+      return `https://testnet.bscscan.com/tx/${hash}`;
+    case 80002:
+      return `https://amoy.polygonscan.com/tx/${hash}`;
+    default:
+      return `https://sepolia.etherscan.io/tx/${hash}`;
+  }
 }
