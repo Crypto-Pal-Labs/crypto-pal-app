@@ -154,7 +154,9 @@ export const useAssets = () => {
     if (tempBalances.length === 0 || !covalentData) {
       try {
         const provider = getProvider(currentChain);
+        console.log('Fallback: Fetching native balance for chain:', currentChain); // Debug
         const nativeBalance = await provider.getBalance(checksumAddress);
+        console.log('Fallback native balance fetched:', nativeBalance.toString()); // Success log
         tempBalances.push({
           contract_ticker_symbol: chain.nativeCurrency?.symbol || 'Unknown',
           balance: nativeBalance.toString(),
@@ -166,7 +168,7 @@ export const useAssets = () => {
         });
       } catch (forceFallbackErr: unknown) {
         const errMsg = (forceFallbackErr as Error).message || 'Unknown error';
-        console.warn('Forced fallback failed:', errMsg);
+        console.error('Fallback native balance failed:', errMsg); // Detailed log
         setError('Failed to load balances. Pull to refresh.');
         Alert.alert('Fallback Error', errMsg);
       }

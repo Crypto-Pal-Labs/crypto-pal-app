@@ -13,7 +13,8 @@ const RPC: Record<ChainId, string> = {
 
 export function getProvider(chainId: ChainId) {
   let rpcUrl = RPC[chainId];
-  console.log('Using RPC for chain', chainId, ':', rpcUrl ? `Set (length: ${rpcUrl.length})` : 'Missing'); // Debug log
+  console.log('getProvider called with chainId:', chainId); // Debug
+  console.log('RPC URL from RPC map:', rpcUrl ? `Set (length: ${rpcUrl.length}, full: ${rpcUrl})` : 'Missing'); // Full URL log
 
   // Safeguard: Check if Alchemy URL has valid key (32 chars)
   if (rpcUrl.includes('alchemy.com') && rpcUrl.split('/').pop()?.length !== 32) {
@@ -29,6 +30,7 @@ export function getProvider(chainId: ChainId) {
         rpcUrl = 'https://rpc-amoy.polygon.technology';
         break;
     }
+    console.log('Switched to fallback RPC:', rpcUrl); // Debug
   }
 
   try {
@@ -36,15 +38,15 @@ export function getProvider(chainId: ChainId) {
     // Force network detection with timeout to catch early errors
     setTimeout(async () => {
       try {
-        await provider.detectNetwork();
-        console.log('Network detected successfully for chain', chainId);
+        const network = await provider.detectNetwork();
+        console.log('Network detected successfully:', network.chainId, network.name); // Debug success
       } catch (detectErr) {
-        console.error('Network detection failed:', detectErr);
+        console.error('Network detection failed:', (detectErr as Error).message); // Detailed error
       }
     }, 1000);
     return provider;
   } catch (err) {
-    console.error('Provider init failed:', err);
+    console.error('Provider init failed:', (err as Error).message); // Detailed
     // Ultimate fallback to a reliable public node
     return new ethers.providers.JsonRpcProvider('https://rpc.sepolia.org'); // Default to Sepolia as primary
   }
