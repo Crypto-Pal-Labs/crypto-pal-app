@@ -3,12 +3,12 @@ import { ethers } from 'ethers';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
 
-export type ChainId = 11155111 | 97 | 80002; // Sepolia (ETH testnet), BSC Testnet, Polygon Amoy
+export type ChainId = 'eth' | 'bsc' | 'polygon'; // String keys for currentChain
 
 const RPC: Record<ChainId, string> = {
-  11155111: 'https://rpc.sepolia.org',  // Public Sepolia (bypass Alchemy for test)
-  97: 'https://bsc-testnet.publicnode.com',
-  80002: 'https://rpc-amoy.polygon.technology',
+  'eth': Constants.expoConfig?.extra?.ETH_RPC_URL || process.env.ETH_RPC_URL || 'https://rpc.sepolia.org', // Public Sepolia fallback
+  'bsc': Constants.expoConfig?.extra?.BSC_RPC_URL || process.env.BSC_RPC_URL || 'https://bsc-testnet.publicnode.com', // BSC Testnet fallback
+  'polygon': Constants.expoConfig?.extra?.POLYGON_RPC_URL || process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology', // Amoy fallback
 };
 
 export function getProvider(chainId: ChainId) {
@@ -20,13 +20,13 @@ export function getProvider(chainId: ChainId) {
   if (rpcUrl.includes('alchemy.com') && rpcUrl.split('/').pop()?.length !== 32) {
     console.warn('Invalid Alchemy key detected (expected 32 chars)—switching to public fallback');
     switch (chainId) {
-      case 11155111:
+      case 'eth':
         rpcUrl = 'https://rpc.sepolia.org';
         break;
-      case 97:
+      case 'bsc':
         rpcUrl = 'https://bsc-testnet.publicnode.com';
         break;
-      case 80002:
+      case 'polygon':
         rpcUrl = 'https://rpc-amoy.polygon.technology';
         break;
     }
@@ -109,9 +109,9 @@ export async function sendErc20(
 
 export function scannerTxUrl(chainId: ChainId, hash: string) {
   switch (chainId) {
-    case 97:
+    case 'bsc':
       return `https://testnet.bscscan.com/tx/${hash}`;
-    case 80002:
+    case 'polygon':
       return `https://amoy.polygonscan.com/tx/${hash}`;
     default:
       return `https://sepolia.etherscan.io/tx/${hash}`;
