@@ -2,7 +2,7 @@
 
 // Must be first so ethers/randomness works correctly in RN
 import 'react-native-get-random-values';
-
+import "@ethersproject/shims";  // Node.js globals for ethers in RN/Expo
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 import * as SecureStore from 'expo-secure-store';

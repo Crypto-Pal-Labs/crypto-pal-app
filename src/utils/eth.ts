@@ -6,9 +6,9 @@ import * as SecureStore from 'expo-secure-store';
 export type ChainId = 11155111 | 97 | 80002; // Sepolia (ETH testnet), BSC Testnet, Polygon Amoy
 
 const RPC: Record<ChainId, string> = {
-  11155111: Constants.expoConfig?.extra?.ETH_RPC_URL || process.env.ETH_RPC_URL || 'https://rpc.sepolia.org', // Public Sepolia fallback
-  97: Constants.expoConfig?.extra?.BSC_RPC_URL || process.env.BSC_RPC_URL || 'https://bsc-testnet.publicnode.com', // BSC Testnet fallback
-  80002: Constants.expoConfig?.extra?.POLYGON_RPC_URL || process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology', // Amoy fallback
+  11155111: 'https://rpc.sepolia.org',  // Public Sepolia (bypass Alchemy for test)
+  97: 'https://bsc-testnet.publicnode.com',
+  80002: 'https://rpc-amoy.polygon.technology',
 };
 
 export function getProvider(chainId: ChainId) {
