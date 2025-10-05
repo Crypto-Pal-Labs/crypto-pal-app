@@ -1,14 +1,13 @@
 // src/hooks/useAssets.ts
-import { useState, useRef } from 'react'; // Added useRef for active flag
+import { useState, useRef } from 'react';
 import { useWalletStore } from '../store/useWalletStore';
-import * as ethers from 'ethers'; // Star import for TS
-import { useChain } from '../hooks/useChain';
-import { getProvider } from '../config/chains';
-import { useFocusEffect } from '@react-navigation/native'; // Correct import
+import * as ethers from 'ethers';
+import { useActiveChain } from '@thirdweb-dev/react'; // New for multi-chain
+import { Alert } from 'react-native';
+import * as Localization from 'expo-localization';
+import Constants from 'expo-constants';
+import { useFocusEffect } from '@react-navigation/native';
 import { useCallback } from 'react';
-import * as Localization from 'expo-localization'; // For local currency
-import Constants from 'expo-constants'; // Added for bundled env in builds
-import { Alert } from 'react-native'; // Added for user-friendly error alerts
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -40,25 +39,24 @@ export type NFTItem = {
 
 export const useAssets = () => {
   const address = useWalletStore((state) => state.address);
-  const { currentChain, chains } = useChain();
+  const activeChain = useActiveChain(); // Replace useChain
   const [balances, setBalances] = useState<BalanceItem[]>([]);
   const [nfts, setNfts] = useState<NFTItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const isActiveRef = useRef(true); // Ref to track if component is mounted/focused
+  const isActiveRef = useRef(true);
 
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
-  // Use Constants for bundled env in standalone builds (fixes APK key missing)
-  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY || 'fallback_covalent_key_for_dev'; // Stub for dev if not set
+  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY || 'fallback_covalent_key_for_dev';
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         return await fn();
       } catch (err: unknown) {
-        console.warn(`Retry attempt ${attempt} failed:`, (err as Error).message); // Warn only
+        console.warn(`Retry attempt ${attempt} failed:`, (err as Error).message);
         if (attempt === retries) throw err;
         await new Promise(resolve => setTimeout(resolve, delay));
       }
@@ -79,28 +77,27 @@ export const useAssets = () => {
   };
 
   const fetchAssetsInternal = async () => {
-    if (!isActiveRef.current) return; // Guard: Skip if unfocused/unmounted
+    if (!isActiveRef.current) return;
     setLoading(true);
     setError(null);
     setBalances([]);
     setNfts([]);
 
-    if (!address || !currentChain) {
+    if (!address || !activeChain) {
       const errMsg = 'No wallet address or chain found.';
       setError(errMsg);
-      Alert.alert('Error', errMsg); // User-friendly alert
+      Alert.alert('Error', errMsg);
       setLoading(false);
       return;
     }
 
-    const chain = chains[currentChain] || {};  // Safe access
-    const chainId = chain.covalentChainId;
+    const covalentChainId = (activeChain as any).covalentChainId; // Type assertion for custom prop
     const checksumAddress = ethers.utils.getAddress(address);
 
     let covalentData: any = null;
     try {
       covalentData = await retryFetch(async () => {
-        const url = `https://api.covalenthq.com/v1/${chainId}/address/${checksumAddress}/balances_v2/?nft=true&key=${COVALENT_KEY}`;
+        const url = `https://api.covalenthq.com/v1/${covalentChainId}/address/${checksumAddress}/balances_v2/?nft=true&key=${COVALENT_KEY}`;
         const resp = await fetchWithTimeout(url);
         if (resp.status === 503) {
           throw new Error(`Covalent fetch failed with status: 503 - Service Unavailable.`);
@@ -112,9 +109,9 @@ export const useAssets = () => {
       });
     } catch (err: unknown) {
       const errMsg = (err as Error).message || 'Unknown error';
-      console.warn('Covalent failed:', errMsg); // Warn only
+      console.warn('Covalent failed:', errMsg);
       setError('Covalent fetch failed—using fallback.');
-      Alert.alert('Covalent Error', errMsg + ' Using fallback.'); // Alert for debug
+      Alert.alert('Covalent Error', errMsg + ' Using fallback.');
     }
 
     let tempBalances: CovalentItem[] = [];
@@ -127,7 +124,7 @@ export const useAssets = () => {
       for (let nft of nftItems) {
         if (!nft.contract_name) {
           try {
-            const metaUrl = `https://api.covalenthq.com/v1/${chainId}/nft/${nft.contract_address}/metadata/?key=${COVALENT_KEY}`;
+            const metaUrl = `https://api.covalenthq.com/v1/${covalentChainId}/nft/${nft.contract_address}/metadata/?key=${COVALENT_KEY}`;
             const metaResp = await fetchWithTimeout(metaUrl);
             if (metaResp.ok) {
               const metaData = await metaResp.json();
@@ -153,22 +150,23 @@ export const useAssets = () => {
 
     if (tempBalances.length === 0 || !covalentData) {
       try {
-        const provider = getProvider(currentChain);
-        console.log('Fallback: Fetching native balance for chain:', currentChain); // Debug
+        const rpcUrl = activeChain.rpc[0]; // From thirdweb Chain
+        console.log('Fallback: Fetching native balance with RPC:', rpcUrl);
+        const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
         const nativeBalance = await provider.getBalance(checksumAddress);
-        console.log('Fallback native balance fetched:', nativeBalance.toString()); // Success log
+        console.log('Fallback native balance fetched:', nativeBalance.toString());
         tempBalances.push({
-          contract_ticker_symbol: chain.nativeCurrency?.symbol || 'Unknown',
+          contract_ticker_symbol: activeChain.nativeCurrency.symbol || 'Unknown',
           balance: nativeBalance.toString(),
           quote: 0,
           logo_url: 'https://placeholder.com/40x40',
           type: 'cryptocurrency',
           contract_address: '0x0',
-          contract_decimals: chain.nativeCurrency?.decimals || 18,
+          contract_decimals: activeChain.nativeCurrency.decimals || 18,
         });
       } catch (forceFallbackErr: unknown) {
         const errMsg = (forceFallbackErr as Error).message || 'Unknown error';
-        console.error('Fallback native balance failed:', errMsg); // Detailed log
+        console.error('Fallback native balance failed:', errMsg);
         setError('Failed to load balances. Pull to refresh.');
         Alert.alert('Fallback Error', errMsg);
       }
@@ -198,7 +196,7 @@ export const useAssets = () => {
     const pricedBalances = tempBalances.map((item) => {
       const ticker = item.contract_ticker_symbol?.toUpperCase() ?? '';
       const id = tickerToIdMap[ticker] || '';
-      const decimals = item.contract_decimals || chain.nativeCurrency?.decimals || 18;
+      const decimals = item.contract_decimals || activeChain.nativeCurrency.decimals || 18;
       const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0;
       let quoteLocal = parsedBalance * (prices[id]?.[localCurrency] || 0);
       let quoteUsd = parsedBalance * (prices[id]?.usd || 0);
@@ -211,7 +209,7 @@ export const useAssets = () => {
       };
     });
 
-    if (isActiveRef.current) { // Only update if still active
+    if (isActiveRef.current) {
       setBalances(pricedBalances);
       setNfts(allNfts);
       setLoading(false);
@@ -223,19 +221,19 @@ export const useAssets = () => {
     let timeout: NodeJS.Timeout | null = null;
     return () => {
       if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(fn, ms);
+      timeout = setTimeout(fn, ms) as any;
     };
   };
-  const debouncedFetch = debounce(fetchAssetsInternal, 500); // 500ms debounce
+  const debouncedFetch = debounce(fetchAssetsInternal, 500);
 
   useFocusEffect(
     useCallback(() => {
       isActiveRef.current = true;
-      debouncedFetch(); // Initial debounced fetch
+      debouncedFetch();
 
       const interval = setInterval(() => {
         if (!loading && isActiveRef.current) {
-          debouncedFetch(); // Debounced auto-refresh
+          debouncedFetch();
         }
       }, 10000);
 
@@ -243,7 +241,7 @@ export const useAssets = () => {
         isActiveRef.current = false;
         clearInterval(interval);
       };
-    }, []) // Empty deps: Run once per focus, no re-create on loading change
+    }, []) // Empty deps
   );
 
   return { balances, nfts, loading, error, refresh: debouncedFetch };
