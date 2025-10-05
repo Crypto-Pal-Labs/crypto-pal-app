@@ -1,7 +1,7 @@
 {
   "cli": {
     "appVersionSource": "remote",
-    "version": ">= 12.0.0"
+    "version": ">=16.20.1"
   },
   "build": {
     "development": {
@@ -21,9 +21,21 @@
     "test-apk": {
       "distribution": "internal",
       "env": {
-        "COVALENT_KEY": "$(COVALENT_KEY)",
-        "TRANSAK_API_KEY": "$(TRANSAK_API_KEY)",
-        "ETH_RPC_URL": "$(ETH_RPC_URL)"
+        "EXPO_PUBLIC_COVALENT_KEY": "$(COVALENT_KEY)",
+        "EXPO_PUBLIC_TRANSAK_API_KEY": "$(TRANSAK_API_KEY)",
+        "EXPO_PUBLIC_ETHERSCAN_BASE": "$(ETHERSCAN_BASE)",
+        "EXPO_PUBLIC_ETH_RPC_URL": "$(ETH_RPC_URL)",
+        "EXPO_PUBLIC_BSC_RPC_URL": "$(BSC_RPC_URL)",
+        "EXPO_PUBLIC_BSCSCAN_BASE": "$(BSCSCAN_BASE)",
+        "EXPO_PUBLIC_WALLET_CONNECT_PROJECT_ID": "$(WALLET_CONNECT_PROJECT_ID)",
+        "EXPO_PUBLIC_ONE_INCH_API_KEY": "$(ONE_INCH_API_KEY)",
+        "EXPO_PUBLIC_ONE_INCH_API_BASE": "$(ONE_INCH_API_BASE)",
+        "EXPO_PUBLIC_UNISWAP_ROUTER_ADDRESS": "$(UNISWAP_ROUTER_ADDRESS)",
+        "EXPO_PUBLIC_USDC_ADDRESS": "$(USDC_ADDRESS)",
+        "EXPO_PUBLIC_WETH_ADDRESS": "$(WETH_ADDRESS)",
+        "EXPO_PUBLIC_CONTRACT_ADDRESS": "$(CONTRACT_ADDRESS)",
+        "EXPO_PUBLIC_ALCHEMY_KEY": "$(ALCHEMY_KEY)",
+        "EXPO_PUBLIC_POLYGON_RPC_URL": "$(POLYGON_RPC_URL)"
       },
       "android": {
         "buildType": "apk"
@@ -32,9 +44,21 @@
     "production": {
       "distribution": "store",
       "env": {
-        "COVALENT_KEY": "$(COVALENT_KEY)",
-        "TRANSAK_API_KEY": "$(TRANSAK_API_KEY)",
-        "ETH_RPC_URL": "$(ETH_RPC_URL)"
+        "EXPO_PUBLIC_COVALENT_KEY": "$(COVALENT_KEY)",
+        "EXPO_PUBLIC_TRANSAK_API_KEY": "$(TRANSAK_API_KEY)",
+        "EXPO_PUBLIC_ETHERSCAN_BASE": "$(ETHERSCAN_BASE)",
+        "EXPO_PUBLIC_ETH_RPC_URL": "$(ETH_RPC_URL)",
+        "EXPO_PUBLIC_BSC_RPC_URL": "$(BSC_RPC_URL)",
+        "EXPO_PUBLIC_BSCSCAN_BASE": "$(BSCSCAN_BASE)",
+        "EXPO_PUBLIC_WALLET_CONNECT_PROJECT_ID": "$(WALLET_CONNECT_PROJECT_ID)",
+        "EXPO_PUBLIC_ONE_INCH_API_KEY": "$(ONE_INCH_API_KEY)",
+        "EXPO_PUBLIC_ONE_INCH_API_BASE": "$(ONE_INCH_API_BASE)",
+        "EXPO_PUBLIC_UNISWAP_ROUTER_ADDRESS": "$(UNISWAP_ROUTER_ADDRESS)",
+        "EXPO_PUBLIC_USDC_ADDRESS": "$(USDC_ADDRESS)",
+        "EXPO_PUBLIC_WETH_ADDRESS": "$(WETH_ADDRESS)",
+        "EXPO_PUBLIC_CONTRACT_ADDRESS": "$(CONTRACT_ADDRESS)",
+        "EXPO_PUBLIC_ALCHEMY_KEY": "$(ALCHEMY_KEY)",
+        "EXPO_PUBLIC_POLYGON_RPC_URL": "$(POLYGON_RPC_URL)"
       },
       "android": {
         "buildType": "app-bundle"
