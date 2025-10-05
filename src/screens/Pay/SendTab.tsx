@@ -266,7 +266,7 @@ const SendTab = () => {
       {/* Section 2: What crypto... */}
       <View style={styles.section}>
         <Text style={styles.label}>What crypto currency would you like to send them</Text>
-        <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker} as any>  // Type assertion for TS fix
+        <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>  // Type assertion for TS fix
           <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
         </Picker>
       </View>

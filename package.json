@@ -63,7 +63,10 @@
   },
   "devDependencies": {
     "@babel/core": "^7.20.0",
+    "@reduxjs/toolkit": "^2.9.0",
+    "@types/jest": "^30.0.0",
     "@types/react": "~19.0.10",
+    "@types/redux": "^3.6.0",
     "@typescript-eslint/eslint-plugin": "^8.38.0",
     "@typescript-eslint/parser": "^8.38.0",
     "eslint": "^9.31.0",

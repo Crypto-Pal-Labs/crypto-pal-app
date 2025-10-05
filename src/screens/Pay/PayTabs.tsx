@@ -54,6 +54,6 @@ const styles = StyleSheet.create({
   toggleRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 16 },
   activeToggle: { borderBottomWidth: 2, borderBottomColor: '#0A84FF', paddingVertical: 10, marginHorizontal: 10 },
   inactiveToggle: { paddingVertical: 10, marginHorizontal: 10 },
-  activeText: { color: '#0A84FF', fontWeight: '2000' },
-  inactiveText: { color: '#838282ff', fontWeight: '2000' },
+  activeText: { color: '#0A84FF', fontWeight: 'bold' },
+  inactiveText: { color: '#838282ff', fontWeight: 'bold' },
 });

@@ -2,53 +2,39 @@
 import { ethers } from 'ethers';
 import Constants from 'expo-constants';
 import * as SecureStore from 'expo-secure-store';
+import { Alert } from 'react-native'; // For user alerts on errors
 
 export type ChainId = 'eth' | 'bsc' | 'polygon'; // String keys for currentChain
 
-const RPC: Record<ChainId, string> = {
-  'eth': Constants.expoConfig?.extra?.ETH_RPC_URL || process.env.ETH_RPC_URL || 'https://rpc.sepolia.org', // Public Sepolia fallback
-  'bsc': Constants.expoConfig?.extra?.BSC_RPC_URL || process.env.BSC_RPC_URL || 'https://bsc-testnet.publicnode.com', // BSC Testnet fallback
-  'polygon': Constants.expoConfig?.extra?.POLYGON_RPC_URL || process.env.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology', // Amoy fallback
-};
+export async function getProvider(chainId: ChainId) { // Marked as async for await
+  const extra = Constants.expoConfig?.extra || {}; // Safe access in standalone
+  let rpcUrl = extra.ETH_RPC_URL || 'https://rpc.sepolia.org'; // Default fallback, no process.env (undefined in builds)
+  if (chainId === 'bsc') rpcUrl = extra.BSC_RPC_URL || 'https://bsc-testnet.publicnode.com';
+  if (chainId === 'polygon') rpcUrl = extra.POLYGON_RPC_URL || 'https://rpc-amoy.polygon.technology';
 
-export function getProvider(chainId: ChainId) {
-  let rpcUrl = RPC[chainId];
   console.log('getProvider called with chainId:', chainId); // Debug
-  console.log('RPC URL from RPC map:', rpcUrl ? `Set (length: ${rpcUrl.length}, full: ${rpcUrl})` : 'Missing'); // Full URL log
+  console.log('RPC URL from Constants.extra:', rpcUrl ? `Set (length: ${rpcUrl.length})` : 'Missing - using fallback'); // Redacted full for security
 
-  // Safeguard: Check if Alchemy URL has valid key (32 chars)
-  if (rpcUrl.includes('alchemy.com') && rpcUrl.split('/').pop()?.length !== 32) {
-    console.warn('Invalid Alchemy key detected (expected 32 chars)—switching to public fallback');
-    switch (chainId) {
-      case 'eth':
-        rpcUrl = 'https://rpc.sepolia.org';
-        break;
-      case 'bsc':
-        rpcUrl = 'https://bsc-testnet.publicnode.com';
-        break;
-      case 'polygon':
-        rpcUrl = 'https://rpc-amoy.polygon.technology';
-        break;
-    }
-    console.log('Switched to fallback RPC:', rpcUrl); // Debug
+  // Validate key if Infura/Alchemy (32 chars, no invalid prefixes)
+  if ((rpcUrl.includes('infura.io') || rpcUrl.includes('alchemy.com')) && rpcUrl.split('/').pop()?.length !== 32) {
+    console.warn('Invalid key (expected 32 chars)—switching to public fallback');
+    rpcUrl = chainId === 'eth' ? 'https://rpc.sepolia.org' : (chainId === 'bsc' ? 'https://bsc-testnet.publicnode.com' : 'https://rpc-amoy.polygon.technology');
   }
 
   try {
     const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
-    // Force network detection with timeout to catch early errors
-    setTimeout(async () => {
-      try {
-        const network = await provider.detectNetwork();
-        console.log('Network detected successfully:', network.chainId, network.name); // Debug success
-      } catch (detectErr) {
-        console.error('Network detection failed:', (detectErr as Error).message); // Detailed error
-      }
-    }, 1000);
+    // Test detection with try-catch/timeout (prevents noNetwork throw)
+    const networkPromise = provider.detectNetwork();
+    const network = await Promise.race<ethers.providers.Network>([ // Type as Network
+      networkPromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Detection timeout')), 5000))
+    ]);
+    console.log('Network detected:', network.chainId, network.name); // Success
     return provider;
   } catch (err) {
-    console.error('Provider init failed:', (err as Error).message); // Detailed
-    // Ultimate fallback to a reliable public node
-    return new ethers.providers.JsonRpcProvider('https://rpc.sepolia.org'); // Default to Sepolia as primary
+    console.error('Provider failed:', (err as Error).message); // Log
+    Alert.alert('Network Error', 'Could not detect network - using public fallback.');
+    return new ethers.providers.JsonRpcProvider('https://rpc.sepolia.org'); // Ultimate fallback
   }
 }
 
@@ -56,7 +42,7 @@ export async function getSigner(chainId: ChainId) {
   const phrase = await SecureStore.getItemAsync('mnemonic');
   if (!phrase) throw new Error('No wallet found. Please create or restore.');
   const wallet = ethers.Wallet.fromMnemonic(phrase);
-  return wallet.connect(getProvider(chainId));
+  return wallet.connect(await getProvider(chainId)); // Await for async
 }
 
 export function isEthAddress(addr: string) {

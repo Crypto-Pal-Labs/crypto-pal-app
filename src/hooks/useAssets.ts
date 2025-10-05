@@ -3,12 +3,11 @@ import { useState, useRef } from 'react'; // Added useRef for active flag
 import { useWalletStore } from '../store/useWalletStore';
 import * as ethers from 'ethers'; // Star import for TS
 import { useChain } from '../hooks/useChain';
-import { getProvider } from '../config/chains';
 import { useFocusEffect } from '@react-navigation/native'; // Correct import
 import { useCallback } from 'react';
 import * as Localization from 'expo-localization'; // For local currency
-import Constants from 'expo-constants'; // Added for bundled env in builds
-import { Alert } from 'react-native'; // Added for user-friendly error alerts
+import Constants from 'expo-constants'; // For bundled env
+import { Alert } from 'react-native'; // For errors
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -17,7 +16,7 @@ interface CovalentItem {
   logo_url?: string;
   type: string;
   contract_address?: string;
-  nft_data?: any[];
+  nft_data?: any[]; // Optional array
   contract_name?: string;
   contract_decimals?: number;
 }
@@ -45,21 +44,24 @@ export const useAssets = () => {
   const [nfts, setNfts] = useState<NFTItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const isActiveRef = useRef(true); // Ref to track if component is mounted/focused
+  const isActiveRef = useRef(true); // Ref to track mounted/focused
 
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
-  // Use Constants for bundled env in standalone builds (fixes APK key missing)
-  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY || 'fallback_covalent_key_for_dev'; // Stub for dev if not set
+  // Bundled Covalent key with fallback (fixes APK undefined)
+  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY || 'cqt_rQF9hvHmdRbkqFcK9wxdtQhmBbrh'; // Hard fallback if bundling fails
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         return await fn();
       } catch (err: unknown) {
-        console.warn(`Retry attempt ${attempt} failed:`, (err as Error).message); // Warn only
-        if (attempt === retries) throw err;
+        console.warn(`Retry attempt ${attempt} failed:`, (err as Error).message);
+        if (attempt === retries) {
+          Alert.alert('Fetch Error', 'Could not load data after retries - check network.');
+          throw err;
+        }
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
@@ -68,157 +70,82 @@ export const useAssets = () => {
   const fetchWithTimeout = async (url: string, timeout = 10000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
-    try {
-      const resp = await fetch(url, { signal: controller.signal });
-      clearTimeout(id);
-      return resp;
-    } catch (err: unknown) {
-      clearTimeout(id);
-      throw err;
-    }
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(id);
+    return response;
   };
 
   const fetchAssetsInternal = async () => {
-    if (!isActiveRef.current) return; // Guard: Skip if unfocused/unmounted
-    setLoading(true);
+    if (!isActiveRef.current) return; // Early exit if unfocused
+
     setError(null);
-    setBalances([]);
-    setNfts([]);
-
-    if (!address || !currentChain) {
-      const errMsg = 'No wallet address or chain found.';
-      setError(errMsg);
-      Alert.alert('Error', errMsg); // User-friendly alert
-      setLoading(false);
-      return;
-    }
-
-    const chain = chains[currentChain] || {};  // Safe access
-    const chainId = chain.covalentChainId;
-    const checksumAddress = ethers.utils.getAddress(address);
-
-    let covalentData: any = null;
     try {
-      covalentData = await retryFetch(async () => {
-        const url = `https://api.covalenthq.com/v1/${chainId}/address/${checksumAddress}/balances_v2/?nft=true&key=${COVALENT_KEY}`;
-        const resp = await fetchWithTimeout(url);
-        if (resp.status === 503) {
-          throw new Error(`Covalent fetch failed with status: 503 - Service Unavailable.`);
-        }
-        if (!resp.ok) {
-          throw new Error(`Covalent fetch failed with status: ${resp.status}`);
-        }
-        return await resp.json();
-      });
-    } catch (err: unknown) {
-      const errMsg = (err as Error).message || 'Unknown error';
-      console.warn('Covalent failed:', errMsg); // Warn only
-      setError('Covalent fetch failed—using fallback.');
-      Alert.alert('Covalent Error', errMsg + ' Using fallback.'); // Alert for debug
-    }
+      await retryFetch(async () => {
+        const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
+        const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?key=${COVALENT_KEY}&nft=true`;
+        const resp = await fetchWithTimeout(balancesUrl);
+        if (!resp.ok) throw new Error(`Covalent error: ${resp.status}`);
+        const data = await resp.json();
+        if (data.error) throw new Error(data.error_message);
+        const items: CovalentItem[] = data.data.items || [];
+        const tempBalances = items.filter(item => item.type !== 'nft' && item.balance !== '0');
+        const nftItems = items.filter(item => item.type === 'nft' && (item.nft_data?.length ?? 0) > 0) // Optional chaining with ?? 0
+          .flatMap(item => item.nft_data?.map(nft => ({ // Optional chaining
+            token_id: nft.token_id,
+            token_balance: nft.token_balance,
+            contract_name: item.contract_name || 'Unknown',
+            contract_address: item.contract_address || '',
+            logo_url: nft.token_url || item.logo_url || 'https://placeholder.com/40x40',
+          })) || []);
 
-    let tempBalances: CovalentItem[] = [];
-    let nftItems: CovalentItem[] = [];
-    let allNfts: NFTItem[] = [];
-    if (covalentData && covalentData.data && covalentData.data.items) {
-      const items: CovalentItem[] = covalentData.data.items || [];
-      tempBalances = items.filter((item) => item.type !== 'nft');
-      nftItems = items.filter((item) => item.type === 'nft');
-      for (let nft of nftItems) {
-        if (!nft.contract_name) {
-          try {
-            const metaUrl = `https://api.covalenthq.com/v1/${chainId}/nft/${nft.contract_address}/metadata/?key=${COVALENT_KEY}`;
-            const metaResp = await fetchWithTimeout(metaUrl);
-            if (metaResp.ok) {
-              const metaData = await metaResp.json();
-              const meta = metaData.data?.items[0] || {};
-              nft.contract_name = meta.contract_name || 'Unknown NFT';
-              nft.logo_url = meta.logo_url || 'https://placeholder.com/40x40';
-            }
-          } catch (metaErr: unknown) {
-            nft.contract_name = 'Unknown NFT';
-            nft.logo_url = 'https://placeholder.com/40x40';
-            console.warn('NFT meta failed:', (metaErr as Error).message);
+        setNfts(nftItems); // Update NFTs
+
+        // CoinGecko prices
+        const tickerToIdMap = {
+          'ETH': 'ethereum',
+          'USDC': 'usd-coin',
+          'BNB': 'binancecoin',
+          'MATIC': 'matic-network',
+        } as const; // 'as const' for literal types
+        const uniqueIds = [...new Set(tempBalances.map(item => tickerToIdMap[item.contract_ticker_symbol?.toUpperCase() as keyof typeof tickerToIdMap] || ''))].filter(id => id);
+        let prices: any = {};
+        if (uniqueIds.length > 0) {
+          const vsCurrencies = `usd,${localCurrency}`;
+          const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(',')}&vs_currencies=${vsCurrencies}`;
+          const priceResp = await fetchWithTimeout(priceUrl);
+          if (priceResp.ok) {
+            prices = await priceResp.json();
           }
         }
-        allNfts.push({
-          token_id: nft.nft_data?.[0]?.token_id ?? 'Unknown',
-          token_balance: nft.nft_data?.length.toString() ?? '0',
-          contract_name: nft.contract_name ?? 'Unknown NFT',
-          contract_address: nft.contract_address ?? '',
-          logo_url: nft.logo_url ?? 'https://placeholder.com/40x40'
+
+        const pricedBalances = tempBalances.map((item) => {
+          const ticker = item.contract_ticker_symbol?.toUpperCase() ?? '';
+          const id = tickerToIdMap[ticker as keyof typeof tickerToIdMap] || ''; // Type assertion
+          const decimals = item.contract_decimals || 18;
+          const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0;
+          let quoteLocal = parsedBalance * (prices[id]?.[localCurrency] || 0);
+          let quoteUsd = parsedBalance * (prices[id]?.usd || 0);
+          return {
+            contract_ticker_symbol: item.contract_ticker_symbol ?? 'Unknown',
+            balance: item.balance || '0',
+            quoteLocal,
+            quoteUsd,
+            logo_url: item.logo_url ?? 'https://placeholder.com/40x40'
+          };
         });
-      }
-    }
 
-    if (tempBalances.length === 0 || !covalentData) {
-      try {
-        const provider = getProvider(currentChain);
-        console.log('Fallback: Fetching native balance for chain:', currentChain); // Debug
-        const nativeBalance = await provider.getBalance(checksumAddress);
-        console.log('Fallback native balance fetched:', nativeBalance.toString()); // Success log
-        tempBalances.push({
-          contract_ticker_symbol: chain.nativeCurrency?.symbol || 'Unknown',
-          balance: nativeBalance.toString(),
-          quote: 0,
-          logo_url: 'https://placeholder.com/40x40',
-          type: 'cryptocurrency',
-          contract_address: '0x0',
-          contract_decimals: chain.nativeCurrency?.decimals || 18,
-        });
-      } catch (forceFallbackErr: unknown) {
-        const errMsg = (forceFallbackErr as Error).message || 'Unknown error';
-        console.error('Fallback native balance failed:', errMsg); // Detailed log
-        setError('Failed to load balances. Pull to refresh.');
-        Alert.alert('Fallback Error', errMsg);
-      }
-    }
-
-    const tickerToIdMap: { [key: string]: string } = {
-      'ETH': 'ethereum',
-      'USDC': 'usd-coin',
-      'BNB': 'binancecoin',
-      'MATIC': 'matic-network',
-    };
-    const uniqueIds = [...new Set(tempBalances.map(item => tickerToIdMap[item.contract_ticker_symbol?.toUpperCase() ?? ''] || ''))].filter(id => id);
-    let prices: any = {};
-    if (uniqueIds.length > 0) {
-      try {
-        const vsCurrencies = `usd,${localCurrency}`;
-        const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(',')}&vs_currencies=${vsCurrencies}`;
-        const priceResp = await fetchWithTimeout(priceUrl);
-        if (priceResp.ok) {
-          prices = await priceResp.json();
-        }
-      } catch (err: unknown) {
-        console.warn('Price fetch error:', (err as Error).message);
-      }
-    }
-
-    const pricedBalances = tempBalances.map((item) => {
-      const ticker = item.contract_ticker_symbol?.toUpperCase() ?? '';
-      const id = tickerToIdMap[ticker] || '';
-      const decimals = item.contract_decimals || chain.nativeCurrency?.decimals || 18;
-      const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0;
-      let quoteLocal = parsedBalance * (prices[id]?.[localCurrency] || 0);
-      let quoteUsd = parsedBalance * (prices[id]?.usd || 0);
-      return {
-        contract_ticker_symbol: item.contract_ticker_symbol ?? 'Unknown',
-        balance: item.balance || '0',
-        quoteLocal: quoteLocal,
-        quoteUsd: quoteUsd,
-        logo_url: item.logo_url ?? 'https://placeholder.com/40x40'
-      };
-    });
-
-    if (isActiveRef.current) { // Only update if still active
-      setBalances(pricedBalances);
-      setNfts(allNfts);
+        setBalances(pricedBalances);
+      });
+    } catch (err: unknown) {
+      const msg = (err as Error).message || 'Unknown error';
+      setError(msg);
+      Alert.alert('Load Error', `Failed to load assets: ${msg}. Pull to refresh.`);
+    } finally {
       setLoading(false);
     }
   };
 
-  // Debounce wrapper to limit fetch rate (prevents rapid calls)
+  // Debounce wrapper (unchanged)
   const debounce = (fn: () => void, ms: number) => {
     let timeout: NodeJS.Timeout | null = null;
     return () => {
@@ -226,24 +153,22 @@ export const useAssets = () => {
       timeout = setTimeout(fn, ms);
     };
   };
-  const debouncedFetch = debounce(fetchAssetsInternal, 500); // 500ms debounce
+  const debouncedFetch = debounce(fetchAssetsInternal, 500);
 
   useFocusEffect(
     useCallback(() => {
       isActiveRef.current = true;
-      debouncedFetch(); // Initial debounced fetch
+      debouncedFetch(); // Initial
 
       const interval = setInterval(() => {
-        if (!loading && isActiveRef.current) {
-          debouncedFetch(); // Debounced auto-refresh
-        }
+        if (!loading && isActiveRef.current) debouncedFetch(); // Poll
       }, 10000);
 
       return () => {
         isActiveRef.current = false;
         clearInterval(interval);
       };
-    }, []) // Empty deps: Run once per focus, no re-create on loading change
+    }, []) // Empty deps for once per focus
   );
 
   return { balances, nfts, loading, error, refresh: debouncedFetch };
