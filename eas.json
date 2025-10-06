@@ -1,6 +1,5 @@
 {
   "cli": {
-    "appVersionSource": "remote",
     "version": ">=16.20.1"
   },
   "build": {
@@ -8,7 +7,11 @@
       "developmentClient": true,
       "distribution": "internal",
       "android": {
-        "gradleCommand": ":app:assembleDebug"
+        "gradleCommand": ":app:assembleDebug",
+        "buildType": "apk"
+      },
+      "ios": {
+        "simulator": true
       },
       "node": "20.19.4"
     },
@@ -16,6 +19,9 @@
       "distribution": "internal",
       "android": {
         "buildType": "app-bundle"
+      },
+      "ios": {
+        "simulator": true
       }
     },
     "test-apk": {
@@ -62,7 +68,11 @@
       },
       "android": {
         "buildType": "app-bundle"
-      }
+      },
+      "ios": {
+        "buildType": "archive"
+      },
+      "node": "20.19.4"
     }
   },
   "submit": {
