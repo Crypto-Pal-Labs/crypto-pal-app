@@ -82,6 +82,7 @@ export const useAssets = () => {
     try {
       await retryFetch(async () => {
         const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
+        console.log('Covalent key in build:', COVALENT_KEY ? `Set (length: ${COVALENT_KEY.length})` : 'Missing'); // Logging for debug
         const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?key=${COVALENT_KEY}&nft=true`;
         const resp = await fetchWithTimeout(balancesUrl);
         if (!resp.ok) throw new Error(`Covalent error: ${resp.status}`);
