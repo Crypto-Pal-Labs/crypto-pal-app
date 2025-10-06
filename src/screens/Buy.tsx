@@ -4,7 +4,6 @@ import { TabView, SceneMap, TabBar } from 'react-native-tab-view';
 import { useWindowDimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { getWalletAddress } from '../utils/wallet';
-import { TRANSAK_API_KEY } from '@env';
 import { useFocusEffect } from '@react-navigation/native';  // For reload on focus
 import * as Localization from 'expo-localization';  // For geo and currency
 import { useAssets } from '../hooks/useAssets';  // For refresh after buy
@@ -15,6 +14,9 @@ const BuyRoute = () => {
   const [uri, setUri] = useState('');
   const [isRestricted, setIsRestricted] = useState(false);
   const { refresh } = useAssets();  // Correct hook method for refresh
+
+  // Hardcoded Transak API key for test (bypass bundling—remove after)
+  const TRANSAK_API_KEY = '49362815-1fc8-4dde-ab46-72b51a21aeb3';
 
   useFocusEffect(
     useCallback(() => {
@@ -37,19 +39,17 @@ const BuyRoute = () => {
     }, [])
   );
 
-  // Detect buy completion in WebView (e.g., success URL)
-  const handleNavigationChange = (navState: { url: string }) => {
-    if (navState.url.includes('transak.com/success') || navState.url.includes('transaction/success')) {  // Adjust for staging success pattern
-      refresh();  // Auto-refresh Wallet (balances update); History polls automatically
-      console.log('Buy complete—refreshing assets');
+  const handleNavigationChange = (event: { url: string }) => { // Type event to fix TS7006
+    if (event.url.includes('transak.com') && event.url.includes('success')) {
+      refresh();  // Refresh balances on success (optional for Buy)
     }
   };
 
-  if (loading) return <ActivityIndicator />;
-  if (isRestricted) return <Text style={styles.restrictedText}>Buy feature unavailable in your region.</Text>;
+  if (loading) return <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />;
+  if (isRestricted) return <Text style={styles.restrictedText}>Buy is restricted in your region.</Text>;
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+    <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
       <WebView
         source={{ uri }}
         style={{ flex: 1 }}
@@ -74,7 +74,10 @@ const SellRoute = () => {
   const [loading, setLoading] = useState(true);
   const [uri, setUri] = useState('');
   const [isRestricted, setIsRestricted] = useState(false);
-  const { refresh } = useAssets();  // Correct hook method for refresh (optional for Sell)
+  const { refresh } = useAssets();  // Refresh after sell
+
+  // Hardcoded Transak API key for test (bypass bundling—remove after)
+  const TRANSAK_API_KEY = '49362815-1fc8-4dde-ab46-72b51a21aeb3';
 
   useFocusEffect(
     useCallback(() => {
@@ -88,7 +91,7 @@ const SellRoute = () => {
         setAddress(addr || '');
         if (!restricted) {
           const defaultFiat = locale.currencyCode || 'USD';
-          const newUri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&cryptoCurrency=USDC&cryptoAmount=1&fiatCurrency=${defaultFiat}&paymentMethod=bank_transfer&productsAvailed=SELL&defaultProduct=SELL&isBuyOrSell=SELL&environment=STAGING&network=sepolia&disableWalletAddressForm=true`;
+          const newUri = `https://staging-global.transak.com?apiKey=${TRANSAK_API_KEY}&walletAddress=${addr || ''}&defaultFiatCurrency=${defaultFiat}&defaultFiatAmount=10&defaultCryptoCurrency=USDC&defaultPaymentMethod=credit_card&productsAvailed=SELL&defaultProduct=SELL&isBuyOrSell=SELL&environment=STAGING&network=sepolia&disableWalletAddressForm=true`;
           setUri(newUri);
           console.log('Sell URI reloaded:', newUri);
         }
@@ -97,19 +100,17 @@ const SellRoute = () => {
     }, [])
   );
 
-  // Detect sell completion in WebView (optional, add if Sell needs refresh)
-  const handleNavigationChange = (navState: { url: string }) => {
-    if (navState.url.includes('transak.com/success') || navState.url.includes('transaction/success')) {
-      refresh();
-      console.log('Sell complete—refreshing assets');
+  const handleNavigationChange = (event: { url: string }) => { // Type event to fix TS7006
+    if (event.url.includes('transak.com') && event.url.includes('success')) {
+      refresh();  // Refresh balances on success (optional for Sell)
     }
   };
 
-  if (loading) return <ActivityIndicator />;
-  if (isRestricted) return <Text style={styles.restrictedText}>Sell feature unavailable in your region.</Text>;
+  if (loading) return <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />;
+  if (isRestricted) return <Text style={styles.restrictedText}>Sell is restricted in your region.</Text>;
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
+    <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
       <WebView
         source={{ uri }}
         style={{ flex: 1 }}
@@ -123,7 +124,7 @@ const SellRoute = () => {
         scrollEnabled={true}
         onError={(syntheticEvent) => console.error('WebView error:', syntheticEvent.nativeEvent)}
         useWebKit={Platform.OS === 'ios'}  // Better camera support on iOS
-        onNavigationStateChange={handleNavigationChange}  // Detect success for refresh (optional for Sell)
+        onNavigationStateChange={handleNavigationChange}  // Detect success for refresh
       />
     </ScrollView>
   );
@@ -164,6 +165,7 @@ const styles = StyleSheet.create({
   tabBar: { backgroundColor: '#edfabfff', borderRadius: 8, shadowColor: '#0606fbff', shadowOpacity: 0.1, shadowRadius: 12, elevation: 4, marginBottom:10 },
   indicator: { backgroundColor: '#0A84FF' },
   restrictedText: { flex: 1, textAlign: 'center', marginTop: 20, color: 'red', fontSize: 18 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' }, // Added to fix TS2339
 });
 
 export default Buy;

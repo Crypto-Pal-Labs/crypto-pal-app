@@ -38,179 +38,75 @@ const HistoryTab = () => {
       if (currentAddress) setAddress(currentAddress);
     };
     loadAddress();
-  }, [setAddress]);
+  }, []);
 
   useEffect(() => {
     const fetchRates = async () => {
       try {
-        const vsCurrencies = `usd,${localCurrency.toLowerCase()}`;
-        const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=${vsCurrencies}`);
-        const data = await response.json();
-        setEthPriceUSD(data?.ethereum?.usd || 2000);
-        setEthPriceLocal(data?.ethereum?.[localCurrency.toLowerCase()] || data?.ethereum?.usd || 2000); // Fallback to USD if local fails
-      } catch (e) {
-        console.warn('Rate fetch error:', e);
+        const resp = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd,${localCurrency.toLowerCase()}`);
+        const data = await resp.json();
+        setEthPriceUSD(data.ethereum.usd || 0);
+        setEthPriceLocal(data.ethereum[localCurrency.toLowerCase()] || 0);
+      } catch (err) {
+        console.error('Rate fetch error:', err);
       }
     };
     fetchRates();
-  }, [localCurrency]); // Re-fetch if local changes (rare)
-
-  const mergeTransactions = useCallback(async () => {
-    try {
-      const storedDetails = await AsyncStorage.getItem('txDetails');
-      setTxDetailsMap(storedDetails ? JSON.parse(storedDetails) : {});
-
-      const storedLocalTxs = await AsyncStorage.getItem('localTxs');
-      let localTxs = storedLocalTxs ? JSON.parse(storedLocalTxs) : [];
-
-      localTxs = localTxs.map((tx: any) => ({
-        tx_hash: tx.hash || tx.tx_hash || `local-${Date.now()}`,
-        from_address: tx.from,
-        to_address: tx.to,
-        value: tx.value,
-        block_signed_at: tx.timestamp,
-        successful: true,
-        gas_spent: '0',
-        value_quote: 0,
-        fiatSnapshot: tx.fiatSnapshot,
-        frozenUsd: tx.frozenUsd, // Preserve if already frozen
-        frozenLocal: tx.frozenLocal,
-      }));
-
-      const allTxs = [...transactions, ...localTxs];
-      const uniqueTxs = allTxs.reduce((acc: any[], tx: any) => {
-        if (tx.tx_hash && !acc.some((t) => t.tx_hash === tx.tx_hash)) {
-          // Freeze fiat values if not already set
-          const ethValueNum = Number(ethers.utils.formatEther(tx.value || '0'));
-          if (!tx.frozenUsd) {
-            tx.frozenUsd = ethValueNum * ethPriceUSD;
-          }
-          if (!tx.frozenLocal) {
-            tx.frozenLocal = ethValueNum * ethPriceLocal;
-          }
-          // Prioritize fiatSnapshot for sender-side if present
-          if (tx.fiatSnapshot) {
-            // Parse snapshot for USD/local (assume format like "$3 USD (0.0015 ETH)")
-            const match = tx.fiatSnapshot.match(/\$([\d.]+) (\w+)/);
-            if (match) {
-              const amount = parseFloat(match[1]);
-              const unit = match[2].toUpperCase();
-              if (unit === 'USD') tx.frozenUsd = amount;
-              if (unit === localCurrency) tx.frozenLocal = amount;
-            }
-          }
-          acc.push(tx);
-        }
-        return acc;
-      }, []);
-
-      uniqueTxs.sort((a, b) => new Date(b.block_signed_at).getTime() - new Date(a.block_signed_at).getTime());
-
-      if (isActiveRef.current) {
-        setMergedTransactions(uniqueTxs);
-      }
-
-      const syncedHashes = transactions.filter(tx => tx.successful).map((tx) => tx.tx_hash);
-      localTxs = localTxs.filter((tx: any) => !syncedHashes.includes(tx.tx_hash));
-      await AsyncStorage.setItem('localTxs', JSON.stringify(localTxs));
-    } catch (e) {
-      console.warn('AsyncStorage fetch error:', e);
-    }
-  }, [transactions, ethPriceUSD, ethPriceLocal, localCurrency]);
+  }, [localCurrency]);
 
   useEffect(() => {
-    mergeTransactions();
-  }, [transactions, mergeTransactions]);
-
-  // Debounce wrapper for refetch
-  const debounce = (fn: () => Promise<void>, ms: number) => {
-    let timeout: NodeJS.Timeout | null = null;
-    return () => {
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(fn, ms);
+    const loadTxDetails = async () => {
+      const stored = await AsyncStorage.getItem('txDetailsMap');
+      if (stored) setTxDetailsMap(JSON.parse(stored));
     };
-  };
-  const debouncedRefetch = debounce(async () => {
-    await refetch();
-    await mergeTransactions();
-  }, 500);
+    loadTxDetails();
+  }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      isActiveRef.current = true;
-      debouncedRefetch(); // Initial debounced refetch
+  useEffect(() => {
+    const mergeTransactions = async () => {
+      const localTxs = await AsyncStorage.getItem('localTxs');
+      const parsedLocalTxs = localTxs ? JSON.parse(localTxs) : [];
+      const merged = [...transactions, ...parsedLocalTxs].sort((a, b) => new Date(b.timestamp || b.block_signed_at).getTime() - new Date(a.timestamp || a.block_signed_at).getTime()); // Use getTime() to fix TS2362/2363
+      setMergedTransactions(merged);
+    };
+    mergeTransactions();
+  }, [transactions]);
 
-      const interval = setInterval(() => {
-        if (!isRefreshing && !loading && isActiveRef.current) {
-          debouncedRefetch(); // Debounced auto-refresh
-        }
-      }, 10000);
-
-      return () => {
-        isActiveRef.current = false;
-        clearInterval(interval);
-      };
-    }, []) // Empty deps for single run per focus
-  );
-
-  const getValueDisplay = (tx: any) => {
-    const ethValue = tx.value || '0';
-    const ethValueNum = Number(ethers.utils.formatEther(ethValue));
-    const details = txDetailsMap[tx.tx_hash] || {};
-    if (details.amount && details.unit) {
-      return `${details.amount} ${details.unit} (${ethValueNum.toFixed(4)} ETH)`;
-    }
-    if (displayUnit === 'TOKEN') return `${ethValueNum.toFixed(4)} ETH`;
-    // Use frozen values if available, else fallback to current calculation
-    const usdValue = tx.frozenUsd ?? (ethValueNum * ethPriceUSD);
-    if (displayUnit === 'USD') return `$${usdValue.toFixed(2)} USD (${ethValueNum.toFixed(4)} ETH)`;
-    const localValue = tx.frozenLocal ?? (ethValueNum * ethPriceLocal);
-    return `$${localValue.toFixed(2)} ${localCurrency} (${ethValueNum.toFixed(4)} ETH)`;
+  const displayInUnit = (val: number, unit: string) => { // Type unit as string to fix TS7006
+    if (unit === 'USD') return (val * ethPriceUSD).toFixed(2);
+    if (unit === localCurrency) return (val * ethPriceLocal).toFixed(2);
+    return val;
   };
 
-  const getIconName = (tx: any) => {
-    if (tx.from_address?.toLowerCase() === address.toLowerCase()) {
-      return 'arrow-up';
-    }
-    return 'arrow-down';
+  const renderTxItem = ({ item }: { item: any }) => { // Type item as any to fix TS7031
+    const isSend = item.from_address.toLowerCase() === address.toLowerCase();
+    const value = ethers.utils.formatEther(item.value || item.value_wei || '0');
+    const fee = item.gas_spent ? ethers.utils.formatEther(item.gas_spent) : '0';
+    const txDetails = txDetailsMap[item.hash || item.tx_hash];
+    const displayValue = txDetails ? txDetails.amount : value;
+    const unit = txDetails ? txDetails.unit : 'ETH';
+
+    return (
+      <TouchableOpacity onPress={() => Linking.openURL(`${ETHERSCAN_BASE}/tx/${item.hash || item.tx_hash}`)}>
+        <View style={styles.txItem}>
+          <Ionicons name={isSend ? 'arrow-up' : 'arrow-down'} size={24} color={isSend ? 'red' : 'green'} style={styles.icon} />
+          <View style={styles.txInfo}>
+            <Text style={styles.txDate}>{new Date(item.timestamp || item.block_signed_at).toLocaleString()}</Text>
+            <Text style={styles.txValue}>{displayInUnit(parseFloat(displayValue), displayUnit)} {displayUnit}</Text>
+            <Text style={styles.txStatus}>Status: Confirmed</Text>
+            <Text style={styles.txFromTo}>{isSend ? 'To' : 'From'}: {isSend ? item.to_address : item.from_address}</Text>
+            <Text style={styles.txFee}>Fee: {fee} ETH</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
   };
 
-  const getIconColor = (tx: any) => {
-    if (tx.from_address?.toLowerCase() === address.toLowerCase()) {
-      return 'red';
-    }
-    return 'green';
-  };
-
-  const renderTxItem = ({ item }: { item: any }) => (
-    <TouchableOpacity style={styles.txItem} onPress={() => Linking.openURL(`${ETHERSCAN_BASE}${item.tx_hash}`)}>
-      <Ionicons name={getIconName(item)} size={24} color={getIconColor(item)} style={styles.icon} />
-      <View style={styles.txInfo}>
-        <Text style={styles.txDate}>{item.block_signed_at ? new Date(item.block_signed_at).toLocaleString() : 'Unknown Date'}</Text>
-        <Text style={styles.txValue}>Value: {getValueDisplay(item)}</Text>
-        <Text style={[styles.txStatus, { color: item.successful ? 'green' : 'red' }]}>Status: {item.successful ? 'Success' : 'Failed'}</Text>
-        <Text style={styles.txFromTo}>
-          From: {item.from_address ? item.from_address.slice(0, 6) + '...' + item.from_address.slice(-4) : 'N/A'}
-        </Text>
-        <Text style={styles.txFromTo}>
-          To: {item.to_address ? item.to_address.slice(0, 6) + '...' + item.to_address.slice(-4) : 'N/A'}
-        </Text>
-        <Text style={styles.txFee}>Fee: {ethers.utils.formatEther(item.gas_spent || '0')} ETH</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  const EmptyState = () => (
-    <View style={styles.center}>
-      <Text style={styles.empty}>No transactions to display yet!</Text>
-    </View>
-  );
-
-  if (error) return <View style={styles.center}><Text style={styles.errorText}>Failed to load history. Pull to refresh.</Text><TouchableOpacity onPress={refetch}><Text style={styles.retry}>Retry</Text></TouchableOpacity></View>;
+  const EmptyState = () => <Text style={styles.empty}>No transactions yet.</Text>;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.heading}>Transaction History</Text>
+      <Text style={styles.heading}>History</Text>
       <View style={styles.unitRow}>
         <TouchableOpacity style={displayUnit === 'TOKEN' ? styles.unitButtonActive : styles.unitButton} onPress={() => setDisplayUnit('TOKEN')}>
           <Text style={displayUnit === 'TOKEN' ? styles.unitTextActive : styles.unitText}>TOKEN</Text>

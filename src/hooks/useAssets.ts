@@ -50,7 +50,7 @@ export const useAssets = () => {
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
   // Hardcoded Covalent key for test (bypasses bundling issues—remove after verifying APK)
-  const COVALENT_KEY = 'cqt_rQF9hvHmdRbkqFcK9wxdtQhmBbrh';
+  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY || 'cqt_rQF9hvHmdRbkqFcK9wxdtQhmBbrh';
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
