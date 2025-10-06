@@ -49,8 +49,15 @@ export const useAssets = () => {
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
-  // Hardcoded Covalent key for test (bypasses bundling issues—remove after verifying APK)
-  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY || 'cqt_rQF9hvHmdRbkqFcK9wxdtQhmBbrh';
+  // Bundled key from env (no hardcoded fallback—alert if missing)
+  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY;
+
+  // Temp debug log: Print full key value (remove after verifying APK fix)
+  console.log('Covalent key in build:', COVALENT_KEY ? `Set (${COVALENT_KEY})` : 'Missing - check app.config.js/EAS!');
+
+  if (!COVALENT_KEY) {
+    Alert.alert('Config Error', 'Covalent API key missing in build - check .env/app.config.js/EAS secrets.');
+  }
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -76,13 +83,12 @@ export const useAssets = () => {
   };
 
   const fetchAssetsInternal = async () => {
-    if (!isActiveRef.current) return; // Early exit if unfocused
+    if (!isActiveRef.current || !COVALENT_KEY) return; // Early exit if unfocused or no key
 
     setError(null);
     try {
       await retryFetch(async () => {
         const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
-        console.log('Covalent key in build:', COVALENT_KEY ? `Set (length: ${COVALENT_KEY.length})` : 'Missing'); // Logging for debug
         const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?key=${COVALENT_KEY}&nft=true`;
         const resp = await fetchWithTimeout(balancesUrl);
         if (!resp.ok) throw new Error(`Covalent error: ${resp.status}`);
@@ -124,8 +130,8 @@ export const useAssets = () => {
           const id = tickerToIdMap[ticker as keyof typeof tickerToIdMap] || ''; // Type assertion
           const decimals = item.contract_decimals || 18;
           const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0;
-          let quoteLocal = parsedBalance * (prices[id]?.[localCurrency] || 0);
-          let quoteUsd = parsedBalance * (prices[id]?.usd || 0);
+          let quoteLocal = parsedBalance * (prices[id]?.[localCurrency] ?? 0); // Nullish coalescing for prices
+          let quoteUsd = parsedBalance * (prices[id]?.usd ?? 0);
           return {
             contract_ticker_symbol: item.contract_ticker_symbol ?? 'Unknown',
             balance: item.balance || '0',
