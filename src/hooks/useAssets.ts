@@ -49,8 +49,8 @@ export const useAssets = () => {
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
-  // Bundled Covalent key with fallback (fixes APK undefined)
-  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY || 'cqt_rQF9hvHmdRbkqFcK9wxdtQhmBbrh'; // Hard fallback if bundling fails
+  // Hardcoded Covalent key for test (bypasses bundling issues—remove after verifying APK)
+  const COVALENT_KEY = 'cqt_rQF9hvHmdRbkqFcK9wxdtQhmBbrh';
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
