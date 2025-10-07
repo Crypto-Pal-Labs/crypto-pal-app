@@ -40,21 +40,21 @@ module.exports = ({ config }) => {
         projectId: '6c753f76-cdce-4f42-8301-4b22267269c4'
       },
       // Map from process.env (EAS injection) to extra for APK bundling
-      COVALENT_KEY: process.env.COVALENT_KEY,
-      TRANSAK_API_KEY: process.env.TRANSAK_API_KEY,
-      ONE_INCH_API_KEY: process.env.ONE_INCH_API_KEY,
-      ETHERSCAN_BASE: process.env.ETHERSCAN_BASE,
-      ETH_RPC_URL: process.env.ETH_RPC_URL,
-      BSC_RPC_URL: process.env.BSC_RPC_URL,
-      BSCSCAN_BASE: process.env.BSCSCAN_BASE,
-      WALLET_CONNECT_PROJECT_ID: process.env.WALLET_CONNECT_PROJECT_ID,
-      ONE_INCH_API_BASE: process.env.ONE_INCH_API_BASE,
-      UNISWAP_ROUTER_ADDRESS: process.env.UNISWAP_ROUTER_ADDRESS,
-      USDC_ADDRESS: process.env.USDC_ADDRESS,
-      WETH_ADDRESS: process.env.WETH_ADDRESS,
-      CONTRACT_ADDRESS: process.env.CONTRACT_ADDRESS,
-      ALCHEMY_KEY: process.env.ALCHEMY_KEY,
-      POLYGON_RPC_URL: process.env.POLYGON_RPC_URL
+      COVALENT_KEY: process.env.EXPO_PUBLIC_COVALENT_KEY,
+      TRANSAK_API_KEY: process.env.EXPO_PUBLIC_TRANSAK_API_KEY,
+      ONE_INCH_API_KEY: process.env.EXPO_PUBLIC_ONE_INCH_API_KEY,
+      ETHERSCAN_BASE: process.env.EXPO_PUBLIC_ETHERSCAN_BASE,
+      ETH_RPC_URL: process.env.EXPO_PUBLIC_ETH_RPC_URL,
+      BSC_RPC_URL: process.env.EXPO_PUBLIC_BSC_RPC_URL,
+      BSCSCAN_BASE: process.env.EXPO_PUBLIC_BSCSCAN_BASE,
+      WALLET_CONNECT_PROJECT_ID: process.env.EXPO_PUBLIC_WALLET_CONNECT_PROJECT_ID,
+      ONE_INCH_API_BASE: process.env.EXPO_PUBLIC_ONE_INCH_API_BASE,
+      UNISWAP_ROUTER_ADDRESS: process.env.EXPO_PUBLIC_UNISWAP_ROUTER_ADDRESS,
+      USDC_ADDRESS: process.env.EXPO_PUBLIC_USDC_ADDRESS,
+      WETH_ADDRESS: process.env.EXPO_PUBLIC_WETH_ADDRESS,
+      CONTRACT_ADDRESS: process.env.EXPO_PUBLIC_CONTRACT_ADDRESS,
+      ALCHEMY_KEY: process.env.EXPO_PUBLIC_ALCHEMY_KEY,
+      POLYGON_RPC_URL: process.env.EXPO_PUBLIC_POLYGON_RPC_URL
     }
   };
 };

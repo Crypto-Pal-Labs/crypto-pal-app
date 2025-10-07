@@ -69,31 +69,6 @@ export const useAssets = () => {
     return response;
   };
 
-  const covalentRequest = async (url: string, key: string, timeout = 10000) => {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-
-    // Prefer Authorization header (for some keys)
-    let resp = await fetch(url, {
-      signal: controller.signal,
-      headers: { Authorization: `Bearer ${key}` },
-    });
-
-    // If 401, try query param fallback
-    if (resp.status === 401) {
-      const sep = url.includes('?') ? '&' : '?';
-      const withQuery = `${url}${sep}key=${encodeURIComponent(key)}`;
-      resp = await fetch(withQuery, { signal: controller.signal });
-    }
-
-    clearTimeout(id);
-    if (!resp.ok) {
-      const body = await resp.text();
-      throw new Error(`Covalent error: ${resp.status} ${body.slice(0, 120)}`);
-    }
-    return resp;
-  };
-
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -117,7 +92,16 @@ export const useAssets = () => {
       await retryFetch(async () => {
         const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
         const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`;
-        const resp = await covalentRequest(balancesUrl, COVALENT_KEY);
+        const resp = await fetch(balancesUrl, {
+          headers: {
+            Authorization: `Bearer ${COVALENT_KEY}`,
+            Accept: 'application/json',
+          },
+        });
+        if (!resp.ok) {
+          const body = await resp.text();
+          throw new Error(`Covalent error: ${resp.status} ${body.slice(0, 120)}`);
+        }
         const data = await resp.json();
         if (data.error) throw new Error(data.error_message);
         const items: CovalentItem[] = data.data.items || [];
