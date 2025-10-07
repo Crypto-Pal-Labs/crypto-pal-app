@@ -49,14 +49,14 @@ export const useAssets = () => {
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
-  // Bundled key from env (no hardcoded fallback—alert if missing)
-  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY;
+  // Safe key read: process.env for Expo Go, extra for APK (no hardcode)
+  const COVALENT_KEY = process.env.EXPO_PUBLIC_COVALENT_KEY || Constants.expoConfig?.extra?.COVALENT_KEY || '';
 
   // Temp debug log: Print full key value (remove after verifying APK fix)
   console.log('Covalent key in build:', COVALENT_KEY ? `Set (${COVALENT_KEY})` : 'Missing - check app.config.js/EAS!');
 
   if (!COVALENT_KEY) {
-    Alert.alert('Config Error', 'Covalent API key missing in build - check .env/app.config.js/EAS secrets.');
+    Alert.alert('Config Error', 'Covalent API key missing - check .env/app.config.js/EAS secrets.');
   }
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {

@@ -87,7 +87,7 @@
         "buildType": "app-bundle"
       },
       "ios": {
-        "buildType": "archive"
+        "simulator": false
       },
       "node": "20.19.4"
     }

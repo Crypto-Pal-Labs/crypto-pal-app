@@ -17,7 +17,7 @@ module.exports = ({ config }) => {
     assetBundlePatterns: ['**/*'],
     ios: {
       supportsTablet: true,
-      bundleIdentifier: 'com.cryptopal.app' // Add for iOS prep (matches Android package)
+      bundleIdentifier: 'com.cryptopal.app' // For iOS prep
     },
     android: {
       package: "com.cryptopal.app",
@@ -39,7 +39,7 @@ module.exports = ({ config }) => {
       eas: {
         projectId: '6c753f76-cdce-4f42-8301-4b22267269c4'
       },
-      // Pull from process.env (injected by EAS in builds; no hardcode fallbacks to avoid masking issues)
+      // Map EXPO_PUBLIC_* from process.env to extra.* for APK bundling (no hardcodes)
       COVALENT_KEY: process.env.EXPO_PUBLIC_COVALENT_KEY,
       TRANSAK_API_KEY: process.env.EXPO_PUBLIC_TRANSAK_API_KEY,
       ONE_INCH_API_KEY: process.env.EXPO_PUBLIC_ONE_INCH_API_KEY,

@@ -37,6 +37,7 @@
     "expo-build-properties": "~0.14.8",
     "expo-camera": "^16.1.11",
     "expo-clipboard": "~7.1.5",
+    "expo-dev-client": "~5.2.4",
     "expo-font": "~13.3.2",
     "expo-localization": "~16.1.6",
     "expo-secure-store": "~14.2.4",
