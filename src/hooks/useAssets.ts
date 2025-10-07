@@ -8,6 +8,7 @@ import { useCallback } from 'react';
 import * as Localization from 'expo-localization'; // For local currency
 import Constants from 'expo-constants'; // For bundled env
 import { Alert } from 'react-native'; // For errors
+import { ENV } from '../utils/env'; // Static ENV
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -49,15 +50,49 @@ export const useAssets = () => {
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
-  // Safe key read: process.env for Expo Go, extra for APK (no hardcode)
-  const COVALENT_KEY = process.env.EXPO_PUBLIC_COVALENT_KEY || Constants.expoConfig?.extra?.COVALENT_KEY || '';
+  // Static key read from ENV
+  const COVALENT_KEY = ENV.COVALENT_KEY || '';
 
-  // Temp debug log: Print full key value (remove after verifying APK fix)
-  console.log('Covalent key in build:', COVALENT_KEY ? `Set (${COVALENT_KEY})` : 'Missing - check app.config.js/EAS!');
+  // Temp debug log: Masked key (length + last 4 chars) - remove after fix
+  const mask = (v: string) => v ? `${v.length} chars …${v.slice(-4)}` : 'EMPTY';
+  console.log('Covalent key (masked):', mask(COVALENT_KEY));
 
   if (!COVALENT_KEY) {
     Alert.alert('Config Error', 'Covalent API key missing - check .env/app.config.js/EAS secrets.');
   }
+
+  const fetchWithTimeout = async (url: string, timeout = 10000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(id);
+    return response;
+  };
+
+  const covalentRequest = async (url: string, key: string, timeout = 10000) => {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+
+    // Prefer Authorization header (for some keys)
+    let resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { Authorization: `Bearer ${key}` },
+    });
+
+    // If 401, try query param fallback
+    if (resp.status === 401) {
+      const sep = url.includes('?') ? '&' : '?';
+      const withQuery = `${url}${sep}key=${encodeURIComponent(key)}`;
+      resp = await fetch(withQuery, { signal: controller.signal });
+    }
+
+    clearTimeout(id);
+    if (!resp.ok) {
+      const body = await resp.text();
+      throw new Error(`Covalent error: ${resp.status} ${body.slice(0, 120)}`);
+    }
+    return resp;
+  };
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -74,14 +109,6 @@ export const useAssets = () => {
     }
   };
 
-  const fetchWithTimeout = async (url: string, timeout = 10000) => {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(id);
-    return response;
-  };
-
   const fetchAssetsInternal = async () => {
     if (!isActiveRef.current || !COVALENT_KEY) return; // Early exit if unfocused or no key
 
@@ -89,9 +116,8 @@ export const useAssets = () => {
     try {
       await retryFetch(async () => {
         const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
-        const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?key=${COVALENT_KEY}&nft=true`;
-        const resp = await fetchWithTimeout(balancesUrl);
-        if (!resp.ok) throw new Error(`Covalent error: ${resp.status}`);
+        const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`;
+        const resp = await covalentRequest(balancesUrl, COVALENT_KEY);
         const data = await resp.json();
         if (data.error) throw new Error(data.error_message);
         const items: CovalentItem[] = data.data.items || [];
