@@ -9,6 +9,7 @@ import * as Localization from 'expo-localization'; // For local currency
 import Constants from 'expo-constants'; // For bundled env
 import { Alert } from 'react-native'; // For errors
 import { ENV } from '../utils/env'; // Static ENV
+import { Buffer } from 'buffer'; // For Basic auth
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -92,9 +93,10 @@ export const useAssets = () => {
       await retryFetch(async () => {
         const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
         const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`;
+        const basic = Buffer.from(`${COVALENT_KEY}:`).toString('base64');
         const resp = await fetch(balancesUrl, {
           headers: {
-            Authorization: `Bearer ${COVALENT_KEY}`,
+            Authorization: `Basic ${basic}`,
             Accept: 'application/json',
           },
         });

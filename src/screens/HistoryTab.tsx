@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, ActivityIndicator, FlatList, StyleSheet, Linking, TouchableOpacity, RefreshControl } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { useHistory } from '../hooks/useHistory';
+import useHistory from '../hooks/useHistory'; // Change to this
 import { useWalletStore } from '../store/useWalletStore';
 import { getWalletAddress } from '../utils/wallet';
 import * as ethers from 'ethers';

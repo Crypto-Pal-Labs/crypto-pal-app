@@ -1,6 +1,9 @@
 // App.js — single entry point for Crypto Pal
 
 // Must be first so ethers/randomness works correctly in RN
+import { Buffer } from 'buffer';
+global.Buffer = global.Buffer || Buffer;
+
 import 'react-native-get-random-values';
 import "@ethersproject/shims";  // Node.js globals for ethers in RN/Expo
 import React, { useEffect, useState } from 'react';
