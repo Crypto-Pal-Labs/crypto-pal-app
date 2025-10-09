@@ -39,9 +39,23 @@ module.exports = ({ config }) => {
       eas: {
         projectId: '6c753f76-cdce-4f42-8301-4b22267269c4'
       },
-      // Map from process.env (EAS injection) to extra for APK bundling
-      COVALENT_KEY: process.env.EXPO_PUBLIC_COVALENT_KEY,
-      // Map other keys as needed
+      // TEMP HARD-WIRE FOR TEST BUILD ONLY - remove after verifying APK
+      COVALENT_KEY: "cqt_rQF9hvHmdRbkqFcK9wxdtQhmBbrh", // Paste your new/valid key here (no quotes around value)
+      // Map other keys as needed (no hard-wire)
+      TRANSAK_API_KEY: process.env.EXPO_PUBLIC_TRANSAK_API_KEY,
+      ONE_INCH_API_KEY: process.env.EXPO_PUBLIC_ONE_INCH_API_KEY,
+      ETHERSCAN_BASE: process.env.EXPO_PUBLIC_ETHERSCAN_BASE,
+      ETH_RPC_URL: process.env.EXPO_PUBLIC_ETH_RPC_URL,
+      BSC_RPC_URL: process.env.EXPO_PUBLIC_BSC_RPC_URL,
+      BSCSCAN_BASE: process.env.EXPO_PUBLIC_BSCSCAN_BASE,
+      WALLET_CONNECT_PROJECT_ID: process.env.EXPO_PUBLIC_WALLET_CONNECT_PROJECT_ID,
+      ONE_INCH_API_BASE: process.env.EXPO_PUBLIC_ONE_INCH_API_BASE,
+      UNISWAP_ROUTER_ADDRESS: process.env.EXPO_PUBLIC_UNISWAP_ROUTER_ADDRESS,
+      USDC_ADDRESS: process.env.EXPO_PUBLIC_USDC_ADDRESS,
+      WETH_ADDRESS: process.env.EXPO_PUBLIC_WETH_ADDRESS,
+      CONTRACT_ADDRESS: process.env.EXPO_PUBLIC_CONTRACT_ADDRESS,
+      ALCHEMY_KEY: process.env.EXPO_PUBLIC_ALCHEMY_KEY,
+      POLYGON_RPC_URL: process.env.EXPO_PUBLIC_POLYGON_RPC_URL
     }
   };
 };
