@@ -1,9 +1,10 @@
 // src/hooks/useHistory.ts
 import { useState, useEffect, useCallback } from 'react'; // Added useCallback
 import { useWalletStore } from '../store/useWalletStore';
-import { ENV } from '../utils/env'; // Static ENV
 import { Buffer } from 'buffer'; // For Basic auth
 import { useChain } from '../hooks/useChain'; // For chains and currentChain
+import Constants from 'expo-constants'; // For bundled env
+import { Alert } from 'react-native'; // For errors
 
 export type Transaction = {
   tx_hash: string;
@@ -17,21 +18,19 @@ export type Transaction = {
 
 const useHistory = () => {
   const address = useWalletStore((state) => state.address);
-  const { currentChain, chains } = useChain(); // For currentChain and chains
+  const { currentChain, chains } = useChain(); // Added for currentChain and chains
 
   const [transactions, setTransactions] = useState<Transaction[]>([]); // Renamed from txns to transactions
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const COVALENT_KEY = ENV.COVALENT_KEY || '';
-
-  // Temp debug log: Masked key (length + last 4 chars) - remove after fix
-  const mask = (v: string) => v ? `${v.length} chars …${v.slice(-4)}` : 'EMPTY';
-  console.log('Covalent key (masked in useHistory):', mask(COVALENT_KEY));
+  // Bundled key read from Constants with trim guard
+  const COVALENT_KEY = (Constants.expoConfig?.extra?.EXPO_PUBLIC_COVALENT_KEY || '').trim();
 
   const fetchHistory = async () => {
-    if (!address) {
-      setError('No wallet address found.');
+    if (!address || !COVALENT_KEY) {
+      if (!COVALENT_KEY) Alert.alert('Config Error', 'Covalent API key missing - check .env/app.config.js/EAS secrets.');
+      setError('No wallet address or key found.');
       setLoading(false);
       return;
     }
@@ -50,7 +49,9 @@ const useHistory = () => {
       });
       if (!resp.ok) {
         const body = await resp.text();
-        throw new Error(`Covalent error: ${resp.status} ${body.slice(0, 120)}`);
+        console.error(`Covalent error: ${resp.status} - ${body.slice(0, 120)}`);
+        Alert.alert('Fetch Error', `Failed to load history: ${resp.status} - Check logs.`);
+        throw new Error(`Covalent error: ${resp.status}`);
       }
       const data = await resp.json();
       const items: any[] = data.data.items || []; // Type as any[]

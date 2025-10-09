@@ -8,7 +8,6 @@ import { useCallback } from 'react';
 import * as Localization from 'expo-localization'; // For local currency
 import Constants from 'expo-constants'; // For bundled env
 import { Alert } from 'react-native'; // For errors
-import { ENV } from '../utils/env'; // Static ENV
 import { Buffer } from 'buffer'; // For Basic auth
 
 interface CovalentItem {
@@ -51,16 +50,8 @@ export const useAssets = () => {
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
 
-  // Static key read from ENV
-  const COVALENT_KEY = ENV.COVALENT_KEY || '';
-
-  // Temp debug log: Masked key (length + last 4 chars) - remove after fix
-  const mask = (v: string) => v ? `${v.length} chars …${v.slice(-4)}` : 'EMPTY';
-  console.log('Covalent key (masked):', mask(COVALENT_KEY));
-
-  if (!COVALENT_KEY) {
-    Alert.alert('Config Error', 'Covalent API key missing - check .env/app.config.js/EAS secrets.');
-  }
+  // Bundled key read from Constants (for APK) with trim guard
+  const COVALENT_KEY = (Constants.expoConfig?.extra?.EXPO_PUBLIC_COVALENT_KEY || '').trim();
 
   const fetchWithTimeout = async (url: string, timeout = 10000) => {
     const controller = new AbortController();
@@ -75,7 +66,7 @@ export const useAssets = () => {
       try {
         return await fn();
       } catch (err: unknown) {
-        console.warn(`Retry attempt ${attempt} failed:`, (err as Error).message);
+        console.error(`Retry attempt ${attempt} failed:`, (err as Error).message);
         if (attempt === retries) {
           Alert.alert('Fetch Error', 'Could not load data after retries - check network.');
           throw err;
@@ -86,7 +77,10 @@ export const useAssets = () => {
   };
 
   const fetchAssetsInternal = async () => {
-    if (!isActiveRef.current || !COVALENT_KEY) return; // Early exit if unfocused or no key
+    if (!isActiveRef.current || !address || !COVALENT_KEY) {
+      if (!COVALENT_KEY) Alert.alert('Config Error', 'Covalent API key missing - check .env/app.config.js/EAS secrets.');
+      return; // Early exit
+    }
 
     setError(null);
     try {
@@ -102,7 +96,9 @@ export const useAssets = () => {
         });
         if (!resp.ok) {
           const body = await resp.text();
-          throw new Error(`Covalent error: ${resp.status} ${body.slice(0, 120)}`);
+          console.error(`Covalent error: ${resp.status} - ${body.slice(0, 120)}`);
+          Alert.alert('Load Error', `Failed to load assets: ${resp.status} - Check logs.`);
+          throw new Error(`Covalent error: ${resp.status}`);
         }
         const data = await resp.json();
         if (data.error) throw new Error(data.error_message);
@@ -134,6 +130,8 @@ export const useAssets = () => {
           const priceResp = await fetchWithTimeout(priceUrl);
           if (priceResp.ok) {
             prices = await priceResp.json();
+          } else {
+            console.error(`CoinGecko error: ${priceResp.status}`);
           }
         }
 
