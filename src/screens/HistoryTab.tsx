@@ -66,8 +66,41 @@ const HistoryTab = () => {
     const mergeTransactions = async () => {
       const localTxs = await AsyncStorage.getItem('localTxs');
       const parsedLocalTxs = localTxs ? JSON.parse(localTxs) : [];
-      const merged = [...transactions, ...parsedLocalTxs].sort((a, b) => new Date(b.timestamp || b.block_signed_at).getTime() - new Date(a.timestamp || a.block_signed_at).getTime()); // Use getTime() to fix TS2362/2363
-      setMergedTransactions(merged);
+
+      // Deduplicate and merge using a Map for unique tx_hash
+      const uniqueTxs = new Map<string, any>();
+
+      // Process API transactions
+      transactions.forEach((tx: any) => {
+        const txHash = tx.tx_hash ? tx.tx_hash.toLowerCase() : null;
+        if (txHash) {
+          uniqueTxs.set(txHash, {
+            ...tx,
+            from_address: tx.from_address ? tx.from_address.toLowerCase() : null,
+            to_address: tx.to_address ? tx.to_address.toLowerCase() : null,
+          });
+        }
+      });
+
+      // Process local transactions (merge/override if exists)
+      parsedLocalTxs.forEach((tx: any) => {
+        const txHash = tx.hash ? tx.hash.toLowerCase() : null; // Local might use 'hash' instead of 'tx_hash'
+        if (txHash) {
+          uniqueTxs.set(txHash, {
+            ...uniqueTxs.get(txHash), // Preserve API data if exists
+            ...tx, // Override with local
+            from_address: tx.from ? tx.from.toLowerCase() : null,
+            to_address: tx.to ? tx.to.toLowerCase() : null,
+          });
+        }
+      });
+
+      // Sort merged unique transactions by timestamp
+      const sortedMerged = Array.from(uniqueTxs.values()).sort((a, b) => 
+        new Date(b.timestamp || b.block_signed_at).getTime() - new Date(a.timestamp || a.block_signed_at).getTime()
+      );
+
+      setMergedTransactions(sortedMerged);
     };
     mergeTransactions();
   }, [transactions]);
@@ -79,12 +112,19 @@ const HistoryTab = () => {
   };
 
   const renderTxItem = ({ item }: { item: any }) => { // Type item as any to fix TS7031
-    const isSend = item.from_address.toLowerCase() === address.toLowerCase();
+    // Guards for undefined addresses
+    const fromAddr = item.from_address ? item.from_address.toLowerCase() : '';
+    const toAddr = item.to_address ? item.to_address.toLowerCase() : '';
+    const isSend = fromAddr === address.toLowerCase();
+
     const value = ethers.utils.formatEther(item.value || item.value_wei || '0');
     const fee = item.gas_spent ? ethers.utils.formatEther(item.gas_spent) : '0';
     const txDetails = txDetailsMap[item.hash || item.tx_hash];
     const displayValue = txDetails ? txDetails.amount : value;
     const unit = txDetails ? txDetails.unit : 'ETH';
+
+    // Skip rendering if critical fields are missing
+    if (!item.tx_hash && !item.hash && !item.block_signed_at) return null;
 
     return (
       <TouchableOpacity onPress={() => Linking.openURL(`${ETHERSCAN_BASE}/tx/${item.hash || item.tx_hash}`)}>
@@ -94,7 +134,7 @@ const HistoryTab = () => {
             <Text style={styles.txDate}>{new Date(item.timestamp || item.block_signed_at).toLocaleString()}</Text>
             <Text style={styles.txValue}>{displayInUnit(parseFloat(displayValue), displayUnit)} {displayUnit}</Text>
             <Text style={styles.txStatus}>Status: Confirmed</Text>
-            <Text style={styles.txFromTo}>{isSend ? 'To' : 'From'}: {isSend ? item.to_address : item.from_address}</Text>
+            <Text style={styles.txFromTo}>{isSend ? 'To' : 'From'}: {isSend ? toAddr : fromAddr}</Text>
             <Text style={styles.txFee}>Fee: {fee} ETH</Text>
           </View>
         </View>
@@ -124,7 +164,12 @@ const HistoryTab = () => {
         <FlatList
           data={mergedTransactions}
           renderItem={renderTxItem}
-          keyExtractor={(item) => item.tx_hash || item.block_signed_at}
+          keyExtractor={(item, index) => 
+            item.tx_hash ? item.tx_hash.toString() : 
+            item.hash ? item.hash.toString() : 
+            item.block_signed_at ? item.block_signed_at.toString() : 
+            index.toString()  // Robust fallback
+          }
           ListEmptyComponent={EmptyState}
           contentContainerStyle={styles.listContainer}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} colors={['#0A84FF']} />}
