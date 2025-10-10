@@ -20,13 +20,16 @@ const HistoryTab = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
   const { transactions, loading, error, refetch } = useHistory();
   const address = useWalletStore((state) => state.address);
-  const [ethPriceUSD, setEthPriceUSD] = useState(0);
-  const [ethPriceLocal, setEthPriceLocal] = useState(0); // Generalized from usdToNzd
-  const [displayUnit, setDisplayUnit] = useState('TOKEN'); // Defaults to TOKEN as requested
+  const [ethPriceUSD, setEthPriceUSD] = useState<number>(0);
+  const [ethPriceLocal, setEthPriceLocal] = useState<number>(0); // Generalized from usdToNzd
+  const [displayUnit, setDisplayUnit] = useState<string>('TOKEN'); // Defaults to TOKEN as requested
   const [txDetailsMap, setTxDetailsMap] = useState<Record<string, TxDetails>>({});
   const [mergedTransactions, setMergedTransactions] = useState<any[]>([]);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const isActiveRef = useRef(true);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const isActiveRef = useRef<boolean>(true);
+
+  // Helper to filter records (per suggestion)
+  const isRecord = (v: any): v is Record<string, any> => v && typeof v === 'object' && !Array.isArray(v);
 
   // Get user local currency (dynamic, not hard-fixed to NZD)
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
@@ -38,7 +41,7 @@ const HistoryTab = () => {
       if (currentAddress) setAddress(currentAddress);
     };
     loadAddress();
-  }, []);
+  }, [setAddress]);
 
   useEffect(() => {
     const fetchRates = async () => {
@@ -64,36 +67,74 @@ const HistoryTab = () => {
 
   useEffect(() => {
     const mergeTransactions = async () => {
-      const localTxs = await AsyncStorage.getItem('localTxs');
-      const parsedLocalTxs = localTxs ? JSON.parse(localTxs) : [];
-      const merged = [...transactions, ...parsedLocalTxs].sort((a, b) => new Date(b.timestamp || b.block_signed_at).getTime() - new Date(a.timestamp || a.block_signed_at).getTime()); // Use getTime() to fix TS2362/2363
+      const localTxsRaw = await AsyncStorage.getItem('localTxs');
+      let localTxs: any[] = [];
+      try {
+        const parsed = localTxsRaw ? JSON.parse(localTxsRaw) : [];
+        localTxs = Array.isArray(parsed) ? parsed : [];
+      } catch {
+        localTxs = [];
+      }
+
+      // Normalize local txs to unified shape (per suggestion)
+      const normalizedLocal = localTxs
+        .filter(isRecord)
+        .map((v) => ({
+          hash: v.tx_hash || v.hash || String(Math.random()),
+          timestamp: v.block_signed_at || v.signed_at || v.timestamp || null,
+          from_address: v.from_address || '',
+          to_address: v.to_address || '',
+          value: v.value || '0',
+          gas_spent: v.gas_spent || '0',
+          successful: !!v.successful,
+        }));
+
+      // Remote already normalized with timestamp
+      const remote = Array.isArray(transactions) ? transactions : [];
+
+      // Merge & sort by timestamp desc (nulls last, per suggestion)
+      const merged = [...remote, ...normalizedLocal].sort((a: any, b: any) => {
+        const ta = a.timestamp ? new Date(a.timestamp).getTime() : -Infinity;
+        const tb = b.timestamp ? new Date(b.timestamp).getTime() : -Infinity;
+        return tb - ta;
+      });
+
       setMergedTransactions(merged);
     };
     mergeTransactions();
   }, [transactions]);
 
-  const displayInUnit = (val: number, unit: string) => { // Type unit as string to fix TS7006
+  const displayInUnit = (val: number, unit: string): string => { // Type unit as string to fix TS7006
     if (unit === 'USD') return (val * ethPriceUSD).toFixed(2);
     if (unit === localCurrency) return (val * ethPriceLocal).toFixed(2);
-    return val;
+    return val.toString();
   };
 
   const renderTxItem = ({ item }: { item: any }) => { // Type item as any to fix TS7031
-    const isSend = item.from_address.toLowerCase() === address.toLowerCase();
-    const value = ethers.utils.formatEther(item.value || item.value_wei || '0');
-    const fee = item.gas_spent ? ethers.utils.formatEther(item.gas_spent) : '0';
-    const txDetails = txDetailsMap[item.hash || item.tx_hash];
+    const isSend = item.from_address?.toLowerCase() === address.toLowerCase();
+    const value = ethers.utils.formatEther(item.value || '0');
+    const fee = ethers.utils.formatEther(item.gas_spent || '0');
+    const txDetails = txDetailsMap[item.hash];
     const displayValue = txDetails ? txDetails.amount : value;
     const unit = txDetails ? txDetails.unit : 'ETH';
 
+    // Date from unified timestamp
+    let formattedDate = 'Pending';
+    if (item.timestamp && typeof item.timestamp === 'string') {
+      const date = new Date(item.timestamp);
+      if (!isNaN(date.getTime())) {
+        formattedDate = date.toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' }); // DD/MM/YY
+      }
+    }
+
     return (
-      <TouchableOpacity onPress={() => Linking.openURL(`${ETHERSCAN_BASE}/tx/${item.hash || item.tx_hash}`)}>
+      <TouchableOpacity onPress={() => Linking.openURL(`${ETHERSCAN_BASE}/tx/${item.hash}`)}>
         <View style={styles.txItem}>
           <Ionicons name={isSend ? 'arrow-up' : 'arrow-down'} size={24} color={isSend ? 'red' : 'green'} style={styles.icon} />
           <View style={styles.txInfo}>
-            <Text style={styles.txDate}>{new Date(item.timestamp || item.block_signed_at).toLocaleString()}</Text>
+            <Text style={styles.txDate}>{formattedDate}</Text>
             <Text style={styles.txValue}>{displayInUnit(parseFloat(displayValue), displayUnit)} {displayUnit}</Text>
-            <Text style={styles.txStatus}>Status: Confirmed</Text>
+            <Text style={styles.txStatus}>Status: {item.successful ? 'Confirmed' : 'Pending'}</Text>
             <Text style={styles.txFromTo}>{isSend ? 'To' : 'From'}: {isSend ? item.to_address : item.from_address}</Text>
             <Text style={styles.txFee}>Fee: {fee} ETH</Text>
           </View>
@@ -118,13 +159,17 @@ const HistoryTab = () => {
           <Text style={displayUnit === localCurrency ? styles.unitTextActive : styles.unitText}>{localCurrency}</Text>
         </TouchableOpacity>
       </View>
-      {loading ? (
+      {error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : loading ? (
         <View style={styles.center}><ActivityIndicator size="large" color="#0A84FF" /></View>
       ) : (
         <FlatList
           data={mergedTransactions}
           renderItem={renderTxItem}
-          keyExtractor={(item) => item.tx_hash || item.block_signed_at}
+          keyExtractor={(item) => item.hash || item.tx_hash || item.timestamp || Math.random().toString()}
           ListEmptyComponent={EmptyState}
           contentContainerStyle={styles.listContainer}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={refetch} colors={['#0A84FF']} />}
@@ -148,6 +193,7 @@ const styles = StyleSheet.create({
   txFromTo: { color: '#888' },
   txFee: { color: '#888' },
   empty: { textAlign: 'center', color: '#888', marginTop: 10 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   errorText: { color: 'red', textAlign: 'center', marginBottom: 10 },
   retry: { color: '#0A84FF' },
   unitRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 10 },
