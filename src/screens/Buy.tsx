@@ -6,7 +6,7 @@ import { WebView } from 'react-native-webview';
 import { getWalletAddress } from '../utils/wallet';
 import { useFocusEffect } from '@react-navigation/native';  // For reload on focus
 import * as Localization from 'expo-localization';  // For geo and currency
-import { useAssets } from '../hooks/useAssets';  // For refresh after buy
+import useAssets from '../hooks/useAssets'; // For refresh after buy
 
 const BuyRoute = () => {
   const [address, setAddress] = useState('');
