@@ -7,14 +7,17 @@ import Constants from 'expo-constants'; // For bundled env
 import { Alert } from 'react-native'; // For errors
 
 export type Transaction = {
-  tx_hash: string;
-  signed_at: string;
+  hash: string;
+  timestamp: string;
   from_address: string;
   to_address: string;
   value: string; // As decimal string
   gas_spent: string;
   successful: boolean;
 };
+
+// Helper to filter records (per suggestion)
+const isRecord = (v: any): v is Record<string, any> => v && typeof v === 'object' && !Array.isArray(v);
 
 const useHistory = () => {
   const address = useWalletStore((state) => state.address);
@@ -36,6 +39,7 @@ const useHistory = () => {
     }
 
     setLoading(true);
+    setError(null); // Clear error
 
     try {
       const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
@@ -55,16 +59,18 @@ const useHistory = () => {
       }
       const data = await resp.json();
       const items: any[] = data.data.items || []; // Type as any[]
-      const mappedTxns = items.map((item: any) => ({ // Type 'item' as 'any'
-        tx_hash: item.tx_hash,
-        signed_at: item.block_signed_at,
-        from_address: item.from_address,
-        to_address: item.to_address,
-        value: item.value, // As string, format later
-        gas_spent: item.gas_spent,
-        successful: item.successful,
-      }));
-      setTransactions(mappedTxns); // Renamed from setTxns
+      const mappedTxns = items
+        .filter(isRecord) // Filter non-objects per suggestion
+        .map((item: any) => ({
+          hash: item.tx_hash, // Unified id
+          timestamp: item.block_signed_at, // Unified date (per suggestion)
+          from_address: item.from_address,
+          to_address: item.to_address,
+          value: item.value, // As string, format later
+          gas_spent: item.gas_spent,
+          successful: item.successful,
+        }));
+      setTransactions(mappedTxns);
     } catch (err: unknown) {
       const msg = (err as Error).message || 'Unknown error';
       setError(msg);

@@ -39,8 +39,11 @@ module.exports = ({ config }) => {
       eas: {
         projectId: '6c753f76-cdce-4f42-8301-4b22267269c4'
       },
-      // Map from process.env (EAS injection) to extra for APK bundling
-      COVALENT_KEY: process.env.EXPO_PUBLIC_COVALENT_KEY,
+      // Map from process.env (EAS injection) to extra for APK bundling - use EXPO_PUBLIC_ prefix
+      EXPO_PUBLIC_COVALENT_KEY: process.env.EXPO_PUBLIC_COVALENT_KEY,
+      EXPO_PUBLIC_TRANSAK_API_KEY: process.env.EXPO_PUBLIC_TRANSAK_API_KEY,
+      EXPO_PUBLIC_ALCHEMY_KEY: process.env.EXPO_PUBLIC_ALCHEMY_KEY,
+      EXPO_PUBLIC_CONTRACT_ADDRESS: process.env.EXPO_PUBLIC_CONTRACT_ADDRESS
       // Map other keys as needed
     }
   };

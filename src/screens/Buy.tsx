@@ -7,6 +7,7 @@ import { getWalletAddress } from '../utils/wallet';
 import { useFocusEffect } from '@react-navigation/native';  // For reload on focus
 import * as Localization from 'expo-localization';  // For geo and currency
 import useAssets from '../hooks/useAssets'; // For refresh after buy
+import AsyncStorage from '@react-native-async-storage/async-storage'; // For caching
 
 const BuyRoute = () => {
   const [address, setAddress] = useState('');

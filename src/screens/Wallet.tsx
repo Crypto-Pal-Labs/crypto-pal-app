@@ -3,7 +3,7 @@ import { View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Button,
 import { useNavigation } from '@react-navigation/native';
 import { StackActions } from '@react-navigation/native';
 import { ethers } from 'ethers';
-import { useAssets } from '../hooks/useAssets';
+import useAssets from '../hooks/useAssets';
 import { getWalletAddress, clearWallet } from '../utils/wallet';
 import { Ionicons } from '@expo/vector-icons';
 import { useWalletStore } from '../store/useWalletStore';
