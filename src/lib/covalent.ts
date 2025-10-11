@@ -1,21 +1,20 @@
 // src/lib/covalent.ts
-import Constants from "expo-constants";
+import { getExtra } from "../config/extra";
 
-const EXTRA = Constants.expoConfig?.extra || {};
+const EXTRA = getExtra();
 const AUTH_B64: string = EXTRA?.COVALENT_AUTH_B64 || "";
 const HAS_AUTH = typeof AUTH_B64 === "string" && AUTH_B64.length > 10;
 
 /**
- * Centralized Covalent GET with Basic auth header.
- * IMPORTANT: Do NOT include ?key= in the URL — header auth only.
+ * Always use header auth. Never append ?key= to the URL.
  */
 export async function covalentGet(url: string, init: RequestInit = {}) {
   if (!HAS_AUTH) {
-    // If this shows in logcat, the env wasn’t injected for this build/profile.
+    // If this prints in release, your EAS env didn’t inject for this profile.
     console.log("[COVALENT_DEBUG] Missing AUTH_B64 in bundle");
   }
 
-  // Small, safe diagnostics (doesn't print the full token):
+  // Minimal diagnostics you can see in logcat; safe to keep for now.
   console.log("[COVALENT_DEBUG] b64.len", (AUTH_B64 || "").length);
   console.log("[COVALENT_DEBUG] hdr", `Basic ${String(AUTH_B64).slice(0, 8)}...`);
 

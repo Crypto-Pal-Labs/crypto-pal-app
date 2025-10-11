@@ -5,9 +5,9 @@ import * as ethers from "ethers";
 import { useChain } from "../hooks/useChain";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Localization from "expo-localization";
-import Constants from "expo-constants";
 import { Alert } from "react-native";
 import { covalentGet } from "../lib/covalent";
+import { getExtra } from "../config/extra";
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -38,7 +38,7 @@ export type NFTItem = {
 };
 
 export const useAssets = () => {
-  const address = useWalletStore((state) => state.address);
+  const address = useWalletStore((s) => s.address);
   const { currentChain, chains } = useChain();
   const [balances, setBalances] = useState<BalanceItem[]>([]);
   const [nfts, setNfts] = useState<NFTItem[]>([]);
@@ -46,14 +46,13 @@ export const useAssets = () => {
   const [error, setError] = useState<string | null>(null);
   const isActiveRef = useRef(true);
 
-  const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
-  const localCurrency = (locale.currencyCode || "usd").toLowerCase();
-
-  // Check the baked token (what actually goes into the header)
-  const EXTRA = Constants.expoConfig?.extra || {};
+  const EXTRA = getExtra();
   const HAS_AUTH =
     typeof EXTRA?.COVALENT_AUTH_B64 === "string" &&
     EXTRA.COVALENT_AUTH_B64.length > 10;
+
+  const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
+  const localCurrency = (locale.currencyCode || "usd").toLowerCase();
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -80,6 +79,7 @@ export const useAssets = () => {
 
   const fetchAssetsInternal = async () => {
     if (!isActiveRef.current) return;
+
     if (!HAS_AUTH) {
       setError("Covalent auth missing in build. Check EXPO_PUBLIC_COVALENT_KEY for this profile.");
       setLoading(false);
@@ -90,7 +90,7 @@ export const useAssets = () => {
     setError(null);
     try {
       await retryFetch(async () => {
-        const chainConfig = chains[currentChain] || { covalentChainId: "11155111" }; // Sepolia fallback
+        const chainConfig = chains[currentChain] || { covalentChainId: "11155111" }; // Sepolia
         const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`;
         const data = await covalentGet(balancesUrl);
         const items: CovalentItem[] = data?.data?.items || [];
@@ -111,7 +111,6 @@ export const useAssets = () => {
 
         setNfts(nftItems);
 
-        // Basic price enrichment (optional)
         const tickerToIdMap = {
           ETH: "ethereum",
           USDC: "usd-coin",
@@ -175,16 +174,14 @@ export const useAssets = () => {
     useCallback(() => {
       isActiveRef.current = true;
       debouncedFetch();
-
       const interval = setInterval(() => {
         if (!loading && isActiveRef.current) debouncedFetch();
       }, 10000);
-
       return () => {
         isActiveRef.current = false;
         clearInterval(interval);
       };
-    }, []) // once per focus
+    }, [])
   );
 
   return { balances, nfts, loading, error, refresh: debouncedFetch };

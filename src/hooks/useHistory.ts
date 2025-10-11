@@ -1,9 +1,9 @@
 // src/hooks/useHistory.ts
 import { useState, useEffect } from "react";
 import { useWalletStore } from "../store/useWalletStore";
-import Constants from "expo-constants";
 import { Alert } from "react-native";
 import { covalentGet } from "../lib/covalent";
+import { getExtra } from "../config/extra";
 
 export const useHistory = () => {
   const setAddress = useWalletStore((s) => s.setAddress);
@@ -12,7 +12,7 @@ export const useHistory = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const EXTRA = Constants.expoConfig?.extra || {};
+  const EXTRA = getExtra();
   const HAS_AUTH =
     typeof EXTRA?.COVALENT_AUTH_B64 === "string" &&
     EXTRA.COVALENT_AUTH_B64.length > 10;
@@ -45,7 +45,7 @@ export const useHistory = () => {
       return;
     }
 
-    const chains = [11155111]; // add 97 for BSC if needed
+    const chains = [11155111]; // Add 97 for BSC if needed
     let allTx: any[] = [];
 
     for (const chainId of chains) {
