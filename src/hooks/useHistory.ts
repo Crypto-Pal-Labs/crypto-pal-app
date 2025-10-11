@@ -1,12 +1,19 @@
+// src/hooks/useHistory.ts
 import { useState, useEffect } from 'react';
 import { useWalletStore } from '../store/useWalletStore';
-import { COVALENT_KEY } from '@env';
+import Constants from 'expo-constants'; // For bundled env
+import { Buffer } from 'buffer'; // Import for Basic auth
+import { Alert } from 'react-native'; // For errors
 
 export const useHistory = () => {
+  const setAddress = useWalletStore((state) => state.setAddress);
   const address = useWalletStore((state) => state.address);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Bundled key from env
+  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY;
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -30,14 +37,22 @@ export const useHistory = () => {
       setLoading(false);
       return;
     }
+    if (!COVALENT_KEY) {
+      Alert.alert('Config Error', 'Covalent API key missing - check app.config.js/EAS secrets.');
+      setLoading(false);
+      return;
+    }
 
     const chains = [11155111]; // Sepolia; add 97 for BSC
     let allTx: any[] = [];
     for (const chainId of chains) {
       try {
         const data = await retryFetch(async () => {
-          const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/?key=${COVALENT_KEY}`;
-          const resp = await fetch(url);
+          const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/`; // No ?key=
+          const basic = Buffer.from(`${COVALENT_KEY}:`).toString('base64');
+          const resp = await fetch(url, {
+            headers: { Authorization: `Basic ${basic}` },
+          });
           if (!resp.ok) {
             throw new Error(`History fetch failed with status: ${resp.status}`);
           }

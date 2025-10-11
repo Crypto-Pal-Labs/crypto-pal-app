@@ -8,6 +8,7 @@ import { useCallback } from 'react';
 import * as Localization from 'expo-localization'; // For local currency
 import Constants from 'expo-constants'; // For bundled env
 import { Alert } from 'react-native'; // For errors
+import { Buffer } from 'buffer'; // Import for Basic auth
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -44,7 +45,7 @@ export const useAssets = () => {
   const [nfts, setNfts] = useState<NFTItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const isActiveRef = useRef(true); // Ref to track mounted/focused
+  const isActiveRef = useRef(true);
 
   const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
   const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
@@ -74,10 +75,10 @@ export const useAssets = () => {
     }
   };
 
-  const fetchWithTimeout = async (url: string, timeout = 10000) => {
+  const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeout);
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await fetch(url, { ...options, signal: controller.signal });
     clearTimeout(id);
     return response;
   };
@@ -89,11 +90,16 @@ export const useAssets = () => {
     try {
       await retryFetch(async () => {
         const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
-        const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?key=${COVALENT_KEY}&nft=true`;
-        const resp = await fetchWithTimeout(balancesUrl);
-        if (!resp.ok) throw new Error(`Covalent error: ${resp.status}`);
-        const data = await resp.json();
-        if (data.error) throw new Error(data.error_message);
+        const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`; // No ?key=
+        const basic = Buffer.from(`${COVALENT_KEY}:`).toString('base64');
+        const dataResp = await fetchWithTimeout(balancesUrl, {
+          headers: { Authorization: `Basic ${basic}` },
+        });
+        if (!dataResp.ok) {
+          const text = await dataResp.text();
+          throw new Error(`Balances fetch failed with status: ${dataResp.status} - ${text}`);
+        }
+        const data = await dataResp.json();
         const items: CovalentItem[] = data.data.items || [];
         const tempBalances = items.filter(item => item.type !== 'nft' && item.balance !== '0');
         const nftItems = items.filter(item => item.type === 'nft' && (item.nft_data?.length ?? 0) > 0) // Optional chaining with ?? 0

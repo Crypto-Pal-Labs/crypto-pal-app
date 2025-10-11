@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react';
 import Constants from 'expo-constants';
 import { useWalletStore } from '../store/useWalletStore';
+import { Buffer } from 'buffer'; // Import for Basic auth
+import { Alert } from 'react-native'; // For errors
 
 export type Transaction = {
   tx_hash: string;
@@ -17,15 +19,24 @@ export function useTransactions() {
   const address = useWalletStore(s => s.address);
   const [txns, setTxns] = useState<Transaction[]>([]);
 
+  // Bundled key from env
+  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY;
+
   useEffect(() => {
     if (!address) return;
-    const COVALENT_KEY = Constants.expoConfig?.extra?.covalentKey as string;
-    const url = `https://api.covalenthq.com/v1/1/address/${address}/transactions_v2/?key=${COVALENT_KEY}&page-size=20`;
+    if (!COVALENT_KEY) {
+      Alert.alert('Config Error', 'Covalent API key missing - check app.config.js/EAS secrets.');
+      return;
+    }
+    const url = `https://api.covalenthq.com/v1/1/address/${address}/transactions_v2/&page-size=20`; // No ?key=
 
     let cancelled = false;
     async function fetchTxns() {
       try {
-        const res = await fetch(url);
+        const basic = Buffer.from(`${COVALENT_KEY}:`).toString('base64');
+        const res = await fetch(url, {
+          headers: { Authorization: `Basic ${basic}` },
+        });
         const json = await res.json();
         if (!cancelled && Array.isArray(json.data?.items)) {
           setTxns(json.data.items);
