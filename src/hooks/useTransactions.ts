@@ -1,54 +1,58 @@
 // src/hooks/useTransactions.ts
-import { useState, useEffect } from 'react';
-import Constants from 'expo-constants';
-import { useWalletStore } from '../store/useWalletStore';
-import { Alert } from 'react-native'; // For errors
-import { covalentGet } from '../lib/covalent'; // Import helper
+import { useState, useEffect } from "react";
+import Constants from "expo-constants";
+import { useWalletStore } from "../store/useWalletStore";
+import { Alert } from "react-native";
+import { covalentGet } from "../lib/covalent";
 
 export type Transaction = {
   tx_hash: string;
   block_signed_at: string;
   from_address: string;
   to_address: string;
-  value: string;       // in WEI as a decimal string
+  value: string;     // wei as decimal string
   gas_spent: string;
   successful: boolean;
 };
 
 export function useTransactions() {
-  const address = useWalletStore(s => s.address);
+  const address = useWalletStore((s) => s.address);
   const [txns, setTxns] = useState<Transaction[]>([]);
 
-  // Bundled key from env
-  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY;
+  const EXTRA = Constants.expoConfig?.extra || {};
+  const HAS_AUTH =
+    typeof EXTRA?.COVALENT_AUTH_B64 === "string" &&
+    EXTRA.COVALENT_AUTH_B64.length > 10;
 
   useEffect(() => {
     if (!address) return;
-    if (!COVALENT_KEY) {
-      Alert.alert('Config Error', 'Covalent API key missing - check app.config.js/EAS secrets.');
+    if (!HAS_AUTH) {
+      Alert.alert("Config Error", "Covalent auth missing in build.");
       return;
     }
-    const url = `https://api.covalenthq.com/v1/1/address/${address}/transactions_v2/&page-size=20`; // No ?key=
+
+    // FIXED: ?page-size (was &page-size previously)
+    const url = `https://api.covalenthq.com/v1/1/address/${address}/transactions_v2/?page-size=20`;
 
     let cancelled = false;
     async function fetchTxns() {
       try {
-        const json = await covalentGet(url); // Use helper for Basic auth
-        if (!cancelled && Array.isArray(json.data?.items)) {
+        const json = await covalentGet(url);
+        if (!cancelled && Array.isArray(json?.data?.items)) {
           setTxns(json.data.items);
         }
       } catch (err) {
-        console.error('Failed to fetch transactions', err);
+        console.error("Failed to fetch transactions", err);
       }
     }
 
     fetchTxns();
-    const iv = setInterval(fetchTxns, 60_000); // refresh every minute
+    const iv = setInterval(fetchTxns, 60_000);
     return () => {
       cancelled = true;
       clearInterval(iv);
     };
-  }, [address]);
+  }, [address, HAS_AUTH]);
 
   return txns;
 }

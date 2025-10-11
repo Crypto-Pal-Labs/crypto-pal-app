@@ -1,30 +1,30 @@
 // src/hooks/useHistory.ts
-import { useState, useEffect } from 'react';
-import { useWalletStore } from '../store/useWalletStore';
-import Constants from 'expo-constants'; // For bundled env
-import { Alert } from 'react-native'; // For errors
-import { covalentGet } from '../lib/covalent'; // Import helper
+import { useState, useEffect } from "react";
+import { useWalletStore } from "../store/useWalletStore";
+import Constants from "expo-constants";
+import { Alert } from "react-native";
+import { covalentGet } from "../lib/covalent";
 
 export const useHistory = () => {
-  const setAddress = useWalletStore((state) => state.setAddress);
-  const address = useWalletStore((state) => state.address);
+  const setAddress = useWalletStore((s) => s.setAddress);
+  const address = useWalletStore((s) => s.address);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Bundled key from env
-  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY;
+  const EXTRA = Constants.expoConfig?.extra || {};
+  const HAS_AUTH =
+    typeof EXTRA?.COVALENT_AUTH_B64 === "string" &&
+    EXTRA.COVALENT_AUTH_B64.length > 10;
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         return await fn();
-      } catch (err) {
-        console.log(`Retry attempt ${attempt} failed: ${(err as Error).message}`);
-        if (attempt === retries) {
-          throw err;
-        }
-        await new Promise(resolve => setTimeout(resolve, delay));
+      } catch (err: any) {
+        console.log(`Retry attempt ${attempt} failed: ${err?.message || err}`);
+        if (attempt === retries) throw err;
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
   };
@@ -32,31 +32,35 @@ export const useHistory = () => {
   const fetchHistory = async () => {
     setLoading(true);
     setError(null);
+
     if (!address) {
-      setError('No wallet address found.');
+      setError("No wallet address found.");
       setLoading(false);
       return;
     }
-    if (!COVALENT_KEY) {
-      Alert.alert('Config Error', 'Covalent API key missing - check app.config.js/EAS secrets.');
+    if (!HAS_AUTH) {
+      setError("Covalent auth missing in build.");
       setLoading(false);
+      Alert.alert("Config Error", "Covalent auth missing in build.");
       return;
     }
 
-    const chains = [11155111]; // Sepolia; add 97 for BSC
+    const chains = [11155111]; // add 97 for BSC if needed
     let allTx: any[] = [];
+
     for (const chainId of chains) {
       try {
         const data = await retryFetch(async () => {
-          const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/`; // No ?key=
-          return await covalentGet(url); // Use helper for Basic auth
+          const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/`;
+          return await covalentGet(url);
         });
-        allTx = [...allTx, ...(data.data.items || [])];
-      } catch (err) {
-        console.log('History fetch failed after retries:', (err as Error).message); // Log to console
-        setError('Failed to load history. Pull to refresh.');
+        allTx = [...allTx, ...(data?.data?.items || [])];
+      } catch (err: any) {
+        console.log("History fetch failed after retries:", err?.message || err);
+        setError("Failed to load history. Pull to refresh.");
       }
     }
+
     setTransactions(allTx);
     setLoading(false);
   };

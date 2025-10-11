@@ -1,14 +1,13 @@
 // src/hooks/useAssets.ts
-import { useState, useRef } from 'react'; // Added useRef for active flag
-import { useWalletStore } from '../store/useWalletStore';
-import * as ethers from 'ethers'; // Star import for TS
-import { useChain } from '../hooks/useChain';
-import { useFocusEffect } from '@react-navigation/native'; // Correct import
-import { useCallback } from 'react';
-import * as Localization from 'expo-localization'; // For local currency
-import Constants from 'expo-constants'; // For bundled env
-import { Alert } from 'react-native'; // For errors
-import { covalentGet } from '../lib/covalent'; // Import helper
+import { useState, useRef, useCallback } from "react";
+import { useWalletStore } from "../store/useWalletStore";
+import * as ethers from "ethers";
+import { useChain } from "../hooks/useChain";
+import { useFocusEffect } from "@react-navigation/native";
+import * as Localization from "expo-localization";
+import Constants from "expo-constants";
+import { Alert } from "react-native";
+import { covalentGet } from "../lib/covalent";
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -17,7 +16,7 @@ interface CovalentItem {
   logo_url?: string;
   type: string;
   contract_address?: string;
-  nft_data?: any[]; // Optional array
+  nft_data?: any[];
   contract_name?: string;
   contract_decimals?: number;
 }
@@ -47,30 +46,26 @@ export const useAssets = () => {
   const [error, setError] = useState<string | null>(null);
   const isActiveRef = useRef(true);
 
-  const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
-  const localCurrency = (locale.currencyCode || 'usd').toLowerCase();
+  const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
+  const localCurrency = (locale.currencyCode || "usd").toLowerCase();
 
-  // Bundled key from env (no hardcoded fallback—alert if missing)
-  const COVALENT_KEY = Constants.expoConfig?.extra?.COVALENT_KEY;
-
-  // Temp debug log: Print full key value (remove after verifying APK fix)
-  console.log('Covalent key in build:', COVALENT_KEY ? `Set (${COVALENT_KEY})` : 'Missing - check app.config.js/EAS!');
-
-  if (!COVALENT_KEY) {
-    Alert.alert('Config Error', 'Covalent API key missing in build - check .env/app.config.js/EAS secrets.');
-  }
+  // Check the baked token (what actually goes into the header)
+  const EXTRA = Constants.expoConfig?.extra || {};
+  const HAS_AUTH =
+    typeof EXTRA?.COVALENT_AUTH_B64 === "string" &&
+    EXTRA.COVALENT_AUTH_B64.length > 10;
 
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         return await fn();
-      } catch (err: unknown) {
-        console.warn(`Retry attempt ${attempt} failed:`, (err as Error).message);
+      } catch (err: any) {
+        console.warn(`Retry attempt ${attempt} failed:`, err?.message || err);
         if (attempt === retries) {
-          Alert.alert('Fetch Error', 'Could not load data after retries - check network.');
+          Alert.alert("Fetch Error", "Could not load data after retries - check network.");
           throw err;
         }
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((r) => setTimeout(r, delay));
       }
     }
   };
@@ -84,75 +79,91 @@ export const useAssets = () => {
   };
 
   const fetchAssetsInternal = async () => {
-    if (!isActiveRef.current || !COVALENT_KEY) return; // Early exit if unfocused or no key
+    if (!isActiveRef.current) return;
+    if (!HAS_AUTH) {
+      setError("Covalent auth missing in build. Check EXPO_PUBLIC_COVALENT_KEY for this profile.");
+      setLoading(false);
+      Alert.alert("Config Error", "Covalent auth missing in build.");
+      return;
+    }
 
     setError(null);
     try {
       await retryFetch(async () => {
-        const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
-        const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`; // No ?key=
-        const data = await covalentGet(balancesUrl); // Use helper for Basic auth
-        const items: CovalentItem[] = data.data.items || [];
-        const tempBalances = items.filter(item => item.type !== 'nft' && item.balance !== '0');
-        const nftItems = items.filter(item => item.type === 'nft' && (item.nft_data?.length ?? 0) > 0) // Optional chaining with ?? 0
-          .flatMap(item => item.nft_data?.map(nft => ({ // Optional chaining
-            token_id: nft.token_id,
-            token_balance: nft.token_balance,
-            contract_name: item.contract_name || 'Unknown',
-            contract_address: item.contract_address || '',
-            logo_url: nft.token_url || item.logo_url || 'https://placeholder.com/40x40',
-          })) || []);
+        const chainConfig = chains[currentChain] || { covalentChainId: "11155111" }; // Sepolia fallback
+        const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`;
+        const data = await covalentGet(balancesUrl);
+        const items: CovalentItem[] = data?.data?.items || [];
 
-        setNfts(nftItems); // Update NFTs
+        const tempBalances = items.filter((i) => i.type !== "nft" && i.balance !== "0");
+        const nftItems =
+          items
+            .filter((i) => i.type === "nft" && (i.nft_data?.length ?? 0) > 0)
+            .flatMap((i) =>
+              (i.nft_data || []).map((nft) => ({
+                token_id: nft.token_id,
+                token_balance: nft.token_balance,
+                contract_name: i.contract_name || "Unknown",
+                contract_address: i.contract_address || "",
+                logo_url: nft.token_url || i.logo_url || "https://placeholder.com/40x40",
+              }))
+            ) || [];
 
-        // CoinGecko prices
+        setNfts(nftItems);
+
+        // Basic price enrichment (optional)
         const tickerToIdMap = {
-          'ETH': 'ethereum',
-          'USDC': 'usd-coin',
-          'BNB': 'binancecoin',
-          'MATIC': 'matic-network',
-        } as const; // 'as const' for literal types
-        const uniqueIds = [...new Set(tempBalances.map(item => tickerToIdMap[item.contract_ticker_symbol?.toUpperCase() as keyof typeof tickerToIdMap] || ''))].filter(id => id);
+          ETH: "ethereum",
+          USDC: "usd-coin",
+          BNB: "binancecoin",
+          MATIC: "matic-network",
+        } as const;
+
+        const uniqueIds = [
+          ...new Set(
+            tempBalances.map(
+              (it) => tickerToIdMap[(it.contract_ticker_symbol || "").toUpperCase() as keyof typeof tickerToIdMap] || ""
+            )
+          ),
+        ].filter(Boolean);
+
         let prices: any = {};
         if (uniqueIds.length > 0) {
           const vsCurrencies = `usd,${localCurrency}`;
-          const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(',')}&vs_currencies=${vsCurrencies}`;
+          const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(",")}&vs_currencies=${vsCurrencies}`;
           const priceResp = await fetchWithTimeout(priceUrl);
-          if (priceResp.ok) {
-            prices = await priceResp.json();
-          }
+          if (priceResp.ok) prices = await priceResp.json();
         }
 
-        const pricedBalances = tempBalances.map((item) => {
-          const ticker = item.contract_ticker_symbol?.toUpperCase() ?? '';
-          const id = tickerToIdMap[ticker as keyof typeof tickerToIdMap] || ''; // Type assertion
-          const decimals = item.contract_decimals || 18;
-          const parsedBalance = Number(ethers.utils.formatUnits(item.balance || '0', decimals)) || 0;
-          let quoteLocal = parsedBalance * (prices[id]?.[localCurrency] ?? 0); // Nullish coalescing for prices
-          let quoteUsd = parsedBalance * (prices[id]?.usd ?? 0);
+        const pricedBalances = tempBalances.map((i) => {
+          const ticker = (i.contract_ticker_symbol || "").toUpperCase();
+          const id = tickerToIdMap[ticker as keyof typeof tickerToIdMap] || "";
+          const decimals = i.contract_decimals ?? 18;
+          const parsed = Number(ethers.utils.formatUnits(i.balance || "0", decimals)) || 0;
+          const quoteLocal = parsed * (prices[id]?.[localCurrency] ?? 0);
+          const quoteUsd = parsed * (prices[id]?.usd ?? 0);
           return {
-            contract_ticker_symbol: item.contract_ticker_symbol ?? 'Unknown',
-            balance: item.balance || '0',
+            contract_ticker_symbol: i.contract_ticker_symbol || "Unknown",
+            balance: i.balance || "0",
             quoteLocal,
             quoteUsd,
-            logo_url: item.logo_url ?? 'https://placeholder.com/40x40'
+            logo_url: i.logo_url || "https://placeholder.com/40x40",
           };
         });
 
         setBalances(pricedBalances);
       });
-    } catch (err: unknown) {
-      const msg = (err as Error).message || 'Unknown error';
+    } catch (err: any) {
+      const msg = err?.message || "Unknown error";
       setError(msg);
-      Alert.alert('Load Error', `Failed to load assets: ${msg}. Pull to refresh.`);
+      Alert.alert("Load Error", `Failed to load assets: ${msg}. Pull to refresh.`);
     } finally {
       setLoading(false);
     }
   };
 
-  // Debounce wrapper (unchanged)
   const debounce = (fn: () => void, ms: number) => {
-    let timeout: NodeJS.Timeout | null = null;
+    let timeout: any = null;
     return () => {
       if (timeout) clearTimeout(timeout);
       timeout = setTimeout(fn, ms);
@@ -163,17 +174,17 @@ export const useAssets = () => {
   useFocusEffect(
     useCallback(() => {
       isActiveRef.current = true;
-      debouncedFetch(); // Initial
+      debouncedFetch();
 
       const interval = setInterval(() => {
-        if (!loading && isActiveRef.current) debouncedFetch(); // Poll
+        if (!loading && isActiveRef.current) debouncedFetch();
       }, 10000);
 
       return () => {
         isActiveRef.current = false;
         clearInterval(interval);
       };
-    }, []) // Empty deps for once per focus
+    }, []) // once per focus
   );
 
   return { balances, nfts, loading, error, refresh: debouncedFetch };
