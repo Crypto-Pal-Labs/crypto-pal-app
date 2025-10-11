@@ -2,8 +2,8 @@
 import { useState, useEffect } from 'react';
 import { useWalletStore } from '../store/useWalletStore';
 import Constants from 'expo-constants'; // For bundled env
-import { Buffer } from 'buffer'; // Import for Basic auth
 import { Alert } from 'react-native'; // For errors
+import { covalentGet } from '../lib/covalent'; // Import helper
 
 export const useHistory = () => {
   const setAddress = useWalletStore((state) => state.setAddress);
@@ -49,14 +49,7 @@ export const useHistory = () => {
       try {
         const data = await retryFetch(async () => {
           const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/`; // No ?key=
-          const basic = Buffer.from(`${COVALENT_KEY}:`).toString('base64');
-          const resp = await fetch(url, {
-            headers: { Authorization: `Basic ${basic}` },
-          });
-          if (!resp.ok) {
-            throw new Error(`History fetch failed with status: ${resp.status}`);
-          }
-          return await resp.json();
+          return await covalentGet(url); // Use helper for Basic auth
         });
         allTx = [...allTx, ...(data.data.items || [])];
       } catch (err) {

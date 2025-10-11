@@ -8,7 +8,7 @@ import { useCallback } from 'react';
 import * as Localization from 'expo-localization'; // For local currency
 import Constants from 'expo-constants'; // For bundled env
 import { Alert } from 'react-native'; // For errors
-import { Buffer } from 'buffer'; // Import for Basic auth
+import { covalentGet } from '../lib/covalent'; // Import helper
 
 interface CovalentItem {
   contract_ticker_symbol?: string;
@@ -91,15 +91,7 @@ export const useAssets = () => {
       await retryFetch(async () => {
         const chainConfig = chains[currentChain] || { covalentChainId: '11155111' }; // Fallback to Sepolia
         const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`; // No ?key=
-        const basic = Buffer.from(`${COVALENT_KEY}:`).toString('base64');
-        const dataResp = await fetchWithTimeout(balancesUrl, {
-          headers: { Authorization: `Basic ${basic}` },
-        });
-        if (!dataResp.ok) {
-          const text = await dataResp.text();
-          throw new Error(`Balances fetch failed with status: ${dataResp.status} - ${text}`);
-        }
-        const data = await dataResp.json();
+        const data = await covalentGet(balancesUrl); // Use helper for Basic auth
         const items: CovalentItem[] = data.data.items || [];
         const tempBalances = items.filter(item => item.type !== 'nft' && item.balance !== '0');
         const nftItems = items.filter(item => item.type === 'nft' && (item.nft_data?.length ?? 0) > 0) // Optional chaining with ?? 0

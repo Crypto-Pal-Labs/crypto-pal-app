@@ -2,8 +2,8 @@
 import { useState, useEffect } from 'react';
 import Constants from 'expo-constants';
 import { useWalletStore } from '../store/useWalletStore';
-import { Buffer } from 'buffer'; // Import for Basic auth
 import { Alert } from 'react-native'; // For errors
+import { covalentGet } from '../lib/covalent'; // Import helper
 
 export type Transaction = {
   tx_hash: string;
@@ -33,11 +33,7 @@ export function useTransactions() {
     let cancelled = false;
     async function fetchTxns() {
       try {
-        const basic = Buffer.from(`${COVALENT_KEY}:`).toString('base64');
-        const res = await fetch(url, {
-          headers: { Authorization: `Basic ${basic}` },
-        });
-        const json = await res.json();
+        const json = await covalentGet(url); // Use helper for Basic auth
         if (!cancelled && Array.isArray(json.data?.items)) {
           setTxns(json.data.items);
         }
