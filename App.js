@@ -13,8 +13,6 @@ import { useAuthStore } from "./src/store/useAuthStore";
 import { useWalletStore } from "./src/store/useWalletStore";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { getWalletAddress, clearWallet } from "./src/utils/wallet";
-
-// Robust extra reader (works dev/preview/prod)
 import { getExtra } from "./src/config/extra";
 
 export default function App() {
@@ -26,7 +24,6 @@ export default function App() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // migrate legacy keys
         const oldMnemonic = await SecureStore.getItemAsync("user_mnemonic");
         if (oldMnemonic) {
           await SecureStore.setItemAsync("mnemonic", oldMnemonic);
@@ -80,11 +77,17 @@ export default function App() {
 
     // ---- Diagnostics (safe) ----
     const EXTRA = getExtra();
-    const hasB64 = !!(EXTRA?.COVALENT_AUTH_B64 && EXTRA.COVALENT_AUTH_B64.length > 10);
+    const rawKey = EXTRA?.COVALENT_KEY || "";
+    const authLen = EXTRA?.COVALENT_AUTH_B64?.length || 0;
+    const keyPrefix = typeof rawKey === "string" ? rawKey.slice(0, 4) : "";
+    // declare dbg ONCE here
+    const dbg = String(process.env.EXPO_PUBLIC_DEBUG_AUTH || EXTRA?.EXPO_PUBLIC_DEBUG_AUTH || "");
 
     if (__DEV__) {
       console.log("[ENV_CHECK]", {
-        hasB64,
+        keyPrefix,
+        keyLen: (rawKey || "").length,
+        b64Len: authLen,
         ethRpc: EXTRA?.ETH_RPC_URL || null,
         bscRpc: EXTRA?.BSC_RPC_URL || null,
         etherscan: EXTRA?.ETHERSCAN_BASE || null,
@@ -92,11 +95,14 @@ export default function App() {
       });
     }
 
-    // Show one-time alert in release if you set EXPO_PUBLIC_DEBUG_AUTH=1
-    const dbg = String(process.env.EXPO_PUBLIC_DEBUG_AUTH || EXTRA?.EXPO_PUBLIC_DEBUG_AUTH || "");
+    // One-time alert in release if EXPO_PUBLIC_DEBUG_AUTH=1
     if (!__DEV__ && dbg === "1") {
       setTimeout(() => {
-        Alert.alert("DEBUG", `COVALENT_AUTH_B64 length: ${EXTRA?.COVALENT_AUTH_B64?.length || 0}`);
+        Alert.alert(
+          "DEBUG",
+          `COVALENT_KEY len=${(rawKey || "").length} prefix=${keyPrefix}\n` +
+            `COVALENT_AUTH_B64 len=${authLen}`
+        );
       }, 400);
     }
     // ----------------------------
