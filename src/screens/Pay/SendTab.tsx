@@ -1,235 +1,298 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, Button, Alert, StyleSheet, ActivityIndicator, TouchableOpacity, Modal } from 'react-native';
+import {
+  View, Text, TextInput, Button, Alert, StyleSheet,
+  ActivityIndicator, TouchableOpacity, Modal, Linking
+} from 'react-native';
 import { Picker } from '@react-native-picker/picker';
-import { useWalletStore } from '../../store/useWalletStore'; // Fixed path: Up two levels to src/store
+import { useWalletStore } from '../../store/useWalletStore';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { ETHERSCAN_BASE, ETH_RPC_URL } from '@env'; // Fixed: Add ETH_RPC_URL import
-import AsyncStorage from '@react-native-async-storage/async-storage';  // For fiat and local tx storage
-import * as ethers from 'ethers'; // For parseEther
-import * as SecureStore from 'expo-secure-store'; // For mnemonic
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ethers from 'ethers';
+import * as SecureStore from 'expo-secure-store';
+import * as Localization from 'expo-localization';
+
+// EAS-safe config
+import { getExtra } from '../../config/extra';
 
 interface BalanceItem {
   contract_address: string;
   contract_ticker_symbol: string;
-  // Add other properties as needed from your balances
 }
 
+const SEPOLIA = { name: 'sepolia', chainId: 11155111 };
+const DEFAULT_SEPOLIA_RPC = 'https://rpc.sepolia.org';
+const DEFAULT_SEPOLIA_EXPLORER = 'https://sepolia.etherscan.io';
+const TOKEN_SYMBOL = 'ETH';
+
+// ---- fast-fee constants/helpers ----
+const FEE_TIMEOUT_MS = 1500; // tighter timeout to feel snappy
+const FALLBACK_GAS_LIMIT = ethers.BigNumber.from(65000);
+const FALLBACK_GAS_PRICE = ethers.utils.parseUnits('2', 'gwei'); // safe small default
+
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout: () => T): Promise<T> {
+  let settled = false;
+  return new Promise(async (resolve) => {
+    const t = setTimeout(() => {
+      if (!settled) resolve(onTimeout());
+    }, ms);
+    try {
+      const v = await p;
+      settled = true;
+      clearTimeout(t);
+      resolve(v);
+    } catch {
+      settled = true;
+      clearTimeout(t);
+      resolve(onTimeout());
+    }
+  });
+}
+
+async function getQuickFeeData(provider: ethers.providers.Provider) {
+  // Prefer EIP-1559 maxFeePerGas; fall back to legacy gasPrice
+  const fd = await withTimeout(
+    (provider as any).getFeeData?.() ?? Promise.reject(null),
+    FEE_TIMEOUT_MS,
+    () => ({ maxFeePerGas: null, gasPrice: FALLBACK_GAS_PRICE })
+  );
+  const gasPrice = (fd.maxFeePerGas ?? fd.gasPrice ?? FALLBACK_GAS_PRICE) as ethers.BigNumber;
+  return { gasPrice };
+}
+
+// ---- format + UI helpers ----
+const maskAddr = (a: string) =>
+  (a?.startsWith('0x') && a.length >= 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a);
+
+const fmt = (n: number, dp = 6) =>
+  Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/,'').replace(/\.$/,'') : '…';
+
 const SendTab = () => {
-  const { chainId, address: fromAddress } = useWalletStore(); // Added fromAddress
+  const { address: fromAddress } = useWalletStore();
   const [toAddress, setToAddress] = useState('');
   const [selectedToken, setSelectedToken] = useState<BalanceItem | null>(null);
   const [amount, setAmount] = useState('');
-  const [amountUnit, setAmountUnit] = useState('token'); // 'token', 'usd', 'nzd'
-  const [feeEstimate, setFeeEstimate] = useState('Calculating...');
-  const [gasPrice, setGasPrice] = useState<ethers.BigNumber | null>(null); // For fee details
-  const [gasEstimate, setGasEstimate] = useState<ethers.BigNumber | null>(null); // For fee details
+  const [amountUnit, setAmountUnit] = useState<'token' | 'usd' | 'local'>('token');
+
+  // Fee preview (inline)
+  const [feeEstimate, setFeeEstimate] = useState('Enter details'); // e.g. "~0.00042 ETH"
+  const [gasPrice, setGasPrice] = useState<ethers.BigNumber | null>(null);
+  const [gasEstimate, setGasEstimate] = useState<ethers.BigNumber | null>(null);
+
+  // Blocking/spinner during the Step-3 fee confirmation
+  const [estimatingNow, setEstimatingNow] = useState(false);
+
+  // Send flow
   const [loading, setLoading] = useState(false);
+
+  // Camera
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
-  const [ethPriceUSD, setEthPriceUSD] = useState(2000); // Initial stub
-  const [usdToNzd, setUsdToNzd] = useState(1.6); // Initial stub
 
-  const chain = 'ETH'; // Fixed for single-chain Sepolia (testnet); BSC/others in Phase 2
+  // Prices for amount conversion
+  const [ethPriceUSD, setEthPriceUSD] = useState(2000);
+  const deviceCurrencyCode = Localization.getLocales()?.[0]?.currencyCode || 'USD'; // e.g., NZD, AUD, EUR
+  const localCode = deviceCurrencyCode.toUpperCase();
+  const localVsParam = localCode.toLowerCase(); // for CoinGecko vs_currencies
+  const [usdToLocal, setUsdToLocal] = useState(1); // USD -> Local multiplier
 
-  useEffect(() => {
-    const fetchRates = async () => {
-      try {
-        const ethResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd');
-        const ethData = await ethResponse.json();
-        setEthPriceUSD(ethData?.ethereum?.usd || 2000);
+  const EXTRA = getExtra();
+  const RPC_URL = (EXTRA?.ETH_RPC_URL as string) || DEFAULT_SEPOLIA_RPC;
+  const EXPLORER_BASE = (EXTRA?.ETHERSCAN_BASE as string) || DEFAULT_SEPOLIA_EXPLORER;
 
-        const nzdResponse = await fetch('https://api.coingecko.com/api/v3/simple/price?ids=usdt&vs_currencies=nzd');
-        const nzdData = await nzdResponse.json();
-        setUsdToNzd(nzdData?.usdt?.nzd || 1.6);
-      } catch (e) {
-        console.error('Rate fetch error in SendTab:', e);
-      }
-    };
-    fetchRates();
-  }, []);
+  // ---- helpers ----
+  const normalizeAddress = (raw: string) => {
+    const trimmed = raw.trim();
+    if (/^[0-9a-fA-F]{40}$/.test(trimmed)) return `0x${trimmed}`;
+    return trimmed;
+  };
+  const isValidEthereumAddress = (address: string) => /^0x[0-9a-fA-F]{40}$/.test(address);
 
   const convertAmountToToken = (input: string) => {
     const numInput = parseFloat(input) || 0;
     let tokenAmount = 0;
     if (amountUnit === 'token') tokenAmount = numInput;
-    if (amountUnit === 'usd') tokenAmount = numInput / ethPriceUSD;
-    if (amountUnit === 'nzd') tokenAmount = numInput / (ethPriceUSD * usdToNzd);
-    return tokenAmount.toFixed(18);  // Truncate to 18 decimals
+    if (amountUnit === 'usd')   tokenAmount = numInput / ethPriceUSD;
+    if (amountUnit === 'local') tokenAmount = numInput / (ethPriceUSD * usdToLocal);
+    return tokenAmount.toFixed(18);
   };
+
+  const makeProvider = () => new ethers.providers.StaticJsonRpcProvider(RPC_URL, SEPOLIA);
+
+  const getSigner = async () => {
+    const mnemonic = await SecureStore.getItemAsync('mnemonic');
+    if (!mnemonic) throw new Error('No mnemonic found—cannot sign transaction.');
+    const wallet = ethers.Wallet.fromMnemonic(mnemonic);
+    return wallet.connect(makeProvider());
+  };
+
+  // ---- effects ----
+  useEffect(() => {
+    // Fetch ETH price in USD (for USD conversion) and USD->Local (via USDT→local)
+    const fetchRates = async () => {
+      try {
+        // ETH → USD
+        const ethResp = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd`);
+        const ethData = await ethResp.json();
+        setEthPriceUSD(ethData?.ethereum?.usd || 2000);
+
+        // USD → Local via USDT in local currency (acts as approx USD->local)
+        const localResp = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=usdt&vs_currencies=${localVsParam}`);
+        const localData = await localResp.json();
+        const maybeLocal = Number(localData?.usdt?.[localVsParam]);
+        setUsdToLocal(Number.isFinite(maybeLocal) && maybeLocal > 0 ? maybeLocal : 1);
+      } catch {
+        setUsdToLocal(1);
+      }
+    };
+    fetchRates();
+  }, [localVsParam]);
 
   useEffect(() => {
-    if (showScanner && !permission?.granted) {
-      console.log('Requesting camera permission');
-      requestPermission();
-    }
+    if (showScanner && !permission?.granted) requestPermission();
   }, [showScanner, permission, requestPermission]);
 
+  // Pre-calc fee preview — fast, non-blocking, TOKEN ONLY
+  useEffect(() => {
+    const candidate = normalizeAddress(toAddress);
+    if (!candidate || !amount || !selectedToken) {
+      setFeeEstimate('Enter details');
+      return;
+    }
+    if (!isValidEthereumAddress(candidate)) {
+      setFeeEstimate('Invalid recipient');
+      return;
+    }
+
+    setFeeEstimate('Calculating…');
+
+    (async () => {
+      try {
+        const signer = await getSigner();
+        const provider = signer.provider!;
+        const value = ethers.utils.parseEther(convertAmountToToken(amount));
+
+        // race both calls with a timeout and defaults
+        const [{ gasPrice: gp }, gasLim] = await Promise.all([
+          getQuickFeeData(provider),
+          withTimeout(
+            signer.estimateGas({ to: candidate, value }),
+            FEE_TIMEOUT_MS,
+            () => FALLBACK_GAS_LIMIT
+          ),
+        ]);
+
+        setGasPrice(gp);
+        setGasEstimate(gasLim);
+
+        const feeWei = gasLim.mul(gp);
+        const feeEthNum = parseFloat(ethers.utils.formatEther(feeWei));
+        setFeeEstimate(`~${fmt(feeEthNum)} ${TOKEN_SYMBOL}`);
+      } catch {
+        // Provide a reasonable token fallback so UI never looks stuck
+        const feeWei = FALLBACK_GAS_LIMIT.mul(FALLBACK_GAS_PRICE);
+        const feeEthNum = parseFloat(ethers.utils.formatEther(feeWei));
+        setFeeEstimate(`~${fmt(feeEthNum)} ${TOKEN_SYMBOL} (fallback)`);
+      }
+    })();
+  }, [toAddress, amount, selectedToken, amountUnit, ethPriceUSD, usdToLocal]);
+
+  // ---- QR ----
   const handleBarCodeScanned = ({ data }: { data: string }) => {
-    console.log('Scanned data:', data);
+    const candidate = normalizeAddress(data);
     setScanned(true);
     setShowScanner(false);
-    if (isValidEthereumAddress(data)) {
-      setToAddress(data);
-      console.log('Valid address populated:', data);
-    } else {
-      Alert.alert('Invalid QR', 'Not a valid address.');
-      console.log('Invalid address scanned');
-    }
+    if (isValidEthereumAddress(candidate)) setToAddress(candidate);
+    else Alert.alert('Invalid QR', 'Not a valid address.');
   };
-
-  const isValidEthereumAddress = (address: string) => {
-    return /^0x[0-9a-fA-F]{40}$/.test(address);
-  };
-
   const handleScanQR = () => {
-    console.log('SCAN QR button pressed');
     setShowScanner(true);
     setScanned(false);
   };
 
-  const getSigner = async () => {
-    try {
-      const mnemonic = await SecureStore.getItemAsync('mnemonic');
-      console.log('Mnemonic retrieved:', !!mnemonic ? 'exists' : 'null'); // Added debug
-      if (!mnemonic) {
-        throw new Error('No mnemonic found—cannot send real transaction.');
-        // Remove or comment mock for real tx—use only for test if no mnemonic
-        // console.log('No mnemonic—using mock signer');
-        // return {
-        //   estimateGas: async () => ethers.BigNumber.from(21000),
-        //   getGasPrice: async () => ethers.utils.parseUnits('1', 'gwei'),
-        //   sendTransaction: async (tx: any) => {
-        //     const hash = `0xmock${Date.now().toString(16)}`;
-        //     return { wait: async () => ({ transactionHash: hash, gasUsed: ethers.BigNumber.from(21000), effectiveGasPrice: ethers.utils.parseUnits('1', 'gwei') }) };
-        //   },
-        // };
-      }
-      const wallet = ethers.Wallet.fromMnemonic(mnemonic);
-      const provider = new ethers.providers.JsonRpcProvider(ETH_RPC_URL); // Sepolia from .env
-      return wallet.connect(provider);
-    } catch (error) {
-      console.error('getSigner error:', error);
-      throw error;
-    }
+  // Quick fee compute used specifically for Step-3 (blocking) confirmation
+  const computeConfirmFees = async (candidate: string, value: ethers.BigNumber) => {
+    const signer = await getSigner();
+    const provider = signer.provider!;
+    const [{ gasPrice: gp }, gasLim] = await Promise.all([
+      getQuickFeeData(provider),
+      withTimeout(
+        signer.estimateGas({ to: candidate, value }),
+        FEE_TIMEOUT_MS,
+        () => FALLBACK_GAS_LIMIT
+      ),
+    ]);
+    return {
+      gasLim: gasLim ?? FALLBACK_GAS_LIMIT,
+      gp: gp ?? FALLBACK_GAS_PRICE,
+    };
   };
 
-  useEffect(() => {
-    if (!toAddress || !amount || !selectedToken) {
-      setFeeEstimate('Enter details');
-      return;
-    }
-    (async () => {
-      try {
-        const signer = await getSigner();
-        const tx = {
-          to: toAddress,
-          value: ethers.utils.parseEther(convertAmountToToken(amount)),
-        };
-        const gasEstimateValue = await signer.estimateGas(tx);
-        const gasPriceValue = await signer.getGasPrice();
-        setGasEstimate(gasEstimateValue);
-        setGasPrice(gasPriceValue);
-        const fee = gasEstimateValue.mul(gasPriceValue);
-        const feeEth = ethers.utils.formatEther(fee);
-        const feeNzd = (parseFloat(feeEth) * ethPriceUSD * usdToNzd).toFixed(2);
-        setFeeEstimate(`~NZ$${feeNzd}`);
-      } catch (error: any) {
-        setFeeEstimate('Unable to estimate: ' + error.message);
-      }
-    })();
-  }, [toAddress, amount, selectedToken, amountUnit, ethPriceUSD, usdToNzd, chain]);
-
-  const resetFields = () => {
-    setToAddress('');
-    setSelectedToken(null);
-    setAmount('');
-    setAmountUnit('token');
-    setFeeEstimate('Calculating...');
-  };
-
+  // ---- send flow with 3-step warnings ----
   const handleSend = async () => {
-    if (!toAddress || !amount) return Alert.alert('Error', 'Enter address and amount');
+    const candidate = normalizeAddress(toAddress);
+    if (!candidate || !amount) return Alert.alert('Error', 'Enter address and amount');
+    if (!isValidEthereumAddress(candidate)) return Alert.alert('Error', 'Invalid recipient address');
 
-    let sendAmount = convertAmountToToken(amount);
-    const displayAmount = amount;
-    const displayUnit = amountUnit.toUpperCase();
-    const tokenSymbol = selectedToken ? selectedToken.contract_ticker_symbol : (chain === 'ETH' ? 'ETH' : 'BNB');
-    const nativeAmount = parseFloat(sendAmount).toFixed(4);
-    const prefix = displayUnit === 'TOKEN' ? '' : '$';
+    const sendAmountToken = convertAmountToToken(amount);
+    const nativeAmount = parseFloat(sendAmountToken).toFixed(6);
+    const prefix = amountUnit === 'usd' ? '$' : ''; // token & local: no $ prefix
+    const displayUnit =
+      amountUnit === 'token' ? 'TOKEN' :
+      amountUnit === 'usd'   ? 'USD'   :
+      localCode; // LOCAL shows actual currency code (e.g., AUD, EUR, GBP)
 
+    // Step 1 — Irreversible warning
     Alert.alert(
-      'Warning',
-      'Transactions are irreversible. Double check details.',
+      'WARNING',
+      'Transactions are not reversible. Please check all details carefully.',
       [
-        { text: 'Cancel' },
+        { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Confirm',
-          onPress: async () => {
+          text: 'Continue',
+          onPress: () => {
+            // Step 2 — Details confirmation
             Alert.alert(
-              'Confirm Send',
-              `Sending ${prefix}${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol}) to ${toAddress}.`,
+              'Confirm Details',
+              `You are about to send ${prefix}${amount} ${displayUnit} (${nativeAmount} ${TOKEN_SYMBOL})\nTo: ${maskAddr(candidate)}`,
               [
                 { text: 'Cancel', style: 'cancel' },
                 {
-                  text: 'Send',
+                  text: 'Next',
                   onPress: async () => {
-                    setLoading(true);
                     try {
-                      const signer = await getSigner();
-                      const tx = {
-                        to: toAddress,
-                        value: ethers.utils.parseEther(sendAmount),
-                      };
-                      const response = await signer.sendTransaction(tx);
-                      const receipt = await response.wait();
-                      const hash = receipt.transactionHash;
-                      const usdValue = amountUnit === 'usd' ? parseFloat(displayAmount) : (parseFloat(displayAmount) / usdToNzd) || 0;
-                      const gasSpent = ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice));
+                      setEstimatingNow(true); // BLOCK INPUT + show spinner
+                      const value = ethers.utils.parseEther(sendAmountToken);
 
+                      // Always get fresh numbers here (fast, with timeout)
+                      const { gasLim, gp } = await computeConfirmFees(candidate, value);
+                      setGasEstimate(gasLim);
+                      setGasPrice(gp);
+
+                      const feeWei = gasLim.mul(gp);
+                      const feeEthNum = parseFloat(ethers.utils.formatEther(feeWei));
+                      const feeEthStr = `${fmt(feeEthNum)} ${TOKEN_SYMBOL}`;
+
+                      setEstimatingNow(false);
+
+                      // Step 3 — Fee confirmation (TOKEN ONLY)
                       Alert.alert(
-                        'Success',
-                        `Value: ${prefix}${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})\nStatus: Success\nFrom: ${fromAddress.slice(0, 6)}...${fromAddress.slice(-4)}\nTo: ${toAddress.slice(0, 6)}...${toAddress.slice(-4)}\nFee: ${gasSpent} ${tokenSymbol}`,
+                        'Fees',
+                        `Fees for this transaction are approximately ${feeEthStr}.`,
+                        [
+                          { text: 'Back', style: 'cancel' },
+                          {
+                            text: 'Send',
+                            onPress: () =>
+                              executeSend(
+                                candidate, sendAmountToken, prefix, amount, displayUnit, nativeAmount
+                              ),
+                          },
+                        ]
                       );
-
-                      // Store fiat snapshot
-                      const txDetails = { amount: displayAmount, unit: displayUnit };
-                      let storedDetails: Record<string, { amount: string; unit: string }> = {};
-                      try {
-                        const stored = await AsyncStorage.getItem('txDetails');
-                        storedDetails = stored ? JSON.parse(stored) : {};
-                      } catch (e) {}
-                      storedDetails[hash] = txDetails;
-                      await AsyncStorage.setItem('txDetails', JSON.stringify(storedDetails));
-
-                      // Add local tx for History merge
-                      const localTx = {
-                        hash: hash,
-                        from: fromAddress,
-                        to: toAddress,
-                        value: ethers.utils.parseEther(sendAmount).toString(), // Wei
-                        timestamp: new Date().toISOString(),
-                        isSend: true,
-                        fiatSnapshot: `${prefix}${displayAmount} ${displayUnit} (${nativeAmount} ${tokenSymbol})`,
-                      };
-                      const localTxs = JSON.parse(await AsyncStorage.getItem('localTxs') || '[]');
-                      localTxs.push(localTx);
-                      await AsyncStorage.setItem('localTxs', JSON.stringify(localTxs));
-
-                      // Add local balance delta for Wallet deduct
-                      const delta = -parseFloat(sendAmount);
-                      const currentDelta = parseFloat(await AsyncStorage.getItem('localBalanceDelta') || '0');
-                      await AsyncStorage.setItem('localBalanceDelta', (currentDelta + delta).toString());
-
-                      // No local mock/tx needed—real tx will show in Covalent on refresh
-                      // P2P stub alert
-                      Alert.alert('Successful transaction!', `${prefix}${displayAmount} ${displayUnit} ${tokenSymbol} sent as requested.`);
-
-                      resetFields();
-                    } catch (err: any) {
-                      Alert.alert('Error', err.message);
-                    } finally {
-                      setLoading(false);
+                    } catch (e: any) {
+                      setEstimatingNow(false);
+                      Alert.alert('Error', e?.reason || e?.message || 'Failed to estimate fees.');
                     }
                   },
                 },
@@ -241,49 +304,158 @@ const SendTab = () => {
     );
   };
 
-  const showFeeDetails = () => {
-    if (!gasPrice || !gasEstimate) return Alert.alert('Fee Details', 'Unable to show details—enter amount/address first.');
-    const gasPriceGwei = ethers.utils.formatUnits(gasPrice, 'gwei');
-    const gasLimit = gasEstimate.toString();
-    const totalFeeEth = ethers.utils.formatEther(gasEstimate.mul(gasPrice));
-    const totalFeeNzd = (parseFloat(totalFeeEth) * ethPriceUSD * usdToNzd).toFixed(2);
-    Alert.alert('Fee Details', `Gas Price: ${gasPriceGwei} Gwei\nGas Limit: ${gasLimit}\nTotal Fee: ~NZ$${totalFeeNzd}`);
+  // actual send + success message
+  const executeSend = async (
+    candidate: string,
+    sendAmountToken: string,
+    prefix: string,
+    displayAmount: string,
+    displayUnit: string,
+    nativeAmount: string
+  ) => {
+    setLoading(true);
+    try {
+      const signer = await getSigner();
+      const value = ethers.utils.parseEther(sendAmountToken);
+
+      // ensure we always have safe overrides (no blocking)
+      const overrides: any = {
+        to: candidate,
+        value,
+        gasLimit: gasEstimate ?? FALLBACK_GAS_LIMIT
+      };
+      if (!gasPrice) {
+        overrides.gasPrice = FALLBACK_GAS_PRICE; // legacy path
+      }
+
+      const response = await signer.sendTransaction(overrides);
+      const receipt = await response.wait();
+
+      // TRUE on-chain fee
+      const feeEthTrue = parseFloat(
+        ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice))
+      );
+
+      // Save extras for history/UI
+      const txDetails = { amount: displayAmount, unit: displayUnit, feeEth: feeEthTrue };
+      const stored = await AsyncStorage.getItem('txDetails');
+      const storedDetails = stored ? JSON.parse(stored) : {};
+      storedDetails[receipt.transactionHash] = txDetails;
+      await AsyncStorage.setItem('txDetails', JSON.stringify(storedDetails));
+
+      // Also store in localTx, so History can display consistent fee
+      const localTx = {
+        hash: receipt.transactionHash,
+        from: fromAddress,
+        to: candidate,
+        value: value.toString(),
+        timestamp: new Date().toISOString(),
+        isSend: true,
+        feeEth: feeEthTrue, // <— use this in History cards when available
+        fiatSnapshot: `${prefix}${displayAmount} ${displayUnit} (${nativeAmount} ${TOKEN_SYMBOL})`,
+      };
+      const localTxs = JSON.parse((await AsyncStorage.getItem('localTxs')) || '[]');
+      localTxs.push(localTx);
+      await AsyncStorage.setItem('localTxs', JSON.stringify(localTxs));
+
+      const delta = -parseFloat(sendAmountToken);
+      const currentDelta = parseFloat((await AsyncStorage.getItem('localBalanceDelta')) || '0');
+      await AsyncStorage.setItem('localBalanceDelta', String(currentDelta + delta));
+
+      // Success popup with explorer action
+      const txUrl = `${EXPLORER_BASE}/tx/${receipt.transactionHash}`;
+      Alert.alert(
+        'SUCCESS',
+        `Payment sent: ${prefix}${displayAmount} ${displayUnit} (${nativeAmount} ${TOKEN_SYMBOL})\nTo: ${maskAddr(candidate)}\nFee: ${fmt(feeEthTrue)} ${TOKEN_SYMBOL}`,
+        [
+          { text: 'View on Etherscan', onPress: () => Linking.openURL(txUrl) },
+          { text: 'Done' },
+        ]
+      );
+
+      resetFields();
+    } catch (err: any) {
+      if (String(err?.code) === 'NETWORK_ERROR') {
+        Alert.alert('Error', 'RPC network unavailable. Check ETH_RPC_URL.');
+      } else if (String(err?.code) === 'INSUFFICIENT_FUNDS') {
+        Alert.alert('Error', 'Insufficient funds for gas + value.');
+      } else {
+        Alert.alert('Error', err?.reason || err?.message || 'Unknown error');
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const amountPlaceholder = amountUnit === 'token' ? 'Enter Crypto Amount' : amountUnit === 'usd' ? 'Enter USD Amount' : 'Enter NZD Amount';
+  // misc UI
+  const resetFields = () => {
+    setToAddress('');
+    setSelectedToken(null);
+    setAmount('');
+    setAmountUnit('token');
+    setFeeEstimate('Enter details');
+  };
+
+  const amountPlaceholder =
+    amountUnit === 'token' ? 'Enter Crypto Amount'
+      : amountUnit === 'usd' ? 'Enter USD Amount'
+      : `Enter ${localCode} Amount`;
 
   return (
     <View style={styles.container}>
-      {/* Section 1: Send to... */}
+
+      {/* Section 1: Send to */}
       <View style={styles.section}>
-        <Text style={styles.label}>Send to</Text>
+        <Text style={styles.label}>Send to:</Text>
         <View style={styles.addressRow}>
-          <TextInput style={styles.input} placeholder="Wallet address of recipient" value={toAddress} onChangeText={setToAddress} />
+          <TextInput
+            style={styles.input}
+            placeholder="Wallet address of recipient"
+            value={toAddress}
+            onChangeText={(v) => setToAddress(normalizeAddress(v))}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
           <Button title="SCAN QR" onPress={handleScanQR} color="#0A84FF" />
         </View>
       </View>
+      <View style={styles.separator} />
 
-      {/* Section 2: What crypto... */}
+      {/* Section 2: What crypto */}
       <View style={styles.section}>
-        <Text style={styles.label}>What crypto currency would you like to send them</Text>
-        <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker}>  // Type assertion for TS fix
-          <Picker.Item label={chain === 'ETH' ? 'ETH' : 'BNB'} value={null} />
+        <Text style={styles.label}>What crypto currency would you like to send:</Text>
+        <Picker selectedValue={selectedToken} onValueChange={setSelectedToken} style={styles.picker as any}>
+          <Picker.Item label="ETH" value={null} />
         </Picker>
       </View>
+      <View style={styles.separator} />
 
-      {/* Section 3: How much... */}
+      {/* Section 3: Toggle / Enter amount */}
       <View style={styles.section}>
+        <Text style={styles.label}>How much do you want to send:</Text>
         <View style={styles.unitRow}>
-          <TouchableOpacity style={amountUnit === 'token' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('token')}>
+          <TouchableOpacity
+            style={amountUnit === 'token' ? styles.unitButtonActive : styles.unitButton}
+            onPress={() => setAmountUnit('token')}
+          >
             <Text style={amountUnit === 'token' ? styles.unitTextActive : styles.unitText}>TOKEN</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={amountUnit === 'usd' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('usd')}>
+
+          <TouchableOpacity
+            style={amountUnit === 'usd' ? styles.unitButtonActive : styles.unitButton}
+            onPress={() => setAmountUnit('usd')}
+          >
             <Text style={amountUnit === 'usd' ? styles.unitTextActive : styles.unitText}>USD</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={amountUnit === 'nzd' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('nzd')}>
-            <Text style={amountUnit === 'nzd' ? styles.unitTextActive : styles.unitText}>NZD</Text>
+
+          <TouchableOpacity
+            style={amountUnit === 'local' ? styles.unitButtonActive : styles.unitButton}
+            onPress={() => setAmountUnit('local')}
+          >
+            <Text style={amountUnit === 'local' ? styles.unitTextActive : styles.unitText}>{localCode}</Text>
           </TouchableOpacity>
         </View>
+
         <TextInput
           style={styles.amountInput}
           placeholder={amountPlaceholder}
@@ -291,11 +463,16 @@ const SendTab = () => {
           onChangeText={setAmount}
           keyboardType="numeric"
         />
-        <TouchableOpacity style={styles.feeButton} onPress={showFeeDetails}>
-          <Text style={styles.feeText}>ESTIMATE FEE: ${feeEstimate}</Text>
-        </TouchableOpacity>
+
+        {/* Passive fee line (token-only) */}
+        <Text style={styles.feeInline}>Check entries carefully before sending payments: {feeEstimate}</Text>
+      </View>
+      <View style={styles.separator} />
+
+      {/* Section 4: Send */}
+      <View style={styles.section}>
         <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={loading}>
-          <Text style={styles.sendButtonText}>SEND</Text>
+          <Text style={styles.sendButtonText}>SEND PAYMENT</Text>
         </TouchableOpacity>
         {loading && <ActivityIndicator color="#0A84FF" />}
       </View>
@@ -307,7 +484,7 @@ const SendTab = () => {
             <>
               {!scanned && (
                 <CameraView
-                  style={styles.camera}  // Full screen camera
+                  style={styles.camera}
                   onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
                   barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
                 />
@@ -322,44 +499,70 @@ const SendTab = () => {
               )}
             </>
           ) : (
-            <Text>No camera access. Check settings.</Text>
+            <Text style={{ color: '#fff' }}>No camera access. Check settings.</Text>
           )}
         </View>
       )}
 
-      {/* Centered Loading Overlay */}
-      <Modal visible={loading} transparent={true} animationType="fade">
+      {/* Blocking spinner just for the confirm-fee step */}
+      <Modal visible={estimatingNow} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <ActivityIndicator size="large" color="#0A84FF" />
+          <Text style={{ color: '#fff', marginTop: 12 }}>Calculating fees…</Text>
         </View>
       </Modal>
+
+      {/* Centered Loading Overlay for sending */}
+      <Modal visible={loading} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <ActivityIndicator size="large" color="#0A84FF" />
+          <Text style={{ color: '#fff', marginTop: 12 }}>Submitting transaction…</Text>
+        </View>
+      </Modal>
+
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  section: { marginBottom: 24, borderBottomWidth: 1, borderBottomColor: '#ddd', paddingBottom: 16 },
-  label: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
+  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
+
+  section: { marginBottom: 16 },
+  separator: { height: 1, backgroundColor: '#E6E6E6', marginVertical: 8 },
+
+  label: { fontSize: 16, fontWeight: 'bold', marginBottom: 8, color: '#111' },
+
   addressRow: { flexDirection: 'row', alignItems: 'center' },
-  input: { flex: 1, borderWidth: 1, padding: 8, borderColor: '#ddd', marginRight: 8, borderRadius: 4 },
-  picker: { borderWidth: 1, borderColor: '#ddd', borderRadius: 4 },
+  input: { flex: 1, borderWidth: 1, padding: 10, borderColor: '#ddd', marginRight: 8, borderRadius: 8 },
+
+  picker: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8 },
+
   unitRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
-  unitButton: { padding: 8, backgroundColor: '#f0f0f0', borderRadius: 4, marginHorizontal: 5 },
-  unitButtonActive: { padding: 8, backgroundColor: '#0A84FF', borderRadius: 4, marginHorizontal: 5 },
+  unitButton: { paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#f3f4f6', borderRadius: 20 },
+  unitButtonActive: { paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#0A84FF', borderRadius: 20 },
   unitText: { color: '#0A84FF', fontWeight: 'bold' },
   unitTextActive: { color: '#fff', fontWeight: 'bold' },
-  amountInput: { borderWidth: 1, padding: 8, borderColor: '#ddd', borderRadius: 4, height: 40 }, // Slimmer height
-  feeButton: { padding: 8, backgroundColor: '#ccc', borderRadius: 4, alignItems: 'center', marginTop: 8 },
-  feeText: { color: '#333', fontWeight: 'bold' },
-  sendButton: { backgroundColor: '#0A84FF', padding: 12, borderRadius: 8, alignItems: 'center', marginTop: 16 },
+
+  amountInput: { borderWidth: 1, padding: 10, borderColor: '#ddd', borderRadius: 8, height: 44 },
+
+  feeInline: { marginTop: 8, color: '#333', fontWeight: '600' },
+
+  sendButton: { backgroundColor: '#0A84FF', padding: 14, borderRadius: 10, alignItems: 'center' },
   sendButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  scannerContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center' },  // Full screen modal
-  camera: { flex: 1, width: '100%' },  // Full screen camera
+
+  scannerContainer: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'black', justifyContent: 'center', alignItems: 'center'
+  },
+  camera: { flex: 1, width: '100%' },
   closeButton: { position: 'absolute', top: 40, right: 20, backgroundColor: 'white', padding: 10, borderRadius: 5 },
   closeText: { color: 'black' },
   scanAgainButton: { backgroundColor: 'white', padding: 10, borderRadius: 5, marginTop: 20 },
-  modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)' }, // Centered overlay
+
+  modalOverlay: {
+    flex: 1, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)'
+  },
 });
 
 export default SendTab;

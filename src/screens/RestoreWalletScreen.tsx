@@ -28,7 +28,7 @@ export default function RestoreWalletScreen() {
       navigation.replace('AppTabs'); // Go to Wallet Tab
     } catch (e: any) {
       console.error('Restore error:', e); // Debug
-      Alert.alert('Error', e?.message ?? 'Invalid phrase or storage failed—try again.');
+      Alert.alert('Error', e?.message ?? 'Invalid phrase or storage failed. Make sure you have 12 words separated with a space and no commas—try again.');
     }
   };
 
