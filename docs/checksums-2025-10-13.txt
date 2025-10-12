@@ -1,0 +1,23 @@
+﻿SHA256 hash of app.config.js:
+5401117156be00f39bf0331d486d823d21067e6a65bb89e149fab1c60be9c954
+CertUtil: -hashfile command completed successfully.
+SHA256 hash of eas.json:
+4b3fd14b5e0925c67ac70c8a22a736e0c3774a8bacf8f0bfa7ce61bdbd446913
+CertUtil: -hashfile command completed successfully.
+SHA256 hash of src\lib\covalent.ts:
+c20fb8204b22f11f0d93641ab9b3c943c912f2f922c00ca86da7df56c2f56273
+CertUtil: -hashfile command completed successfully.
+SHA256 hash of src\hooks\useAssets.ts:
+77eca63c6e9df17a30d7cca484eb8b6ee6dacc683419a3bf20012b8a4ccc198a
+CertUtil: -hashfile command completed successfully.
+SHA256 hash of src\hooks\useHistory.ts:
+6487daf91a67b93ecd28e99ef6502a622886451dad1a102a2f60be5fedeb80e0
+CertUtil: -hashfile command completed successfully.
+SHA256 hash of src\hooks\useTransactions.ts:
+d676f972d85afdf3365dc33b6816d736063335f2548fee365fa8f1d3405a4a5c
+CertUtil: -hashfile command completed successfully.
+CertUtil: -hashfile command FAILED: 0x80070002 (WIN32: 2 ERROR_FILE_NOT_FOUND)
+CertUtil: The system cannot find the file specified.
+SHA256 hash of src\screens\HistoryTab.tsx:
+f14af4b708d75478681b8ca6722da96e40a145fa4c093e15a236e38874b7f9f7
+CertUtil: -hashfile command completed successfully.
