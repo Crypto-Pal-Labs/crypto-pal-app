@@ -10,24 +10,86 @@
       "android": {
         "gradleCommand": ":app:assembleDebug"
       },
-      "node": "20.19.4"
+      "node": "20.19.4",
+      "env": {
+        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
+        "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
+        "EXPO_PUBLIC_ETHERSCAN_BASE": "https://sepolia.etherscan.io",
+        "EXPO_PUBLIC_ETH_RPC_URL": "https://sepolia.infura.io/v3/6dc32f7117154a7fb029a788eccc60ca",
+        "EXPO_PUBLIC_BSC_RPC_URL": "https://bsc-testnet.publicnode.com",
+        "EXPO_PUBLIC_BSCSCAN_BASE": "https://testnet.bscscan.com",
+        "EXPO_PUBLIC_WALLET_CONNECT_PROJECT_ID": "edf4bdf41e12873333b58335df31a526",
+        "EXPO_PUBLIC_ONE_INCH_API_KEY": "MUWExhXNUxLElG1p2w9jiyy0dOTcy9Xi",
+        "EXPO_PUBLIC_ONE_INCH_API_BASE": "https://api.1inch.dev/swap/v6.0",
+        "EXPO_PUBLIC_UNISWAP_ROUTER_ADDRESS": "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
+        "EXPO_PUBLIC_USDC_ADDRESS": "0x94a9D9AC8a22534E3FaCa9F4e7f2E2cf85d5e4c8",
+        "EXPO_PUBLIC_WETH_ADDRESS": "0x7b79995e5f793A07Bc00cA6814aAcbF12a5c1493",
+        "EXPO_PUBLIC_CONTRACT_ADDRESS": "0xc11CFA2261568Eda2061Bc7C127F1e1A17A55095",
+        "EXPO_PUBLIC_ALCHEMY_KEY": "alcht_uv4juP2GrHsvgb63E8yNXAhCWicWBj",
+        "EXPO_PUBLIC_POLYGON_RPC_URL": "https://rpc-amoy.polygon.technology"
+      }
     },
     "preview": {
       "distribution": "internal",
-      "android": {
-        "buildType": "apk"
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
+        "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
+        "EXPO_PUBLIC_ETHERSCAN_BASE": "https://sepolia.etherscan.io",
+        "EXPO_PUBLIC_ETH_RPC_URL": "https://sepolia.infura.io/v3/6dc32f7117154a7fb029a788eccc60ca",
+        "EXPO_PUBLIC_BSC_RPC_URL": "https://bsc-testnet.publicnode.com",
+        "EXPO_PUBLIC_BSCSCAN_BASE": "https://testnet.bscscan.com",
+        "EXPO_PUBLIC_WALLET_CONNECT_PROJECT_ID": "edf4bdf41e12873333b58335df31a526",
+        "EXPO_PUBLIC_ONE_INCH_API_KEY": "MUWExhXNUxLElG1p2w9jiyy0dOTcy9Xi",
+        "EXPO_PUBLIC_ONE_INCH_API_BASE": "https://api.1inch.dev/swap/v6.0",
+        "EXPO_PUBLIC_UNISWAP_ROUTER_ADDRESS": "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
+        "EXPO_PUBLIC_USDC_ADDRESS": "0x94a9D9AC8a22534E3FaCa9F4e7f2E2cf85d5e4c8",
+        "EXPO_PUBLIC_WETH_ADDRESS": "0x7b79995e5f793A07Bc00cA6814aAcbF12a5c1493",
+        "EXPO_PUBLIC_CONTRACT_ADDRESS": "0xc11CFA2261568Eda2061Bc7C127F1e1A17A55095",
+        "EXPO_PUBLIC_ALCHEMY_KEY": "alcht_uv4juP2GrHsvgb63E8yNXAhCWicWBj",
+        "EXPO_PUBLIC_POLYGON_RPC_URL": "https://rpc-amoy.polygon.technology"
       }
     },
     "internal": {
       "distribution": "store",
-      "android": {
-        "buildType": "app-bundle"
+      "android": { "buildType": "app-bundle" },
+      "env": {
+        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
+        "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
+        "EXPO_PUBLIC_ETHERSCAN_BASE": "https://sepolia.etherscan.io",
+        "EXPO_PUBLIC_ETH_RPC_URL": "https://sepolia.infura.io/v3/6dc32f7117154a7fb029a788eccc60ca",
+        "EXPO_PUBLIC_BSC_RPC_URL": "https://bsc-testnet.publicnode.com",
+        "EXPO_PUBLIC_BSCSCAN_BASE": "https://testnet.bscscan.com",
+        "EXPO_PUBLIC_WALLET_CONNECT_PROJECT_ID": "edf4bdf41e12873333b58335df31a526",
+        "EXPO_PUBLIC_ONE_INCH_API_KEY": "MUWExhXNUxLElG1p2w9jiyy0dOTcy9Xi",
+        "EXPO_PUBLIC_ONE_INCH_API_BASE": "https://api.1inch.dev/swap/v6.0",
+        "EXPO_PUBLIC_UNISWAP_ROUTER_ADDRESS": "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
+        "EXPO_PUBLIC_USDC_ADDRESS": "0x94a9D9AC8a22534E3FaCa9F4e7f2E2cf85d5e4c8",
+        "EXPO_PUBLIC_WETH_ADDRESS": "0x7b79995e5f793A07Bc00cA6814aAcbF12a5c1493",
+        "EXPO_PUBLIC_CONTRACT_ADDRESS": "0xc11CFA2261568Eda2061Bc7C127F1e1A17A55095",
+        "EXPO_PUBLIC_ALCHEMY_KEY": "alcht_uv4juP2GrHsvgb63E8yNXAhCWicWBj",
+        "EXPO_PUBLIC_POLYGON_RPC_URL": "https://rpc-amoy.polygon.technology"
       }
     },
     "production": {
       "distribution": "store",
-      "android": {
-        "buildType": "app-bundle"
+      "android": { "buildType": "app-bundle" },
+      "env": {
+        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
+        "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
+        "EXPO_PUBLIC_ETHERSCAN_BASE": "https://sepolia.etherscan.io",
+        "EXPO_PUBLIC_ETH_RPC_URL": "https://sepolia.infura.io/v3/6dc32f7117154a7fb029a788eccc60ca",
+        "EXPO_PUBLIC_BSC_RPC_URL": "https://bsc-testnet.publicnode.com",
+        "EXPO_PUBLIC_BSCSCAN_BASE": "https://testnet.bscscan.com",
+        "EXPO_PUBLIC_WALLET_CONNECT_PROJECT_ID": "edf4bdf41e12873333b58335df31a526",
+        "EXPO_PUBLIC_ONE_INCH_API_KEY": "MUWExhXNUxLElG1p2w9jiyy0dOTcy9Xi",
+        "EXPO_PUBLIC_ONE_INCH_API_BASE": "https://api.1inch.dev/swap/v6.0",
+        "EXPO_PUBLIC_UNISWAP_ROUTER_ADDRESS": "0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD",
+        "EXPO_PUBLIC_USDC_ADDRESS": "0x94a9D9AC8a22534E3FaCa9F4e7f2E2cf85d5e4c8",
+        "EXPO_PUBLIC_WETH_ADDRESS": "0x7b79995e5f793A07Bc00cA6814aAcbF12a5c1493",
+        "EXPO_PUBLIC_CONTRACT_ADDRESS": "0xc11CFA2261568Eda2061Bc7C127F1e1A17A55095",
+        "EXPO_PUBLIC_ALCHEMY_KEY": "alcht_uv4juP2GrHsvgb63E8yNXAhCWicWBj",
+        "EXPO_PUBLIC_POLYGON_RPC_URL": "https://rpc-amoy.polygon.technology"
       }
     }
   },
