@@ -15,13 +15,13 @@
     "preview": {
       "distribution": "internal",
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "apk"
       }
     },
-    "test-apk": {
-      "distribution": "internal",
+    "internal": {
+      "distribution": "store",
       "android": {
-        "buildType": "apk"
+        "buildType": "app-bundle"
       }
     },
     "production": {
@@ -32,10 +32,16 @@
     }
   },
   "submit": {
+    "internal": {
+      "android": {
+        "serviceAccountKeyPath": "./play-service-account.json",
+        "track": "internal"
+      }
+    },
     "production": {
       "android": {
-        "serviceAccountKeyPath": "path/to/your/service-account-key.json",
-        "track": "internal"
+        "serviceAccountKeyPath": "./play-service-account.json",
+        "track": "production"
       }
     }
   }
