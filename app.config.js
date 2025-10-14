@@ -53,7 +53,7 @@ module.exports = ({ config }) => ({
   ios: {
     supportsTablet: true,
     // TODO: set this to the same value you choose for Android below (once, permanently)
-    bundleIdentifier: "trade.cryptopal.app",
+    bundleIdentifier: "cryptopal.trade.app",
     infoPlist: {
       NSCameraUsageDescription: "Used to scan QR codes for addresses and payments."
     }
@@ -61,10 +61,10 @@ module.exports = ({ config }) => ({
 
   android: {
     // TODO: choose your permanent package before first Play upload (e.g. trade.cryptopal.app)
-    package: "trade.cryptopal.app",
+    package: "cryptopal.trade.app",
     permissions: ["CAMERA"],
     adaptiveIcon: {
-      foregroundImage: "./assets/adaptive-icon.png",
+      foregroundImage: "./assets/icon.png",
       backgroundColor: "#ffffff"
     },
     softwareKeyboardLayoutMode: "pan"

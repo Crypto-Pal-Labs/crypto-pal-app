@@ -30,7 +30,7 @@ export default function MnemonicBackupScreen({ route }: Props) {
       <Text style={styles.title}>{isRestore ? 'Restore Complete' : 'Backup Your Wallet'}</Text>
 
       <Text style={styles.subtitle}>
-        This 12-word recovery phrase is the key to your wallet. Write it down and store it in a safe place. Never share it with anyone—it's the ONLY way to recover your funds if you lose access to this device. If you lose it, your assets are gone forever!
+        This 12-word recovery phrase is the key to your wallet. Write it down and store it in a safe place. Never share it with anyone as it's the ONLY way to recover your funds if you lose access to this device. If you lose it, your assets are gone forever!
       </Text>
 
       <ScrollView style={styles.phraseContainer} contentContainerStyle={{ padding: 16 }}>

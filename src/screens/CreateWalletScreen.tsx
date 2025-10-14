@@ -49,7 +49,7 @@ export default function CreateWalletScreen() {
       <Ionicons name="add-circle-outline" size={64} color="#0A84FF" style={styles.icon} />
       <Text style={styles.title}>Create a New Wallet</Text>
 
-      <Text style={styles.subtitle}>Generate a new secure wallet with your own keys. Next you'll get a '12 word recovery phrase' next write it down and keep it safe, as it's the only way to recover your funds if you lose access to this device.
+      <Text style={styles.subtitle}>Generate a new secure wallet with your own keys. Next you'll get a '12 word recovery phrase', write it down and keep it safe, as it's the ONLY way to recover your funds if you lose access to this device.
       </Text>
 
       <TouchableOpacity style={styles.button} activeOpacity={0.8} onPress={handleCreate}>
