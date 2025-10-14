@@ -847,7 +847,7 @@ const SearchRoute: React.FC<{ onSwitchToBuy: () => void }> = ({ onSwitchToBuy })
     });
     setModal({ open: false });
     onSwitchToBuy();
-    Alert.alert('Loading Buy', `Preparing to buy ${a.symbol} on ${a.network || 'mainnet'}…`);
+    Alert.alert('Buy your crypto', `Selet your currency and coin here... ${a.symbol} on ${a.network || 'mainnet'}…`);
   };
 
   const renderItem = ({ item }: { item: TransakAsset }) => {

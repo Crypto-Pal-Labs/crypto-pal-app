@@ -32,19 +32,35 @@ export default function ReceiveTab() {
     <View style={styles.container}>
       {address ? (
         <View style={styles.content}>
-          <QRCode value={address} size={200} />
+          {/* New instruction text above QR */}
+          <Text style={styles.info}>
+            This is the QR code of your Wallet. Show this to people you wish to receive crypto
+            currency from. Your Wallet address is below.
+          </Text>
+
+          <QRCode value={address} size={220} />
           <Text selectable style={styles.address}>{address}</Text>
         </View>
       ) : (
-        <Text style={styles.loading}>Here is your QR code, and your Wallet address to receive Crypto. Loading...</Text>
+        <Text style={styles.loading}>
+          Preparing your details… Loading your QR code and Wallet address.
+        </Text>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 2, padding: 15, justifyContent: 'center', alignItems: 'center' },
-  content: { alignItems: 'center' },
-  address: { fontSize: 22, color: '#111', marginTop: 30, textAlign: 'center' },
-  loading: { fontSize: 22, textAlign: 'center', color: '#075bf7ff' },
+  container: { flex: 2, padding: 16, justifyContent: 'center', alignItems: 'center' },
+  content: { alignItems: 'center', maxWidth: 360 },
+  info: {
+    textAlign: 'center',
+    color: '#334155',
+    fontSize: 20,
+    lineHeight: 20,
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  address: { fontSize: 24, color: '#0A84FF', marginTop: 16, textAlign: 'center' },
+  loading: { fontSize: 16, textAlign: 'center', color: '#0A84FF' },
 });

@@ -13,31 +13,29 @@ export default function PayTabs() {
     <View style={styles.container}>
       <Text style={styles.title}>Payments</Text>
 
-      {/* Toggle with line under active */}
-      <View style={styles.toggleRow}>
-        <TouchableOpacity
-          style={mode === 'send' ? styles.activeToggle : styles.inactiveToggle}
-          onPress={() => setMode('send')}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="Send"
-        >
-          <Text style={mode === 'send' ? styles.activeText : styles.inactiveText}>
-            SEND
-          </Text>
-        </TouchableOpacity>
+      {/* Segmented chips (match Buy tab look & feel) */}
+      <View style={styles.segWrap}>
+        <View style={styles.segRow}>
+          <TouchableOpacity
+            style={mode === 'send' ? styles.segChipActive : styles.segChip}
+            onPress={() => setMode('send')}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Send"
+          >
+            <Text style={mode === 'send' ? styles.segChipTxtActive : styles.segChipTxt}>SEND</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={mode === 'receive' ? styles.activeToggle : styles.inactiveToggle}
-          onPress={() => setMode('receive')}
-          activeOpacity={0.8}
-          accessibilityRole="button"
-          accessibilityLabel="Receive"
-        >
-          <Text style={mode === 'receive' ? styles.activeText : styles.inactiveText}>
-            RECEIVE
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={mode === 'receive' ? styles.segChipActive : styles.segChip}
+            onPress={() => setMode('receive')}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="Receive"
+          >
+            <Text style={mode === 'receive' ? styles.segChipTxtActive : styles.segChipTxt}>RECEIVE</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Body */}
@@ -49,11 +47,37 @@ export default function PayTabs() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F5F5F5', padding: 16 }, // Light gray background
-  title: { fontSize: 35, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 40, marginBottom: 16 }, // Blue, centered, moved down
-  toggleRow: { flexDirection: 'row', justifyContent: 'center', marginBottom: 16 },
-  activeToggle: { borderBottomWidth: 2, borderBottomColor: '#0A84FF', paddingVertical: 10, marginHorizontal: 10 },
-  inactiveToggle: { paddingVertical: 10, marginHorizontal: 10 },
-  activeText: { color: '#0A84FF', fontWeight: 'bold' },
-  inactiveText: { color: '#838282ff', fontWeight: 'bold' },
+  container: { flex: 1, backgroundColor: '#F5F5F5', padding: 16 },
+  title: {
+    fontSize: 35,
+    fontWeight: 'bold',
+    color: '#0A84FF',
+    textAlign: 'center',
+    marginTop: 40,
+    marginBottom: 16,
+  },
+
+  // Segmented chips (same visual language as Buy tab)
+  segWrap: { marginBottom: 16 },
+  segRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center' },
+  segChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    marginHorizontal: 8,
+    borderRadius: 999,
+    minWidth: 120,
+    alignItems: 'center',
+    backgroundColor: '#e6ecff',
+  },
+  segChipActive: {
+    paddingVertical: 10,
+    paddingHorizontal: 22,
+    marginHorizontal: 8,
+    borderRadius: 999,
+    minWidth: 120,
+    alignItems: 'center',
+    backgroundColor: '#0A84FF',
+  },
+  segChipTxt: { color: '#0A84FF', fontWeight: '900', fontSize: 15, letterSpacing: 0.2 },
+  segChipTxtActive: { color: '#fff', fontWeight: '900', fontSize: 15, letterSpacing: 0.2 },
 });

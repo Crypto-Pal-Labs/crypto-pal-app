@@ -410,7 +410,7 @@ const SendTab = () => {
         <View style={styles.addressRow}>
           <TextInput
             style={styles.input}
-            placeholder="Wallet address of recipient"
+            placeholder="Wallet address of recipient - or .."
             value={toAddress}
             onChangeText={(v) => setToAddress(normalizeAddress(v))}
             autoCapitalize="none"
@@ -545,7 +545,7 @@ const styles = StyleSheet.create({
 
   amountInput: { borderWidth: 1, padding: 10, borderColor: '#ddd', borderRadius: 8, height: 44 },
 
-  feeInline: { marginTop: 8, color: '#333', fontWeight: '600' },
+  feeInline: { marginTop: 8, color: '#f70808ff', fontWeight: '600' },
 
   sendButton: { backgroundColor: '#0A84FF', padding: 14, borderRadius: 10, alignItems: 'center' },
   sendButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
