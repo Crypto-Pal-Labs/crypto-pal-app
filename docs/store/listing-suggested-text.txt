@@ -1,0 +1,12 @@
+Short description (≤80 chars)
+Self-custody wallet to buy, hold, send & receive safely.
+
+Full description (suggested bullets)
+- Non-custodial: your keys stay on your device
+- Buy, hold, send & receive crypto
+- QR scan & address book
+- Price, charts, and history
+- Powered by trusted providers (Covalent, Transak)
+
+Screenshots to include
+Wallet • Send • Receive • Buy • History
