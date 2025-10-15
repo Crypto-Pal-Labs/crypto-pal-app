@@ -1,13 +1,13 @@
 // src/hooks/useHistory.ts
 import { useState, useEffect } from "react";
 import { useWalletStore } from "../store/useWalletStore";
-import { Alert } from "react-native";
-import { covalentGet } from "../lib/covalent";
+import { covalent } from "../lib/covalent";
 import { getExtra } from "../config/extra";
+import { useChain } from "./useChain";
 
 export const useHistory = () => {
-  const setAddress = useWalletStore((s) => s.setAddress);
   const address = useWalletStore((s) => s.address);
+  const { chain } = useChain();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +22,6 @@ export const useHistory = () => {
       try {
         return await fn();
       } catch (err: any) {
-        console.log(`Retry attempt ${attempt} failed: ${err?.message || err}`);
         if (attempt === retries) throw err;
         await new Promise((r) => setTimeout(r, delay));
       }
@@ -38,36 +37,42 @@ export const useHistory = () => {
       setLoading(false);
       return;
     }
-    if (!HAS_AUTH) {
-      setError("Covalent auth missing in build.");
+
+    // If Covalent isn't supported for this chain → show empty history (no error)
+    if (chain.covalentSupported === false) {
+      setTransactions([]);
       setLoading(false);
-      Alert.alert("Config Error", "Covalent auth missing in build.");
       return;
     }
 
-    const chains = [11155111]; // Add 97 for BSC if needed
-    let allTx: any[] = [];
-
-    for (const chainId of chains) {
-      try {
-        const data = await retryFetch(async () => {
-          const url = `https://api.covalenthq.com/v1/${chainId}/address/${address}/transactions_v2/`;
-          return await covalentGet(url);
-        });
-        allTx = [...allTx, ...(data?.data?.items || [])];
-      } catch (err: any) {
-        console.log("History fetch failed after retries:", err?.message || err);
-        setError("Failed to load history. Pull to refresh.");
-      }
+    if (!HAS_AUTH) {
+      setError("Covalent auth missing in build.");
+      setLoading(false);
+      return;
     }
 
-    setTransactions(allTx);
-    setLoading(false);
+    try {
+      const data = await retryFetch(() =>
+        covalent.transactionsV3(chain.covalentChainId, address, 0)
+      );
+      setTransactions(data?.data?.items || []);
+    } catch (err: any) {
+      const msg = String(err?.message || err);
+      // If not supported, don't alarm the user
+      if (msg.includes("not supported") || msg.includes("501")) {
+        setTransactions([]);
+        setError(null);
+      } else {
+        setError("Failed to load history. Pull to refresh.");
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchHistory();
-  }, [address]);
+  }, [chain.covalentChainId, chain.covalentSupported, address]);
 
   return { transactions, loading, error, refetch: fetchHistory };
 };

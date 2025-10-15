@@ -6,7 +6,7 @@ import { useChain } from "../hooks/useChain";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Localization from "expo-localization";
 import { Alert } from "react-native";
-import { covalentGet } from "../lib/covalent";
+import { covalent } from "../lib/covalent";
 import { getExtra } from "../config/extra";
 
 interface CovalentItem {
@@ -39,7 +39,7 @@ export type NFTItem = {
 
 export const useAssets = () => {
   const address = useWalletStore((s) => s.address);
-  const { currentChain, chains } = useChain();
+  const { chain } = useChain();
   const [balances, setBalances] = useState<BalanceItem[]>([]);
   const [nfts, setNfts] = useState<NFTItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -54,16 +54,16 @@ export const useAssets = () => {
   const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
   const localCurrency = (locale.currencyCode || "usd").toLowerCase();
 
+  const RPC_URL = chain.rpcUrls[0] || "";
+
+  // ---- simple helpers ----
   const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
         return await fn();
       } catch (err: any) {
         console.warn(`Retry attempt ${attempt} failed:`, err?.message || err);
-        if (attempt === retries) {
-          Alert.alert("Fetch Error", "Could not load data after retries - check network.");
-          throw err;
-        }
+        if (attempt === retries) throw err;
         await new Promise((r) => setTimeout(r, delay));
       }
     }
@@ -77,11 +77,88 @@ export const useAssets = () => {
     return response;
   };
 
+  // ---- CoinGecko price map used in both main and fallback paths ----
+  const tickerToIdMap = {
+    ETH: "ethereum",
+    USDC: "usd-coin",
+    BNB: "binancecoin",
+    MATIC: "matic-network",
+  } as const;
+
+  const loadCgPrices = async (symbols: string[]) => {
+    const ids = [
+      ...new Set(
+        symbols
+          .map((sym) => tickerToIdMap[sym as keyof typeof tickerToIdMap] || "")
+          .filter(Boolean)
+      ),
+    ];
+    if (ids.length === 0) return {};
+    const vsCurrencies = `usd,${localCurrency}`;
+    const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(
+      ","
+    )}&vs_currencies=${vsCurrencies}`;
+    const priceResp = await fetchWithTimeout(priceUrl);
+    if (!priceResp.ok) return {};
+    return priceResp.json();
+  };
+
+  // ---- Fallback for chains where Covalent isn't supported (e.g., Polygon Amoy) ----
+  const fetchAssetsFallback = async () => {
+    if (!address) {
+      setError("No wallet address found.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const provider = new ethers.providers.StaticJsonRpcProvider(RPC_URL, {
+        chainId: chain.chainId,
+        name: chain.name,
+      });
+      const wei = await provider.getBalance(address);
+      const symbol = chain.nativeSymbol;
+      const prices = await loadCgPrices([symbol]);
+      const id = tickerToIdMap[symbol as keyof typeof tickerToIdMap] || "";
+      const parsed = Number(ethers.utils.formatUnits(wei, 18)) || 0;
+      const quoteLocal = parsed * (prices?.[id]?.[localCurrency] ?? 0);
+      const quoteUsd = parsed * (prices?.[id]?.usd ?? 0);
+
+      const nativeRow: BalanceItem = {
+        contract_ticker_symbol: symbol,
+        balance: wei.toString(),
+        quoteLocal,
+        quoteUsd,
+        logo_url: "https://placeholder.com/40x40", // optional: add chain logo later
+      };
+
+      setBalances(parsed > 0 ? [nativeRow] : []); // only native balance for fallback
+      setNfts([]); // NFTs unsupported via fallback
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message || "RPC error while loading balance.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const fetchAssetsInternal = async () => {
     if (!isActiveRef.current) return;
 
+    if (!address) {
+      setError("No wallet address found.");
+      setLoading(false);
+      return;
+    }
+
+    // If Covalent isn't supported for this chain → use fallback immediately
+    if (chain.covalentSupported === false) {
+      await fetchAssetsFallback();
+      return;
+    }
+
     if (!HAS_AUTH) {
-      setError("Covalent auth missing in build. Check EXPO_PUBLIC_COVALENT_KEY for this profile.");
+      setError("Covalent auth missing in build. Check EXPO_PUBLIC_COVALENT_KEY.");
       setLoading(false);
       Alert.alert("Config Error", "Covalent auth missing in build.");
       return;
@@ -90,9 +167,7 @@ export const useAssets = () => {
     setError(null);
     try {
       await retryFetch(async () => {
-        const chainConfig = chains[currentChain] || { covalentChainId: "11155111" }; // Sepolia
-        const balancesUrl = `https://api.covalenthq.com/v1/${chainConfig.covalentChainId}/address/${address}/balances_v2/?nft=true`;
-        const data = await covalentGet(balancesUrl);
+        const data = await covalent.balances(chain.covalentChainId, address, { includeNft: true });
         const items: CovalentItem[] = data?.data?.items || [];
 
         const tempBalances = items.filter((i) => i.type !== "nft" && i.balance !== "0");
@@ -111,36 +186,17 @@ export const useAssets = () => {
 
         setNfts(nftItems);
 
-        const tickerToIdMap = {
-          ETH: "ethereum",
-          USDC: "usd-coin",
-          BNB: "binancecoin",
-          MATIC: "matic-network",
-        } as const;
-
-        const uniqueIds = [
-          ...new Set(
-            tempBalances.map(
-              (it) => tickerToIdMap[(it.contract_ticker_symbol || "").toUpperCase() as keyof typeof tickerToIdMap] || ""
-            )
-          ),
-        ].filter(Boolean);
-
-        let prices: any = {};
-        if (uniqueIds.length > 0) {
-          const vsCurrencies = `usd,${localCurrency}`;
-          const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${uniqueIds.join(",")}&vs_currencies=${vsCurrencies}`;
-          const priceResp = await fetchWithTimeout(priceUrl);
-          if (priceResp.ok) prices = await priceResp.json();
-        }
+        const prices = await loadCgPrices(
+          tempBalances.map((i) => (i.contract_ticker_symbol || "").toUpperCase())
+        );
 
         const pricedBalances = tempBalances.map((i) => {
           const ticker = (i.contract_ticker_symbol || "").toUpperCase();
           const id = tickerToIdMap[ticker as keyof typeof tickerToIdMap] || "";
           const decimals = i.contract_decimals ?? 18;
           const parsed = Number(ethers.utils.formatUnits(i.balance || "0", decimals)) || 0;
-          const quoteLocal = parsed * (prices[id]?.[localCurrency] ?? 0);
-          const quoteUsd = parsed * (prices[id]?.usd ?? 0);
+          const quoteLocal = parsed * (prices?.[id]?.[localCurrency] ?? 0);
+          const quoteUsd = parsed * (prices?.[id]?.usd ?? 0);
           return {
             contract_ticker_symbol: i.contract_ticker_symbol || "Unknown",
             balance: i.balance || "0",
@@ -153,7 +209,12 @@ export const useAssets = () => {
         setBalances(pricedBalances);
       });
     } catch (err: any) {
-      const msg = err?.message || "Unknown error";
+      const msg = String(err?.message || err);
+      // If Covalent replies "not supported", silently fallback to RPC
+      if (msg.includes("not supported") || msg.includes("501")) {
+        await fetchAssetsFallback();
+        return;
+      }
       setError(msg);
       Alert.alert("Load Error", `Failed to load assets: ${msg}. Pull to refresh.`);
     } finally {
@@ -181,7 +242,7 @@ export const useAssets = () => {
         isActiveRef.current = false;
         clearInterval(interval);
       };
-    }, [])
+    }, [chain.covalentChainId, chain.covalentSupported, chain.rpcUrls, address])
   );
 
   return { balances, nfts, loading, error, refresh: debouncedFetch };

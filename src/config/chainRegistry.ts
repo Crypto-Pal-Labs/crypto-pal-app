@@ -9,6 +9,7 @@ export type EvmChain = {
   nativeSymbol: "ETH" | "BNB" | "MATIC";
   decimals: number;
   testnet?: boolean;
+  covalentSupported?: boolean;    // <— NEW: if false, skip Covalent and use on-chain fallback
 };
 
 // Keep to the networks you actually want visible for Phase 2A.
@@ -25,6 +26,7 @@ export const CHAINS: EvmChain[] = [
     nativeSymbol: "ETH",
     decimals: 18,
     testnet: true,
+    covalentSupported: true,
   },
   {
     chainId: 1,
@@ -35,6 +37,7 @@ export const CHAINS: EvmChain[] = [
     explorerBase: "https://etherscan.io",
     nativeSymbol: "ETH",
     decimals: 18,
+    covalentSupported: true,
   },
 
   // BSC
@@ -48,6 +51,7 @@ export const CHAINS: EvmChain[] = [
     nativeSymbol: "BNB",
     decimals: 18,
     testnet: true,
+    covalentSupported: true,
   },
   {
     chainId: 56,
@@ -58,6 +62,7 @@ export const CHAINS: EvmChain[] = [
     explorerBase: "https://bscscan.com",
     nativeSymbol: "BNB",
     decimals: 18,
+    covalentSupported: true,
   },
 
   // Polygon
@@ -65,12 +70,13 @@ export const CHAINS: EvmChain[] = [
     chainId: 80002,
     name: "Polygon Amoy",
     shortName: "Polygon · Amoy",
-    covalentChainId: "matic-amoy",
+    covalentChainId: "matic-amoy", // Covalent returns 501 on this today
     rpcUrls: [process.env.EXPO_PUBLIC_POLYGON_RPC_URL ?? ""],
     explorerBase: "https://www.oklink.com/amoy",
     nativeSymbol: "MATIC",
     decimals: 18,
     testnet: true,
+    covalentSupported: false,     // <— mark unsupported to trigger fallback
   },
   {
     chainId: 137,
@@ -81,6 +87,7 @@ export const CHAINS: EvmChain[] = [
     explorerBase: "https://polygonscan.com",
     nativeSymbol: "MATIC",
     decimals: 18,
+    covalentSupported: true,
   },
 ];
 
