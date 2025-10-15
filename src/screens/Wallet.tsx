@@ -1,3 +1,4 @@
+// src/screens/Wallet.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -73,7 +74,10 @@ const Wallet = () => {
   const navigation = useNavigation();
   const isMounted = useRef(true);
   const setAddress = useWalletStore((state) => state.setAddress);
-  const { currentChain, setCurrentChain, chains } = useChain();
+
+  // NEW: normalized multi-chain hook
+  const { chain, chains, activeChainId, setActiveChainId } = useChain();
+
   const { balances, nfts, loading, error, refresh } = useAssets();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -230,7 +234,7 @@ const Wallet = () => {
     if (isMounted.current) setRefreshing(false);
   };
 
-  useFocusEffect(React.useCallback(() => { onRefresh(); }, []));
+  useFocusEffect(React.useCallback(() => { onRefresh(); }, [activeChainId]));
 
   const filteredBalances = balances.filter(
     (item) =>
@@ -358,7 +362,8 @@ const Wallet = () => {
     );
   }
 
-  const networkLabel = chains[currentChain]?.name ?? currentChain;
+  // NEW: label from the selected chain object
+  const networkLabel = chain?.shortName || chain?.name || String(activeChainId);
   const currencyLabel = currency;
 
   return (
@@ -406,13 +411,13 @@ const Wallet = () => {
               <Ionicons name="chevron-down" size={16} color="#0A84FF" />
             </View>
             <Picker
-              selectedValue={currentChain}
-              onValueChange={(val) => setCurrentChain(val)}
+              selectedValue={activeChainId}
+              onValueChange={(val) => setActiveChainId(Number(val))}
               style={styles.pickerOverlay}
               mode="dropdown"
             >
-              {Object.keys(chains).map((key) => (
-                <Picker.Item key={key} label={chains[key].name} value={key} />
+              {chains.map((c) => (
+                <Picker.Item key={c.chainId} label={c.shortName || c.name} value={c.chainId} />
               ))}
             </Picker>
           </View>
