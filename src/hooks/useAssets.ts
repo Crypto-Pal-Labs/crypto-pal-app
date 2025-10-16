@@ -7,7 +7,7 @@ import { useFocusEffect } from "@react-navigation/native";
 import * as Localization from "expo-localization";
 import { Alert } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { covalentGet } from "../lib/covalent";   // ← use the function export
+import { covalentGet } from "../lib/covalent";   // ← uses Basic / X-API-Key internally
 import { getExtra } from "../config/extra";
 
 interface CovalentItem {
@@ -44,6 +44,15 @@ export type NFTItem = {
 
 const INVALIDATE_KEY = (addr: string, chainId: number) =>
   `assetsInvalidate:${addr.toLowerCase()}:${chainId}`;
+
+// Small helper to bound long RPC calls
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { onTimeout ? resolve(onTimeout()) : reject(new Error('timeout')); }, ms);
+    p.then(v => { clearTimeout(t); resolve(v); })
+     .catch(e => { clearTimeout(t); onTimeout ? resolve(onTimeout()) : reject(e); });
+  });
+}
 
 export const useAssets = () => {
   const address = useWalletStore((s) => s.address);
@@ -250,12 +259,50 @@ export const useAssets = () => {
             quoteLocal,
             quoteUsd,
             logo_url: i.logo_url || "https://placeholder.com/40x40",
-            // NEW: carry meta forward
+            // carry meta forward
             contract_address: i.contract_address || undefined,
             contract_decimals: decimals,
             contract_name: i.contract_name || undefined,
           };
         });
+
+        // ★ NEW: always override native balance with live RPC so it reflects instantly (sender & receiver)
+        try {
+          const providerLive = new ethers.providers.StaticJsonRpcProvider(RPC_URL, {
+            chainId: chain.chainId, name: chain.name,
+          });
+          const liveWei = await withTimeout(providerLive.getBalance(address), 2500, () => null as any);
+          if (liveWei) {
+            const nativeSymbol = (chain.nativeSymbol || 'ETH').toUpperCase() as 'ETH'|'BNB'|'MATIC';
+            const id = (nativeSymbol in tickerToIdMap) ? tickerToIdMap[nativeSymbol] : '';
+            const parsed = Number(ethers.utils.formatEther(liveWei)) || 0;
+            const quoteLocal = parsed * (prices?.[id]?.[localCurrency] ?? 0);
+            const quoteUsd = parsed * (prices?.[id]?.usd ?? 0);
+
+            const idx = pricedBalances.findIndex(
+              (b) => (b.contract_ticker_symbol || '').toUpperCase() === nativeSymbol
+            );
+            if (idx >= 0) {
+              pricedBalances[idx] = {
+                ...pricedBalances[idx],
+                balance: liveWei.toString(),
+                quoteLocal,
+                quoteUsd,
+              };
+            } else {
+              pricedBalances.unshift({
+                contract_ticker_symbol: nativeSymbol,
+                balance: liveWei.toString(),
+                quoteLocal,
+                quoteUsd,
+                logo_url: 'https://placeholder.com/40x40',
+                contract_decimals: 18,
+                contract_address: undefined,
+                contract_name: nativeSymbol,
+              });
+            }
+          }
+        } catch {}
 
         setBalances(pricedBalances);
       });
@@ -288,12 +335,12 @@ export const useAssets = () => {
       isActiveRef.current = true;
       debouncedFetch();
 
-      // your slow periodic refresh
+      // slow periodic refresh
       const slow = setInterval(() => {
         if (!loading && isActiveRef.current) debouncedFetch();
       }, 10000);
 
-      // NEW: fast invalidation watcher (so Wallet refreshes right after send)
+      // fast invalidation watcher (so Wallet refreshes right after send)
       const invKey = address ? INVALIDATE_KEY(address, chain.chainId) : null;
       const fast = setInterval(async () => {
         if (!invKey) return;
