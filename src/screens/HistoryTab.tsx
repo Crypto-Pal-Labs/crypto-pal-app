@@ -1,266 +1,428 @@
-// src/screens/HistoryTab.tsx
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
-  View,
-  Text,
-  ActivityIndicator,
-  FlatList,
-  StyleSheet,
-  Linking,
-  TouchableOpacity,
-  Platform,
-  RefreshControl,
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Ionicons } from '@expo/vector-icons';
-import { useHistory } from '../hooks/useHistory';
-import { useWalletStore } from '../store/useWalletStore';
-import { getWalletAddress } from '../utils/wallet';
-import * as ethers from 'ethers';
-import * as Localization from 'expo-localization';
-import { useFocusEffect } from '@react-navigation/native';
+  View, Text, ActivityIndicator, FlatList, StyleSheet, Linking,
+  TouchableOpacity, RefreshControl, Platform,
+} from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useFocusEffect } from "@react-navigation/native";
+import * as Localization from "expo-localization";
+import * as ethers from "ethers";
 
+import { useWalletStore } from "../store/useWalletStore";
+import { CHAINS, EvmChain } from "../config/chainRegistry";
+import { covalentGet } from "../lib/covalent";
 
-
-// EAS-safe config (no @env in bundles)
-import { getExtra } from '../config/extra';
-
-type TxMeta = {
-  amount?: string;     // what you saved in SendTab (displayAmount)
-  unit?: string;       // 'TOKEN' | 'USD' | local code
-  feeEth?: number;     // exact on-chain fee from receipt (preferred)
+type TxItem = {
+  hash: string;
+  timestamp: string;
+  from: string;
+  to: string;
+  valueWei: string;
+  gasUsed?: string | number | null;
+  gasPrice?: string | number | null;
+  feesPaidWei?: string | number | null;
+  successful: boolean;
+  chainId: number;
+  explorerBase: string;
+  nativeSymbol: "ETH" | "BNB" | "MATIC";
+  _source?: "covalent" | "rpc" | "explorer" | "sticky";
 };
 
-const DEFAULT_SEPOLIA_EXPLORER = 'https://sepolia.etherscan.io';
+const PRICE_IDS: Record<"ETH" | "BNB" | "MATIC", string> = {
+  ETH: "ethereum",
+  BNB: "binancecoin",
+  MATIC: "matic-network",
+};
 
-const HistoryTab = () => {
-  const setAddress = useWalletStore((state) => state.setAddress);
-  const { transactions, loading, error, refetch } = useHistory();
-  const address = useWalletStore((state) => state.address);
+const maskAddr = (a: string) =>
+  a?.startsWith("0x") && a.length >= 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+const fmt = (n: number, dp = 6) =>
+  Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/, "").replace(/\.$/, "") : "—";
 
-  const [ethPriceUSD, setEthPriceUSD] = useState(0);
-  const [ethPriceLocal, setEthPriceLocal] = useState(0);
-  const [displayUnit, setDisplayUnit] = useState<'TOKEN' | 'USD' | string>('TOKEN'); // local uses actual code string
-  const [txDetailsMap, setTxDetailsMap] = useState<Record<string, TxMeta>>({});
-  const [mergedTransactions, setMergedTransactions] = useState<any[]>([]);
+// ---- tuning knobs ----
+const COVALENT_PAGE_SIZE = 100;          // keep older items visible
+const RPC_LOOKBACK_BLOCKS = 12;          // quick live window (poller)
+const INITIAL_RPC_LOOKBACK_BLOCKS = 60;  // wider once-per-open backfill
+const RX_CACHE_TTL_MS = 30 * 60 * 1000;  // 30 minutes sticky window
+const RPC_POLL_SCHEDULE_MS = [0, 5000, 12000, 25000];
+
+const RX_CACHE_KEY = (addr: string) => `rxCache_v1:${addr.toLowerCase()}`;
+
+export default function HistoryTab() {
+  const address = useWalletStore((s) => s.address);
+
+  const [displayUnit, setDisplayUnit] = useState<"TOKEN" | "USD" | string>("TOKEN");
+  const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
+  const localCurrency = (locale.currencyCode || "USD").toUpperCase();
+
+  const chains: EvmChain[] = useMemo(() => CHAINS, []);
+  const [items, setItems] = useState<TxItem[]>([]);
+  const [firstLoading, setFirstLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const isActiveRef = useRef(true);
+  const [priceMap, setPriceMap] = useState<Record<"ETH" | "BNB" | "MATIC", { usd: number; local: number }>>({
+    ETH: { usd: 0, local: 0 },
+    BNB: { usd: 0, local: 0 },
+    MATIC: { usd: 0, local: 0 },
+  });
 
-  // Local currency
-  const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
-  const localCurrency = (locale.currencyCode || 'USD').toUpperCase(); // e.g., NZD, AUD, EUR
+  const lastFetchAtRef = useRef<number>(0);
+  const pollTimersRef = useRef<NodeJS.Timeout[]>([]);
+  const cancelledRef = useRef<boolean>(false);
 
-  // Explorer base (EAS-safe)
-  const EXTRA = getExtra();
-  const EXPLORER_BASE = (EXTRA?.ETHERSCAN_BASE as string) || DEFAULT_SEPOLIA_EXPLORER;
-
-  // Load address once
-  useEffect(() => {
-    const loadAddress = async () => {
-      const currentAddress = await getWalletAddress();
-      if (currentAddress) setAddress(currentAddress);
-    };
-    loadAddress();
-  }, []);
-
-  // Prices for conversions
-  useEffect(() => {
-    const fetchRates = async () => {
-      try {
-        const resp = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd,${localCurrency.toLowerCase()}`
-        );
-        const data = await resp.json();
-        setEthPriceUSD(Number(data?.ethereum?.usd || 0));
-        setEthPriceLocal(Number(data?.ethereum?.[localCurrency.toLowerCase()] || 0));
-      } catch (err) {
-        console.error('Rate fetch error:', err);
-      }
-    };
-    fetchRates();
-  }, [localCurrency]);
-
-  // Load tx meta stored by SendTab (NOTE: the key is 'txDetails' in your Send code)
-  useEffect(() => {
-    const loadTxMeta = async () => {
-      try {
-        const stored = await AsyncStorage.getItem('txDetails');
-        if (stored) setTxDetailsMap(JSON.parse(stored));
-      } catch {}
-    };
-    loadTxMeta();
-  }, []);
-
-  // Merge API transactions with local sends
-  useEffect(() => {
-    const mergeTransactions = async () => {
-      const localTxsRaw = await AsyncStorage.getItem('localTxs');
-      const localTxs = localTxsRaw ? JSON.parse(localTxsRaw) : [];
-
-      // Use a Map keyed by lowercase hash
-      const unique = new Map<string, any>();
-
-      // First: API txs
-      for (const tx of transactions || []) {
-        const txHash = (tx.tx_hash || '').toLowerCase();
-        if (!txHash) continue;
-        unique.set(txHash, {
-          ...tx,
-          tx_hash: tx.tx_hash,
-          hash: tx.tx_hash,
-          from_address: tx.from_address?.toLowerCase() || '',
-          to_address: tx.to_address?.toLowerCase() || '',
+  // ---- prices (non-blocking) ----
+  const loadPrices = useCallback(async () => {
+    try {
+      const ids = Array.from(new Set(chains.map((c) => PRICE_IDS[c.nativeSymbol])));
+      if (!ids.length) return;
+      const vs = (localCurrency || "usd").toLowerCase();
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd,${vs}`;
+      const data = await fetch(url).then((r) => r.json());
+      setPriceMap((prev) => {
+        const next = { ...prev };
+        (Object.keys(PRICE_IDS) as ("ETH" | "BNB" | "MATIC")[]).forEach((sym) => {
+          const id = PRICE_IDS[sym];
+          const d = data?.[id] || {};
+          next[sym] = { usd: Number(d?.usd || prev[sym].usd || 0), local: Number(d?.[vs] || prev[sym].local || 0) };
         });
-      }
-
-      // Then: local txs (override/add)
-      for (const l of localTxs) {
-        const txHash = (l.hash || '').toLowerCase();
-        if (!txHash) continue;
-        unique.set(txHash, {
-          ...(unique.get(txHash) || {}),
-          ...l,
-          tx_hash: l.hash || l.tx_hash,
-          hash: l.hash || l.tx_hash,
-          from_address: (l.from || l.from_address || '').toLowerCase(),
-          to_address: (l.to || l.to_address || '').toLowerCase(),
-        });
-      }
-
-      // Sort by time (local has timestamp, API has block_signed_at)
-      const sorted = Array.from(unique.values()).sort((a, b) => {
-        const ta = new Date(a.timestamp || a.block_signed_at || 0).getTime();
-        const tb = new Date(b.timestamp || b.block_signed_at || 0).getTime();
-        return tb - ta;
+        return next;
       });
-
-      setMergedTransactions(sorted);
-    };
-
-    mergeTransactions();
-  }, [transactions]);
-
-  // Pull-to-refresh wrapper
-  const onRefresh = useCallback(async () => {
-    setIsRefreshing(true);
-    try {
-      await refetch();
-      // Reload meta to keep in sync
-      const stored = await AsyncStorage.getItem('txDetails');
-      if (stored) setTxDetailsMap(JSON.parse(stored));
-    } finally {
-      setIsRefreshing(false);
-    }
-  }, [refetch]);
-
-  // Helpers
-  const maskAddr = (a: string) =>
-    a?.startsWith('0x') && a.length >= 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
-
-  const fmt = (n: number, dp = 6) =>
-    Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/,'').replace(/\.$/,'') : '…';
-
-  const getValueEth = (item: any): number => {
-    try {
-      // Covalent items often have 'value' (wei) or 'value_wei'
-      const wei = item.value ?? item.value_wei ?? '0';
-      return parseFloat(ethers.utils.formatEther(wei.toString()));
-    } catch {
-      return 0;
-    }
-  };
-
-  const getSavedMeta = (item: any): TxMeta | undefined => {
-    const key = (item.hash || item.tx_hash || '').toString();
-    return key ? txDetailsMap[key] : undefined;
-    // SendTab saved under 'txDetails'[txHash] = { amount, unit, feeEth }
-  };
-
-  const getFeeEth = (item: any, saved?: TxMeta): number | null => {
-    // 1) Prefer the exact on-chain fee saved by Send (feeEth)
-    if (saved?.feeEth != null && Number.isFinite(saved.feeEth)) return saved.feeEth;
-
-    // 2) Prefer localTx.feeEth if present
-    if (typeof item.feeEth === 'number' && Number.isFinite(item.feeEth)) return item.feeEth;
-
-    // 3) Try deriving from gas_spent * (effective_gas_price | gas_price)
-    try {
-      const gasUsed = item.gas_spent ?? item.gas_used ?? null; // Covalent sometimes uses gas_spent or gas_used
-      const gasPrice = item.effective_gas_price ?? item.gas_price ?? null;
-      if (gasUsed != null && gasPrice != null) {
-        const feeWei = ethers.BigNumber.from(gasUsed.toString()).mul(ethers.BigNumber.from(gasPrice.toString()));
-        return parseFloat(ethers.utils.formatEther(feeWei));
-      }
     } catch {}
+  }, [chains, localCurrency]);
 
-    // 4) Some APIs expose fees_paid (wei)
-    if (item.fees_paid) {
+  // ---- helpers ----
+  const toTxItems = (raw: any[], c: EvmChain, source: TxItem["_source"]): TxItem[] =>
+    (raw || []).map((t: any) => ({
+      hash: t.tx_hash || t.hash || "",
+      timestamp:
+        t.block_signed_at || t.timeStamp
+          ? new Date((t.block_signed_at ? Date.parse(t.block_signed_at) : Number(t.timeStamp) * 1000)).toISOString()
+          : new Date().toISOString(),
+      from: (t.from_address || t.from || "").toLowerCase(),
+      to: (t.to_address || t.to || "").toLowerCase(),
+      valueWei: String(t.value || t.value_wei || t.valueWei || "0"),
+      gasUsed: t.gas_spent ?? t.gas_used ?? t.gasUsed ?? null,
+      gasPrice: t.effective_gas_price ?? t.gas_price ?? t.gasPrice ?? null,
+      feesPaidWei: t.fees_paid ?? null,
+      successful: t.txreceipt_status !== undefined ? t.txreceipt_status === "1" : t.successful !== false,
+      chainId: c.chainId,
+      explorerBase: c.explorerBase,
+      nativeSymbol: c.nativeSymbol,
+      _source: source,
+    }));
+
+  const mergeAndSort = (lists: TxItem[][]): TxItem[] => {
+    const map = new Map<string, TxItem>();
+    for (const list of lists) {
+      for (const t of list) {
+        if (!t.hash) continue;
+        const key = t.hash.toLowerCase();
+        const prev = map.get(key);
+        // prefer Covalent over others, else keep the first we got
+        if (!prev) map.set(key, t);
+        else if (prev._source !== "covalent" && t._source === "covalent") map.set(key, t);
+      }
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+  };
+
+  // ---- sticky cache (never shrink to empty) ----
+  const loadRxCache = useCallback(async (owner: string) => {
+    try {
+      const raw = await AsyncStorage.getItem(RX_CACHE_KEY(owner));
+      if (!raw) return [];
+      const now = Date.now();
+      const arr: TxItem[] = JSON.parse(raw);
+      return arr.filter((t) => now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const safeSaveRxCache = useCallback(
+    async (owner: string, nextList: TxItem[]) => {
       try {
-        return parseFloat(ethers.utils.formatEther(item.fees_paid.toString()));
+        if (!nextList || nextList.length === 0) {
+          // do NOT overwrite with empty; keep existing sticky
+          return;
+        }
+        const existing = await loadRxCache(owner);
+        const now = Date.now();
+        const map = new Map<string, TxItem>();
+        // keep existing (within TTL)
+        for (const t of existing) {
+          if (now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS) {
+            map.set((t.hash || "").toLowerCase(), { ...t, _source: "sticky" as const });
+          }
+        }
+        // merge/overwrite with next
+        for (const t of nextList) {
+          map.set((t.hash || "").toLowerCase(), { ...t, _source: "sticky" as const });
+        }
+        const merged = Array.from(map.values()).slice(0, 100);
+        await AsyncStorage.setItem(RX_CACHE_KEY(owner), JSON.stringify(merged));
       } catch {}
-    }
+    },
+    [loadRxCache]
+  );
 
+  // ---- Covalent (main source) ----
+  const fetchChainTx = async (c: EvmChain, owner: string) => {
+    const url =
+      `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}` +
+      `/transactions_v3/?no-logs=true&page-size=${COVALENT_PAGE_SIZE}`;
+    try {
+      const json = await covalentGet(url);
+      return toTxItems(json?.data?.items ?? [], c, "covalent");
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      if (msg.includes("not supported") || msg.includes("501") || msg.includes("429")) return [];
+      return [];
+    }
+  };
+
+  // ---- Explorer fallback (optional; requires keys) ----
+  const ETHERSCAN_KEY = process.env.EXPO_PUBLIC_ETHERSCAN_API_KEY || "";
+  const POLYGONSCAN_KEY = process.env.EXPO_PUBLIC_POLYGONSCAN_API_KEY || "";
+  const BSCSCAN_KEY = process.env.EXPO_PUBLIC_BSCSCAN_API_KEY || "";
+
+  function explorerApiBase(c: EvmChain): string | null {
+    if (c.nativeSymbol === "ETH" && c.testnet) return "https://api-sepolia.etherscan.io/api";
+    if (c.nativeSymbol === "MATIC" && c.testnet) return "https://api-amoy.polygonscan.com/api";
+    if (c.nativeSymbol === "BNB" && c.testnet) return "https://api-testnet.bscscan.com/api";
     return null;
-  };
+  }
 
-  const toDisplayAmount = (ethAmount: number): { text: string; unitLabel: string } => {
-    if (displayUnit === 'USD') {
-      const v = ethAmount * (ethPriceUSD || 0);
-      return { text: v.toFixed(2), unitLabel: 'USD' };
+  const fetchExplorerTxs = async (c: EvmChain, owner: string): Promise<TxItem[]> => {
+    const base = explorerApiBase(c);
+    if (!base) return [];
+    const apiKey =
+      c.nativeSymbol === "ETH" ? ETHERSCAN_KEY :
+      c.nativeSymbol === "MATIC" ? POLYGONSCAN_KEY :
+      c.nativeSymbol === "BNB" ? BSCSCAN_KEY : "";
+    if (!apiKey) return []; // no key → skip quietly
+
+    const url = `${base}?module=account&action=txlist&address=${owner}&sort=desc&page=1&offset=100&apikey=${apiKey}`;
+    try {
+      const json = await fetch(url).then((r) => r.json());
+      const ok = String(json?.status || "0") === "1";
+      if (!ok) return [];
+      return toTxItems(json.result || [], c, "explorer");
+    } catch {
+      return [];
     }
-    if (displayUnit === localCurrency) {
-      const v = ethAmount * (ethPriceLocal || 0);
-      return { text: v.toFixed(2), unitLabel: localCurrency };
+  };
+
+  // ---- RPC supplement ----
+  async function rpcIncomingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
+    if (!c.testnet) return []; // Phase 2A: only testnets
+    try {
+      const rpc = c.rpcUrls?.[0];
+      if (!rpc) return [];
+      const provider = new ethers.providers.StaticJsonRpcProvider(rpc, { chainId: c.chainId, name: c.name });
+      const latest = await provider.getBlockNumber();
+      const lower = Math.max(0, latest - Math.max(1, lookbackBlocks - 1));
+      const out: TxItem[] = [];
+      for (let bn = latest; bn >= lower; bn--) {
+        const block = await provider.getBlockWithTransactions(bn);
+        const ts = (block?.timestamp || Math.floor(Date.now() / 1000)) * 1000;
+        for (const tx of block.transactions || []) {
+          const to = (tx.to || "").toLowerCase();
+          if (!to || to !== owner) continue;
+          out.push({
+            hash: tx.hash || "",
+            timestamp: new Date(ts).toISOString(),
+            from: (tx.from || "").toLowerCase(),
+            to,
+            valueWei: (tx.value || ethers.constants.Zero).toString(),
+            gasUsed: null,
+            gasPrice: null,
+            feesPaidWei: null,
+            successful: true,
+            chainId: c.chainId,
+            explorerBase: c.explorerBase,
+            nativeSymbol: c.nativeSymbol,
+            _source: "rpc",
+          });
+        }
+      }
+      return out;
+    } catch {
+      return [];
     }
-    // TOKEN
-    return { text: fmt(ethAmount, 6), unitLabel: 'ETH' };
+  }
+
+  function cancelPollers() {
+    for (const t of pollTimersRef.current) clearTimeout(t);
+    pollTimersRef.current = [];
+    cancelledRef.current = true;
+    setTimeout(() => (cancelledRef.current = false), 0);
+  }
+
+  function startRpcPoller(owner: string, baseList: TxItem[], stickyStart: TxItem[]) {
+    cancelPollers();
+    const schedule = RPC_POLL_SCHEDULE_MS.slice();
+    const runOnce = async () => {
+      if (cancelledRef.current) return;
+      const results = await Promise.allSettled(chains.map((c) => rpcIncomingLookback(c, owner, RPC_LOOKBACK_BLOCKS)));
+      const rpcLists: TxItem[][] = results.map((r) => (r.status === "fulfilled" ? r.value : []));
+      const merged = mergeAndSort([baseList, ...rpcLists, stickyStart]);
+
+      // ⬇️ never shrink: merge with what's on screen
+      setItems((prev) => mergeAndSort([prev, merged]));
+
+      // Update sticky cache with any new RPC hits (do not overwrite with empty)
+      const candidateSticky: TxItem[] = mergeAndSort([stickyStart, ...rpcLists]).map((t) => ({
+        ...t,
+        _source: "sticky" as const,
+      }));
+      await safeSaveRxCache(owner, candidateSticky);
+    };
+    schedule.forEach((ms) => {
+      const t = setTimeout(runOnce, ms);
+      pollTimersRef.current.push(t);
+    });
+  }
+
+  const fetchHistory = useCallback(
+    async (soft = false) => {
+      if (!address) return;
+      const now = Date.now();
+      if (!soft && now - lastFetchAtRef.current < 8000) return; // throttle
+      lastFetchAtRef.current = now;
+
+      cancelPollers();
+      if (soft) setIsRefreshing(true);
+
+      const owner = address.toLowerCase();
+
+      try {
+        loadPrices(); // fire & forget
+
+        // 0) Load sticky first so we never lose receiver rows on refresh
+        const sticky = await loadRxCache(owner);
+
+        // 0.5) One-time wider RPC backfill to catch recent incoming even if Covalent/explorer miss it
+        const backfillResults = await Promise.allSettled(
+          chains.map((c) => rpcIncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS))
+        );
+        const backfillLists: TxItem[][] = backfillResults.map((r) => (r.status === "fulfilled" ? r.value : []));
+        const backfillSticky: TxItem[] = mergeAndSort([sticky, ...backfillLists]).map((t) => ({
+          ...t,
+          _source: "sticky" as const,
+        }));
+        await safeSaveRxCache(owner, backfillSticky);
+
+        // 1) Covalent for all chains (main source)
+        const cvResults = await Promise.allSettled(chains.map((c) => fetchChainTx(c, owner)));
+        const cvLists: TxItem[][] = cvResults.map((r) => (r.status === "fulfilled" ? r.value : []));
+
+        // Include local optimistic sender txs
+        const localRaw = await AsyncStorage.getItem("localTxs");
+        if (localRaw) {
+          const locals: any[] = JSON.parse(localRaw);
+          const localList: TxItem[] = locals.map((l) => ({
+            hash: l.hash,
+            timestamp: l.timestamp || new Date().toISOString(),
+            from: (l.from || "").toLowerCase(),
+            to: (l.to || "").toLowerCase(),
+            valueWei: (l.value || "0").toString(),
+            gasUsed: null,
+            gasPrice: null,
+            feesPaidWei: null,
+            successful: true,
+            chainId: l.chainId,
+            explorerBase: chains.find((c) => c.chainId === l.chainId)?.explorerBase || "",
+            nativeSymbol: (chains.find((c) => c.chainId === l.chainId)?.nativeSymbol || "ETH") as "ETH" | "BNB" | "MATIC",
+            _source: "rpc",
+          }));
+          cvLists.push(localList);
+        }
+
+        // 2) Optional explorer fallback (if keys exist)
+        const exResults = await Promise.allSettled(chains.map((c) => fetchExplorerTxs(c, owner)));
+        const exLists: TxItem[][] = exResults.map((r) => (r.status === "fulfilled" ? r.value : []));
+
+        // Reload sticky after backfill save (for immediate merge)
+        const stickyNow = await loadRxCache(owner);
+
+        // 3) Merge (Covalent + explorer + sticky)
+        const baseMerged = mergeAndSort([...cvLists, ...exLists, stickyNow]);
+
+        // ⬇️ PROTECT AGAINST SHRINK:
+        if (baseMerged.length === 0) {
+          setFirstLoading(false);
+          setIsRefreshing(false);
+        } else {
+          setItems((prev) => mergeAndSort([prev, baseMerged]));
+          setFirstLoading(false);
+          setIsRefreshing(false);
+        }
+
+        // 4) Background RPC poller to catch fresh incoming, keep sticky updated
+        startRpcPoller(owner, baseMerged, stickyNow.map((t) => ({ ...t, _source: "sticky" as const })));
+      } catch {
+        // keep what is shown
+        setFirstLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [address, chains, loadPrices, loadRxCache, safeSaveRxCache]
+  );
+
+  useEffect(() => {
+    fetchHistory(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      fetchHistory(true);
+      return () => cancelPollers();
+    }, [fetchHistory])
+  );
+
+  const onRefresh = useCallback(async () => {
+    await fetchHistory(true);
+  }, [fetchHistory]);
+
+  // ---- display helpers ----
+  const priceFor = (sym: "ETH" | "BNB" | "MATIC") => priceMap[sym] || { usd: 0, local: 0 };
+  const toDisplay = (nativeAmount: number, sym: "ETH" | "BNB" | "MATIC") => {
+    if (displayUnit === "USD") return { text: (nativeAmount * priceFor(sym).usd).toFixed(2), unit: "USD" };
+    if (displayUnit === localCurrency)
+      return { text: (nativeAmount * priceFor(sym).local).toFixed(2), unit: localCurrency };
+    return { text: fmt(nativeAmount, 6), unit: sym };
   };
 
-  const openExplorer = (hash: string | undefined) => {
-    if (!hash) return;
-    Linking.openURL(`${EXPLORER_BASE}/tx/${hash}`);
+  const openExplorer = (t: TxItem) => {
+    if (!t.explorerBase || !t.hash) return;
+    Linking.openURL(`${t.explorerBase}/tx/${t.hash}`);
   };
 
-  const renderTxItem = ({ item }: { item: any }) => {
-    // Skip incomplete
-    if (!item && !item.tx_hash && !item.hash) return null;
-
-    const txHash = (item.hash || item.tx_hash || '').toString();
-    const fromAddr = (item.from_address || '').toLowerCase();
-    const toAddr = (item.to_address || '').toLowerCase();
-    const isSend = address && fromAddr === address.toLowerCase();
-
-    // ETH value
-    const valueEth = getValueEth(item);
-
-    // Saved meta (may include feeEth)
-    const meta = getSavedMeta(item);
-    const feeEth = getFeeEth(item, meta);
-    const feeLine = feeEth != null ? `${fmt(feeEth, 6)} ETH` : '—';
-
-    // Status (Covalent: successful boolean; default true for local)
-    const successful =
-      item.successful === false ? false : true; // treat undefined as true (local send)
-    const statusText = successful ? 'Confirmed' : 'Failed';
-    const statusStyle = successful ? styles.statusConfirmed : styles.statusFailed;
-
-    // Convert value for current display unit
-    const { text: amountText, unitLabel } = toDisplayAmount(valueEth);
+  const renderItem = ({ item }: { item: TxItem }) => {
+    const me = (address || "").toLowerCase();
+    const isSend = me && item.from === me;
+    const valueNative = parseFloat(ethers.utils.formatEther(item.valueWei || "0"));
+    const { text: amtText, unit } = toDisplay(valueNative, item.nativeSymbol);
+    const successful = item.successful !== false;
 
     return (
-      <TouchableOpacity activeOpacity={0.8} onPress={() => openExplorer(txHash)}>
+      <TouchableOpacity activeOpacity={0.85} onPress={() => openExplorer(item)}>
         <View style={styles.card}>
           <View style={styles.rowTop}>
             <Ionicons
-              name={isSend ? 'arrow-up' : 'arrow-down'}
+              name={isSend ? "arrow-up" : "arrow-down"}
               size={22}
-              color={isSend ? '#E11D48' : '#16A34A'} // red for send, green for receive
+              color={isSend ? "#E11D48" : "#16A34A"}
               style={{ marginRight: 8 }}
             />
-            <Text style={styles.date}>
-              {new Date(item.timestamp || item.block_signed_at).toLocaleString()}
-            </Text>
+            <Text style={styles.date}>{new Date(item.timestamp).toLocaleString()}</Text>
+            <View style={{ flex: 1 }} />
+            <Text style={styles.chainTag}>{item.nativeSymbol}</Text>
           </View>
 
           <View style={styles.line} />
@@ -268,176 +430,120 @@ const HistoryTab = () => {
           <View style={styles.row}>
             <Text style={styles.label}>Amount:</Text>
             <Text style={styles.value}>
-              {amountText} {unitLabel}
+              {amtText} {unit}
             </Text>
           </View>
 
           <View style={styles.row}>
             <Text style={styles.label}>Status:</Text>
-            <Text style={[styles.value, statusStyle]}>{statusText}</Text>
+            <Text style={[styles.value, successful ? styles.statusConfirmed : styles.statusFailed]}>
+              {successful ? "Confirmed" : "Failed"}
+            </Text>
           </View>
 
           <View style={styles.row}>
-            <Text style={styles.label}>{isSend ? 'To:' : 'From:'}</Text>
-            <Text style={styles.valueAddr}>{isSend ? maskAddr(toAddr) : maskAddr(fromAddr)}</Text>
-          </View>
-
-          <View style={styles.row}>
-            <Text style={styles.label}>Fee:</Text>
-            <Text style={styles.value}>{feeLine}</Text>
+            <Text style={styles.label}>{isSend ? "To:" : "From:"}</Text>
+            <Text style={styles.valueAddr}>{isSend ? maskAddr(item.to) : maskAddr(item.from)}</Text>
           </View>
         </View>
       </TouchableOpacity>
     );
   };
 
-  const EmptyState = () => <Text style={styles.empty}>No transactions yet.</Text>;
-
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Transaction History</Text>
 
-      {/* Rounded pill selector (Token / USD / Local) */}
-      <View style={styles.unitRow}>
-        <TouchableOpacity
-          style={displayUnit === 'TOKEN' ? styles.unitButtonActive : styles.unitButton}
-          onPress={() => setDisplayUnit('TOKEN')}
-        >
-          <Text style={displayUnit === 'TOKEN' ? styles.unitTextActive : styles.unitText}>
-            TOKEN
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={displayUnit === 'USD' ? styles.unitButtonActive : styles.unitButton}
-          onPress={() => setDisplayUnit('USD')}
-        >
-          <Text style={displayUnit === 'USD' ? styles.unitTextActive : styles.unitText}>
-            USD
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={displayUnit === localCurrency ? styles.unitButtonActive : styles.unitButton}
-          onPress={() => setDisplayUnit(localCurrency)}
-        >
-          <Text
-            style={
-              displayUnit === localCurrency ? styles.unitTextActive : styles.unitText
-            }
+      <View style={styles.controlsBlockCentered}>
+        <View style={styles.unitRow}>
+          <TouchableOpacity
+            style={displayUnit === "TOKEN" ? styles.unitButtonActive : styles.unitButton}
+            onPress={() => setDisplayUnit("TOKEN")}
           >
-            {localCurrency}
-          </Text>
-        </TouchableOpacity>
+            <Text style={displayUnit === "TOKEN" ? styles.unitTextActive : styles.unitText}>TOKEN</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={displayUnit === "USD" ? styles.unitButtonActive : styles.unitButton}
+            onPress={() => setDisplayUnit("USD")}
+          >
+            <Text style={displayUnit === "USD" ? styles.unitTextActive : styles.unitText}>USD</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={displayUnit === localCurrency ? styles.unitButtonActive : styles.unitButton}
+            onPress={() => setDisplayUnit(localCurrency)}
+          >
+            <Text style={displayUnit === localCurrency ? styles.unitTextActive : styles.unitText}>{localCurrency}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {loading ? (
+      {firstLoading && items.length === 0 ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#0A84FF" />
         </View>
       ) : (
         <FlatList
-          data={mergedTransactions}
-          renderItem={renderTxItem}
-          keyExtractor={(item, index) =>
-            (item.tx_hash || item.hash || item.block_signed_at || index).toString()
-          }
-          ListEmptyComponent={EmptyState}
+          data={items}
+          renderItem={renderItem}
+          keyExtractor={(it, i) => (it.hash ? `${it.hash}:${it.chainId}` : String(i))}
           contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              colors={['#0A84FF']}
-            />
-          }
+          ListEmptyComponent={<Text style={styles.empty}>No transactions yet.</Text>}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={["#0A84FF"]} />}
         />
       )}
     </View>
   );
-};
+}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: "#fff" },
   heading: {
     fontSize: 36,
-    fontWeight: 'bold',
-    color: '#0A84FF',
+    fontWeight: "bold",
+    color: "#0A84FF",
     marginTop: 50,
     paddingHorizontal: 16,
-    marginBottom: 20,
-    textAlign: 'center',
+    marginBottom: 8,
+    textAlign: "center",
   },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
   listContainer: { padding: 16 },
+  empty: { textAlign: "center", color: "#888", marginTop: 24 },
 
-  // Card: very light blue/fade background
+  controlsBlockCentered: { paddingHorizontal: 16, marginBottom: 6, alignItems: "center" },
+  unitRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" },
+  unitButton: { paddingVertical: 8, paddingHorizontal: 14, backgroundColor: "#f3f4f6", borderRadius: 20 },
+  unitButtonActive: { paddingVertical: 8, paddingHorizontal: 14, backgroundColor: "#0A84FF", borderRadius: 20 },
+  unitText: { color: "#0A84FF", fontWeight: "bold" },
+  unitTextActive: { color: "#fff", fontWeight: "bold" },
+
   card: {
-    backgroundColor: '#F5F9FF',
+    backgroundColor: "#F5F9FF",
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E6F0FF',
+    borderColor: "#E6F0FF",
   },
-
-  rowTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-
-  line: { height: 1, backgroundColor: '#E6EAF2', marginVertical: 6 },
-
-  row: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 6,
+  rowTop: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  chainTag: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: "#E8F1FF",
+    color: "#0A84FF",
+    fontWeight: "700",
   },
-
-  label: {
-    width: 86,
-    fontWeight: 'bold',
-    color: '#000',
-  },
-
-  value: {
-    flex: 1,
-    color: '#111',
-  },
-
+  line: { height: 1, backgroundColor: "#E6EAF2", marginVertical: 6 },
+  row: { flexDirection: "row", alignItems: "flex-start", marginTop: 6 },
+  label: { width: 86, fontWeight: "bold", color: "#000" },
+  value: { flex: 1, color: "#111" },
   valueAddr: {
-  flex: 1,
-  color: '#333',
-  fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace', default: undefined }),
-},
-
-
-  date: { color: '#333', fontWeight: '600' },
-
-  statusConfirmed: { color: '#16A34A', fontWeight: '700' }, // green
-  statusFailed: { color: '#DC2626', fontWeight: '700' },    // red
-
-  // Rounded pill selector styles (match Send tab)
-  unitRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 8,
-    gap: 8,
+    flex: 1,
+    color: "#333",
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: undefined }),
   },
-  unitButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 20,
-  },
-  unitButtonActive: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: '#0A84FF',
-    borderRadius: 20,
-  },
-  unitText: { color: '#0A84FF', fontWeight: 'bold' },
-  unitTextActive: { color: '#fff', fontWeight: 'bold' },
-
-  empty: { textAlign: 'center', color: '#888', marginTop: 24 },
+  date: { color: "#333", fontWeight: "600" },
+  statusConfirmed: { color: "#16A34A", fontWeight: "700" },
+  statusFailed: { color: "#DC2626", fontWeight: "700" },
 });
-
-export default HistoryTab;
