@@ -1,3 +1,4 @@
+// HistoryTab.tsx (fast refresh, same stable behavior)
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   View, Text, ActivityIndicator, FlatList, StyleSheet, Linking,
@@ -41,13 +42,25 @@ const fmt = (n: number, dp = 6) =>
   Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/, "").replace(/\.$/, "") : "—";
 
 // ---- tuning knobs ----
-const COVALENT_PAGE_SIZE = 100;          // keep older items visible
-const RPC_LOOKBACK_BLOCKS = 12;          // quick live window (poller)
-const INITIAL_RPC_LOOKBACK_BLOCKS = 60;  // wider once-per-open backfill
-const RX_CACHE_TTL_MS = 30 * 60 * 1000;  // 30 minutes sticky window
-const RPC_POLL_SCHEDULE_MS = [0, 5000, 12000, 25000];
+const COVALENT_PAGE_SIZE = 100;
+const RPC_LOOKBACK_BLOCKS = 12;
+const INITIAL_RPC_LOOKBACK_BLOCKS = 24;       // ↓ from 60 → faster first open
+const RX_CACHE_TTL_MS = 30 * 60 * 1000;
+const RPC_POLL_SCHEDULE_MS = [0, 3000, 8000, 15000]; // tighter, still safe
+
+// Timeouts
+const MAX_FETCH_MS = 6500;  // hard limit for normal fetches
+const SOFT_FETCH_MS = 3500; // shorter on pull-to-refresh/focus
 
 const RX_CACHE_KEY = (addr: string) => `rxCache_v1:${addr.toLowerCase()}`;
+
+// Promise timeout helper
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timeout")), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); }).catch((e) => { clearTimeout(t); reject(e); });
+  });
+}
 
 export default function HistoryTab() {
   const address = useWalletStore((s) => s.address);
@@ -78,12 +91,13 @@ export default function HistoryTab() {
       if (!ids.length) return;
       const vs = (localCurrency || "usd").toLowerCase();
       const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd,${vs}`;
-      const data = await fetch(url).then((r) => r.json());
+      const data = await withTimeout(fetch(url).then((r) => r.json()), 3500).catch(() => null);
+      if (!data) return;
       setPriceMap((prev) => {
         const next = { ...prev };
         (Object.keys(PRICE_IDS) as ("ETH" | "BNB" | "MATIC")[]).forEach((sym) => {
           const id = PRICE_IDS[sym];
-          const d = data?.[id] || {};
+          const d = (data as any)?.[id] || {};
           next[sym] = { usd: Number(d?.usd || prev[sym].usd || 0), local: Number(d?.[vs] || prev[sym].local || 0) };
         });
         return next;
@@ -119,7 +133,6 @@ export default function HistoryTab() {
         if (!t.hash) continue;
         const key = t.hash.toLowerCase();
         const prev = map.get(key);
-        // prefer Covalent over others, else keep the first we got
         if (!prev) map.set(key, t);
         else if (prev._source !== "covalent" && t._source === "covalent") map.set(key, t);
       }
@@ -129,7 +142,7 @@ export default function HistoryTab() {
     );
   };
 
-  // ---- sticky cache (never shrink to empty) ----
+  // ---- sticky cache ----
   const loadRxCache = useCallback(async (owner: string) => {
     try {
       const raw = await AsyncStorage.getItem(RX_CACHE_KEY(owner));
@@ -145,20 +158,15 @@ export default function HistoryTab() {
   const safeSaveRxCache = useCallback(
     async (owner: string, nextList: TxItem[]) => {
       try {
-        if (!nextList || nextList.length === 0) {
-          // do NOT overwrite with empty; keep existing sticky
-          return;
-        }
+        if (!nextList || nextList.length === 0) return; // keep existing sticky
         const existing = await loadRxCache(owner);
         const now = Date.now();
         const map = new Map<string, TxItem>();
-        // keep existing (within TTL)
         for (const t of existing) {
           if (now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS) {
             map.set((t.hash || "").toLowerCase(), { ...t, _source: "sticky" as const });
           }
         }
-        // merge/overwrite with next
         for (const t of nextList) {
           map.set((t.hash || "").toLowerCase(), { ...t, _source: "sticky" as const });
         }
@@ -169,22 +177,20 @@ export default function HistoryTab() {
     [loadRxCache]
   );
 
-  // ---- Covalent (main source) ----
-  const fetchChainTx = async (c: EvmChain, owner: string) => {
+  // ---- Covalent (main) with timeout ----
+  const fetchChainTx = async (c: EvmChain, owner: string, soft: boolean) => {
     const url =
       `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}` +
       `/transactions_v3/?no-logs=true&page-size=${COVALENT_PAGE_SIZE}`;
     try {
-      const json = await covalentGet(url);
-      return toTxItems(json?.data?.items ?? [], c, "covalent");
-    } catch (e: any) {
-      const msg = String(e?.message || e);
-      if (msg.includes("not supported") || msg.includes("501") || msg.includes("429")) return [];
+      const json = await withTimeout(covalentGet(url), soft ? SOFT_FETCH_MS : MAX_FETCH_MS);
+      return toTxItems((json as any)?.data?.items ?? [], c, "covalent");
+    } catch {
       return [];
     }
   };
 
-  // ---- Explorer fallback (optional; requires keys) ----
+  // ---- Explorer fallback (optional; timed) ----
   const ETHERSCAN_KEY = process.env.EXPO_PUBLIC_ETHERSCAN_API_KEY || "";
   const POLYGONSCAN_KEY = process.env.EXPO_PUBLIC_POLYGONSCAN_API_KEY || "";
   const BSCSCAN_KEY = process.env.EXPO_PUBLIC_BSCSCAN_API_KEY || "";
@@ -196,29 +202,29 @@ export default function HistoryTab() {
     return null;
   }
 
-  const fetchExplorerTxs = async (c: EvmChain, owner: string): Promise<TxItem[]> => {
+  const fetchExplorerTxs = async (c: EvmChain, owner: string, soft: boolean): Promise<TxItem[]> => {
     const base = explorerApiBase(c);
     if (!base) return [];
     const apiKey =
       c.nativeSymbol === "ETH" ? ETHERSCAN_KEY :
       c.nativeSymbol === "MATIC" ? POLYGONSCAN_KEY :
       c.nativeSymbol === "BNB" ? BSCSCAN_KEY : "";
-    if (!apiKey) return []; // no key → skip quietly
+    if (!apiKey) return [];
 
     const url = `${base}?module=account&action=txlist&address=${owner}&sort=desc&page=1&offset=100&apikey=${apiKey}`;
     try {
-      const json = await fetch(url).then((r) => r.json());
-      const ok = String(json?.status || "0") === "1";
+      const json = await withTimeout(fetch(url).then((r) => r.json()), soft ? SOFT_FETCH_MS : MAX_FETCH_MS);
+      const ok = String((json as any)?.status || "0") === "1";
       if (!ok) return [];
-      return toTxItems(json.result || [], c, "explorer");
+      return toTxItems((json as any).result || [], c, "explorer");
     } catch {
       return [];
     }
   };
 
-  // ---- RPC supplement ----
+  // ---- RPC supplement (unchanged behavior, but never blocks UI) ----
   async function rpcIncomingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
-    if (!c.testnet) return []; // Phase 2A: only testnets
+    if (!c.testnet) return [];
     try {
       const rpc = c.rpcUrls?.[0];
       if (!rpc) return [];
@@ -226,8 +232,12 @@ export default function HistoryTab() {
       const latest = await provider.getBlockNumber();
       const lower = Math.max(0, latest - Math.max(1, lookbackBlocks - 1));
       const out: TxItem[] = [];
-      for (let bn = latest; bn >= lower; bn--) {
-        const block = await provider.getBlockWithTransactions(bn);
+      // small parallelism for speed
+      const blocks = Array.from({ length: latest - lower + 1 }, (_, i) => latest - i).slice(0, lookbackBlocks);
+      const blockDatas = await Promise.allSettled(blocks.map((bn) => provider.getBlockWithTransactions(bn)));
+      for (const res of blockDatas) {
+        if (res.status !== "fulfilled" || !res.value) continue;
+        const block = res.value;
         const ts = (block?.timestamp || Math.floor(Date.now() / 1000)) * 1000;
         for (const tx of block.transactions || []) {
           const to = (tx.to || "").toLowerCase();
@@ -270,11 +280,7 @@ export default function HistoryTab() {
       const results = await Promise.allSettled(chains.map((c) => rpcIncomingLookback(c, owner, RPC_LOOKBACK_BLOCKS)));
       const rpcLists: TxItem[][] = results.map((r) => (r.status === "fulfilled" ? r.value : []));
       const merged = mergeAndSort([baseList, ...rpcLists, stickyStart]);
-
-      // ⬇️ never shrink: merge with what's on screen
       setItems((prev) => mergeAndSort([prev, merged]));
-
-      // Update sticky cache with any new RPC hits (do not overwrite with empty)
       const candidateSticky: TxItem[] = mergeAndSort([stickyStart, ...rpcLists]).map((t) => ({
         ...t,
         _source: "sticky" as const,
@@ -302,25 +308,32 @@ export default function HistoryTab() {
       try {
         loadPrices(); // fire & forget
 
-        // 0) Load sticky first so we never lose receiver rows on refresh
+        // 0) Show sticky immediately → stops spinner fast if we have anything
         const sticky = await loadRxCache(owner);
+        if (sticky.length > 0) {
+          setItems((prev) => mergeAndSort([prev, sticky]));
+          if (firstLoading) setFirstLoading(false);
+          if (soft) setIsRefreshing(false); // end pull-to-refresh early
+        }
 
-        // 0.5) One-time wider RPC backfill to catch recent incoming even if Covalent/explorer miss it
-        const backfillResults = await Promise.allSettled(
-          chains.map((c) => rpcIncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS))
-        );
-        const backfillLists: TxItem[][] = backfillResults.map((r) => (r.status === "fulfilled" ? r.value : []));
-        const backfillSticky: TxItem[] = mergeAndSort([sticky, ...backfillLists]).map((t) => ({
-          ...t,
-          _source: "sticky" as const,
-        }));
-        await safeSaveRxCache(owner, backfillSticky);
+        // 0.5) One-time wider RPC backfill only on hard load
+        if (!soft) {
+          const backfillResults = await Promise.allSettled(
+            chains.map((c) => rpcIncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS))
+          );
+          const backfillLists: TxItem[][] = backfillResults.map((r) => (r.status === "fulfilled" ? r.value : []));
+          const backfillSticky: TxItem[] = mergeAndSort([sticky, ...backfillLists]).map((t) => ({
+            ...t,
+            _source: "sticky" as const,
+          }));
+          await safeSaveRxCache(owner, backfillSticky);
+        }
 
-        // 1) Covalent for all chains (main source)
-        const cvResults = await Promise.allSettled(chains.map((c) => fetchChainTx(c, owner)));
+        // 1) Covalent for all chains (use tight timeouts on soft)
+        const cvResults = await Promise.allSettled(chains.map((c) => fetchChainTx(c, owner, !!soft)));
         const cvLists: TxItem[][] = cvResults.map((r) => (r.status === "fulfilled" ? r.value : []));
 
-        // Include local optimistic sender txs
+        // include local optimistic sender txs
         const localRaw = await AsyncStorage.getItem("localTxs");
         if (localRaw) {
           const locals: any[] = JSON.parse(localRaw);
@@ -342,35 +355,32 @@ export default function HistoryTab() {
           cvLists.push(localList);
         }
 
-        // 2) Optional explorer fallback (if keys exist)
-        const exResults = await Promise.allSettled(chains.map((c) => fetchExplorerTxs(c, owner)));
-        const exLists: TxItem[][] = exResults.map((r) => (r.status === "fulfilled" ? r.value : []));
-
-        // Reload sticky after backfill save (for immediate merge)
-        const stickyNow = await loadRxCache(owner);
-
-        // 3) Merge (Covalent + explorer + sticky)
-        const baseMerged = mergeAndSort([...cvLists, ...exLists, stickyNow]);
-
-        // ⬇️ PROTECT AGAINST SHRINK:
-        if (baseMerged.length === 0) {
-          setFirstLoading(false);
-          setIsRefreshing(false);
-        } else {
-          setItems((prev) => mergeAndSort([prev, baseMerged]));
-          setFirstLoading(false);
-          setIsRefreshing(false);
+        // 2) Explorer fallback only on hard load (avoid soft-refresh delay)
+        let exLists: TxItem[][] = [];
+        if (!soft) {
+          const exResults = await Promise.allSettled(chains.map((c) => fetchExplorerTxs(c, owner, false)));
+          exLists = exResults.map((r) => (r.status === "fulfilled" ? r.value : []));
         }
 
-        // 4) Background RPC poller to catch fresh incoming, keep sticky updated
+        // Reload sticky quickly
+        const stickyNow = await loadRxCache(owner);
+
+        // 3) Merge and show
+        const baseMerged = mergeAndSort([...cvLists, ...exLists, stickyNow]);
+        if (baseMerged.length > 0) {
+          setItems((prev) => mergeAndSort([prev, baseMerged])); // never-shrink
+        }
+        setFirstLoading(false);
+        setIsRefreshing(false);
+
+        // 4) Background RPC poller
         startRpcPoller(owner, baseMerged, stickyNow.map((t) => ({ ...t, _source: "sticky" as const })));
       } catch {
-        // keep what is shown
         setFirstLoading(false);
         setIsRefreshing(false);
       }
     },
-    [address, chains, loadPrices, loadRxCache, safeSaveRxCache]
+    [address, chains, loadPrices, loadRxCache, safeSaveRxCache, firstLoading]
   );
 
   useEffect(() => {
