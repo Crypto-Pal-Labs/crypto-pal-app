@@ -1,4 +1,3 @@
-// HistoryTab.tsx (fast refresh, same stable behavior)
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   View, Text, ActivityIndicator, FlatList, StyleSheet, Linking,
@@ -19,6 +18,7 @@ type TxItem = {
   timestamp: string;
   from: string;
   to: string;
+  // Native amount (wei) if native; "0" for pure token rows
   valueWei: string;
   gasUsed?: string | number | null;
   gasPrice?: string | number | null;
@@ -27,8 +27,23 @@ type TxItem = {
   chainId: number;
   explorerBase: string;
   nativeSymbol: "ETH" | "BNB" | "MATIC";
-  _source?: "covalent" | "rpc" | "explorer" | "sticky";
+  _source?: "covalent" | "rpc" | "explorer" | "sticky" | "erc20_rpc" | "erc20_covalent";
+  // ── ERC-20 extras (present if token row) ──
+  isToken?: boolean;
+  tokenSymbol?: string;
+  tokenDecimals?: number;
+  tokenContract?: string;
+  tokenValueUnits?: string; // human units string
+  direction?: "IN" | "OUT";
 };
+
+const ERC20_IFACE = new ethers.utils.Interface([
+  "event Transfer(address indexed from, address indexed to, uint256 value)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+]);
+
+const TRANSFER_TOPIC = ethers.utils.id("Transfer(address,address,uint256)");
 
 const PRICE_IDS: Record<"ETH" | "BNB" | "MATIC", string> = {
   ETH: "ethereum",
@@ -44,21 +59,20 @@ const fmt = (n: number, dp = 6) =>
 // ---- tuning knobs ----
 const COVALENT_PAGE_SIZE = 100;
 const RPC_LOOKBACK_BLOCKS = 12;
-const INITIAL_RPC_LOOKBACK_BLOCKS = 24;       // ↓ from 60 → faster first open
+const INITIAL_RPC_LOOKBACK_BLOCKS = 24;
 const RX_CACHE_TTL_MS = 30 * 60 * 1000;
-const RPC_POLL_SCHEDULE_MS = [0, 3000, 8000, 15000]; // tighter, still safe
+const RPC_POLL_SCHEDULE_MS = [0, 3000, 8000, 15000];
 
 // Timeouts
-const MAX_FETCH_MS = 6500;  // hard limit for normal fetches
-const SOFT_FETCH_MS = 3500; // shorter on pull-to-refresh/focus
+const MAX_FETCH_MS = 6500;
+const SOFT_FETCH_MS = 3500;
 
 const RX_CACHE_KEY = (addr: string) => `rxCache_v1:${addr.toLowerCase()}`;
 
-// Promise timeout helper
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error("timeout")), ms);
-    p.then((v) => { clearTimeout(t); resolve(v); }).catch((e) => { clearTimeout(t); reject(e); });
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => T): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => { onTimeout ? resolve(onTimeout()) : reject(new Error("timeout")); }, ms);
+    p.then(v => { clearTimeout(t); resolve(v); }).catch(e => { clearTimeout(t); onTimeout ? resolve(onTimeout()) : reject(e); });
   });
 }
 
@@ -84,6 +98,9 @@ export default function HistoryTab() {
   const pollTimersRef = useRef<NodeJS.Timeout[]>([]);
   const cancelledRef = useRef<boolean>(false);
 
+  // cache for ERC-20 meta (symbol/decimals) per chain+contract (memory only)
+  const erc20MetaRef = useRef<Map<string, { symbol: string; decimals: number }>>(new Map());
+
   // ---- prices (non-blocking) ----
   const loadPrices = useCallback(async () => {
     try {
@@ -91,7 +108,7 @@ export default function HistoryTab() {
       if (!ids.length) return;
       const vs = (localCurrency || "usd").toLowerCase();
       const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd,${vs}`;
-      const data = await withTimeout(fetch(url).then((r) => r.json()), 3500).catch(() => null);
+      const data = await withTimeout(fetch(url).then((r) => r.json()), 3500, () => null as any);
       if (!data) return;
       setPriceMap((prev) => {
         const next = { ...prev };
@@ -106,7 +123,7 @@ export default function HistoryTab() {
   }, [chains, localCurrency]);
 
   // ---- helpers ----
-  const toTxItems = (raw: any[], c: EvmChain, source: TxItem["_source"]): TxItem[] =>
+  const toNativeTxItems = (raw: any[], c: EvmChain, source: TxItem["_source"]): TxItem[] =>
     (raw || []).map((t: any) => ({
       hash: t.tx_hash || t.hash || "",
       timestamp:
@@ -126,15 +143,47 @@ export default function HistoryTab() {
       _source: source,
     }));
 
+  const toTokenItemsFromCovalent = (raw: any[], c: EvmChain): TxItem[] => {
+    // Expect items with fields: tx_hash, block_signed_at, from_address, to_address, delta (string),
+    // contract_decimals, contract_ticker_symbol, contract_address, transfer_type ("IN"/"OUT")
+    return (raw || []).map((t: any) => {
+      const dec = Number(t.contract_decimals ?? 18);
+      const rawUnits = String(t.delta || "0");
+      const units = ethers.utils.formatUnits(rawUnits, Number.isFinite(dec) ? dec : 18);
+      return {
+        hash: t.tx_hash || "",
+        timestamp: t.block_signed_at ? new Date(Date.parse(t.block_signed_at)).toISOString() : new Date().toISOString(),
+        from: (t.from_address || "").toLowerCase(),
+        to: (t.to_address || "").toLowerCase(),
+        valueWei: "0",
+        successful: true,
+        chainId: c.chainId,
+        explorerBase: c.explorerBase,
+        nativeSymbol: c.nativeSymbol,
+        _source: "erc20_covalent" as const,
+        isToken: true,
+        tokenSymbol: String(t.contract_ticker_symbol || "TOKEN"),
+        tokenDecimals: Number.isFinite(dec) ? dec : 18,
+        tokenContract: (t.contract_address || "").toLowerCase(),
+        tokenValueUnits: units,
+        direction: String(t.transfer_type || "").toUpperCase() === "IN" ? "IN" : "OUT",
+      };
+    });
+  };
+
+  const amountKey = (t: TxItem) => t.isToken ? `${t.tokenContract}:${t.tokenValueUnits}` : t.valueWei;
+
   const mergeAndSort = (lists: TxItem[][]): TxItem[] => {
+    // NOTE: allow multiple rows per tx when different token transfers occur
     const map = new Map<string, TxItem>();
     for (const list of lists) {
       for (const t of list) {
         if (!t.hash) continue;
-        const key = t.hash.toLowerCase();
-        const prev = map.get(key);
-        if (!prev) map.set(key, t);
-        else if (prev._source !== "covalent" && t._source === "covalent") map.set(key, t);
+        const uniq = `${t.hash}:${t.chainId}:${t.isToken ? (t.tokenContract || "token") : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
+        const prev = map.get(uniq);
+        // prefer Covalent entries over RPC synthesized ones
+        if (!prev) map.set(uniq, t);
+        else if ((prev._source || "").includes("rpc") && (t._source || "").includes("covalent")) map.set(uniq, t);
       }
     }
     return Array.from(map.values()).sort(
@@ -158,39 +207,53 @@ export default function HistoryTab() {
   const safeSaveRxCache = useCallback(
     async (owner: string, nextList: TxItem[]) => {
       try {
-        if (!nextList || nextList.length === 0) return; // keep existing sticky
+        if (!nextList || nextList.length === 0) return;
         const existing = await loadRxCache(owner);
         const now = Date.now();
         const map = new Map<string, TxItem>();
         for (const t of existing) {
           if (now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS) {
-            map.set((t.hash || "").toLowerCase(), { ...t, _source: "sticky" as const });
+            const key = `${t.hash}:${t.chainId}:${t.isToken ? t.tokenContract : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
+            map.set(key, { ...t, _source: "sticky" as const });
           }
         }
         for (const t of nextList) {
-          map.set((t.hash || "").toLowerCase(), { ...t, _source: "sticky" as const });
+          const key = `${t.hash}:${t.chainId}:${t.isToken ? t.tokenContract : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
+          map.set(key, { ...t, _source: "sticky" as const });
         }
-        const merged = Array.from(map.values()).slice(0, 100);
+        const merged = Array.from(map.values()).slice(0, 200);
         await AsyncStorage.setItem(RX_CACHE_KEY(owner), JSON.stringify(merged));
       } catch {}
     },
     [loadRxCache]
   );
 
-  // ---- Covalent (main) with timeout ----
+  // ---- Covalent (native txs) ----
   const fetchChainTx = async (c: EvmChain, owner: string, soft: boolean) => {
     const url =
       `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}` +
       `/transactions_v3/?no-logs=true&page-size=${COVALENT_PAGE_SIZE}`;
     try {
-      const json = await withTimeout(covalentGet(url), soft ? SOFT_FETCH_MS : MAX_FETCH_MS);
-      return toTxItems((json as any)?.data?.items ?? [], c, "covalent");
+      const json = await withTimeout(covalentGet(url), soft ? SOFT_FETCH_MS : MAX_FETCH_MS, () => ({ data: { items: [] } } as any));
+      return toNativeTxItems((json as any)?.data?.items ?? [], c, "covalent");
     } catch {
       return [];
     }
   };
 
-  // ---- Explorer fallback (optional; timed) ----
+  // ---- Covalent (ERC-20 transfers) ----
+  const fetchTokenTransfers = async (c: EvmChain, owner: string, soft: boolean): Promise<TxItem[]> => {
+    const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/transfers_v3/?contract-address=all&no-logs=false&page-size=${COVALENT_PAGE_SIZE}`;
+    try {
+      const json = await withTimeout(covalentGet(url), soft ? SOFT_FETCH_MS : MAX_FETCH_MS, () => ({ data: { items: [] } } as any));
+      const items: any[] = (json as any)?.data?.items || [];
+      return toTokenItemsFromCovalent(items, c);
+    } catch {
+      return [];
+    }
+  };
+
+  // ---- Explorer fallback (unchanged; native only) ----
   const ETHERSCAN_KEY = process.env.EXPO_PUBLIC_ETHERSCAN_API_KEY || "";
   const POLYGONSCAN_KEY = process.env.EXPO_PUBLIC_POLYGONSCAN_API_KEY || "";
   const BSCSCAN_KEY = process.env.EXPO_PUBLIC_BSCSCAN_API_KEY || "";
@@ -202,7 +265,7 @@ export default function HistoryTab() {
     return null;
   }
 
-  const fetchExplorerTxs = async (c: EvmChain, owner: string, soft: boolean): Promise<TxItem[]> => {
+  const fetchExplorerTxs = async (c: EvmChain, owner: string): Promise<TxItem[]> => {
     const base = explorerApiBase(c);
     if (!base) return [];
     const apiKey =
@@ -210,19 +273,18 @@ export default function HistoryTab() {
       c.nativeSymbol === "MATIC" ? POLYGONSCAN_KEY :
       c.nativeSymbol === "BNB" ? BSCSCAN_KEY : "";
     if (!apiKey) return [];
-
     const url = `${base}?module=account&action=txlist&address=${owner}&sort=desc&page=1&offset=100&apikey=${apiKey}`;
     try {
-      const json = await withTimeout(fetch(url).then((r) => r.json()), soft ? SOFT_FETCH_MS : MAX_FETCH_MS);
+      const json = await withTimeout(fetch(url).then((r) => r.json()), MAX_FETCH_MS, () => ({ status: "0" } as any));
       const ok = String((json as any)?.status || "0") === "1";
       if (!ok) return [];
-      return toTxItems((json as any).result || [], c, "explorer");
+      return toNativeTxItems((json as any).result || [], c, "explorer");
     } catch {
       return [];
     }
   };
 
-  // ---- RPC supplement (unchanged behavior, but never blocks UI) ----
+  // ---- RPC supplement: native incoming (existing) ----
   async function rpcIncomingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
     if (!c.testnet) return [];
     try {
@@ -232,7 +294,6 @@ export default function HistoryTab() {
       const latest = await provider.getBlockNumber();
       const lower = Math.max(0, latest - Math.max(1, lookbackBlocks - 1));
       const out: TxItem[] = [];
-      // small parallelism for speed
       const blocks = Array.from({ length: latest - lower + 1 }, (_, i) => latest - i).slice(0, lookbackBlocks);
       const blockDatas = await Promise.allSettled(blocks.map((bn) => provider.getBlockWithTransactions(bn)));
       for (const res of blockDatas) {
@@ -265,6 +326,80 @@ export default function HistoryTab() {
     }
   }
 
+  // ---- RPC supplement: ERC-20 incoming (Transfer logs) ----
+  async function rpcErc20IncomingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
+    if (!c.testnet) return [];
+    try {
+      const rpc = c.rpcUrls?.[0];
+      if (!rpc) return [];
+      const provider = new ethers.providers.StaticJsonRpcProvider(rpc, { chainId: c.chainId, name: c.name });
+      const latest = await provider.getBlockNumber();
+      const fromBlock = Math.max(0, latest - Math.max(1, lookbackBlocks - 1));
+      const ownerTopic = ethers.utils.hexZeroPad(owner, 32); // indexed 'to' topic
+      const logs = await provider.getLogs({
+        fromBlock, toBlock: latest,
+        topics: [TRANSFER_TOPIC, null, ownerTopic],
+      });
+
+      const out: TxItem[] = [];
+      for (const log of logs) {
+        try {
+          const parsed = ERC20_IFACE.parseLog(log);
+          const from = (parsed.args[0] as string).toLowerCase();
+          const to = (parsed.args[1] as string).toLowerCase();
+          const value = parsed.args[2] as ethers.BigNumber;
+          const txHash = log.transactionHash;
+          const contractAddr = log.address.toLowerCase();
+
+          // get meta (symbol/decimals) with small cache
+          const metaKey = `${c.chainId}:${contractAddr}`;
+          let meta = erc20MetaRef.current.get(metaKey);
+          if (!meta) {
+            try {
+              const contract = new ethers.Contract(contractAddr, ERC20_IFACE.fragments, provider);
+              const [sym, dec] = await Promise.allSettled([
+                contract.symbol(), contract.decimals()
+              ]);
+              meta = {
+                symbol: sym.status === "fulfilled" ? String(sym.value) : "TOKEN",
+                decimals: dec.status === "fulfilled" ? Number(dec.value) : 18,
+              };
+            } catch {
+              meta = { symbol: "TOKEN", decimals: 18 };
+            }
+            erc20MetaRef.current.set(metaKey, meta);
+          }
+          const units = ethers.utils.formatUnits(value, meta.decimals);
+
+          // need timestamp
+          const blk = await provider.getBlock(log.blockNumber);
+          const ts = (blk?.timestamp || Math.floor(Date.now() / 1000)) * 1000;
+
+          out.push({
+            hash: txHash,
+            timestamp: new Date(ts).toISOString(),
+            from, to,
+            valueWei: "0",
+            successful: true,
+            chainId: c.chainId,
+            explorerBase: c.explorerBase,
+            nativeSymbol: c.nativeSymbol,
+            _source: "erc20_rpc",
+            isToken: true,
+            tokenSymbol: meta.symbol,
+            tokenDecimals: meta.decimals,
+            tokenContract: contractAddr,
+            tokenValueUnits: units,
+            direction: "IN",
+          });
+        } catch { /* ignore parse errors */ }
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
   function cancelPollers() {
     for (const t of pollTimersRef.current) clearTimeout(t);
     pollTimersRef.current = [];
@@ -277,13 +412,15 @@ export default function HistoryTab() {
     const schedule = RPC_POLL_SCHEDULE_MS.slice();
     const runOnce = async () => {
       if (cancelledRef.current) return;
-      const results = await Promise.allSettled(chains.map((c) => rpcIncomingLookback(c, owner, RPC_LOOKBACK_BLOCKS)));
-      const rpcLists: TxItem[][] = results.map((r) => (r.status === "fulfilled" ? r.value : []));
-      const merged = mergeAndSort([baseList, ...rpcLists, stickyStart]);
+      const nativeResults = await Promise.allSettled(chains.map((c) => rpcIncomingLookback(c, owner, RPC_LOOKBACK_BLOCKS)));
+      const erc20Results  = await Promise.allSettled(chains.map((c) => rpcErc20IncomingLookback(c, owner, RPC_LOOKBACK_BLOCKS)));
+      const nativeLists: TxItem[][] = nativeResults.map((r) => (r.status === "fulfilled" ? r.value : []));
+      const erc20Lists:  TxItem[][] = erc20Results.map((r) => (r.status === "fulfilled" ? r.value : []));
+      const merged = mergeAndSort([baseList, ...nativeLists, ...erc20Lists, stickyStart]);
       setItems((prev) => mergeAndSort([prev, merged]));
-      const candidateSticky: TxItem[] = mergeAndSort([stickyStart, ...rpcLists]).map((t) => ({
-        ...t,
-        _source: "sticky" as const,
+
+      const candidateSticky: TxItem[] = mergeAndSort([stickyStart, ...nativeLists, ...erc20Lists]).map((t) => ({
+        ...t, _source: "sticky" as const,
       }));
       await safeSaveRxCache(owner, candidateSticky);
     };
@@ -297,7 +434,7 @@ export default function HistoryTab() {
     async (soft = false) => {
       if (!address) return;
       const now = Date.now();
-      if (!soft && now - lastFetchAtRef.current < 8000) return; // throttle
+      if (!soft && now - lastFetchAtRef.current < 8000) return;
       lastFetchAtRef.current = now;
 
       cancelPollers();
@@ -306,34 +443,33 @@ export default function HistoryTab() {
       const owner = address.toLowerCase();
 
       try {
-        loadPrices(); // fire & forget
+        loadPrices();
 
-        // 0) Show sticky immediately → stops spinner fast if we have anything
+        // show sticky quickly
         const sticky = await loadRxCache(owner);
         if (sticky.length > 0) {
           setItems((prev) => mergeAndSort([prev, sticky]));
           if (firstLoading) setFirstLoading(false);
-          if (soft) setIsRefreshing(false); // end pull-to-refresh early
+          if (soft) setIsRefreshing(false);
         }
 
-        // 0.5) One-time wider RPC backfill only on hard load
+        // one-time wider native+erc20 rpc backfill only on hard load
         if (!soft) {
-          const backfillResults = await Promise.allSettled(
-            chains.map((c) => rpcIncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS))
-          );
-          const backfillLists: TxItem[][] = backfillResults.map((r) => (r.status === "fulfilled" ? r.value : []));
-          const backfillSticky: TxItem[] = mergeAndSort([sticky, ...backfillLists]).map((t) => ({
-            ...t,
-            _source: "sticky" as const,
-          }));
+          const backNative = await Promise.allSettled(chains.map((c) => rpcIncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS)));
+          const backErc20  = await Promise.allSettled(chains.map((c) => rpcErc20IncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS)));
+          const backListsN = backNative.map((r) => (r.status === "fulfilled" ? r.value : []));
+          const backListsT = backErc20.map((r) => (r.status === "fulfilled" ? r.value : []));
+          const backfillSticky = mergeAndSort([sticky, ...backListsN, ...backListsT]).map((t) => ({ ...t, _source: "sticky" as const }));
           await safeSaveRxCache(owner, backfillSticky);
         }
 
-        // 1) Covalent for all chains (use tight timeouts on soft)
-        const cvResults = await Promise.allSettled(chains.map((c) => fetchChainTx(c, owner, !!soft)));
-        const cvLists: TxItem[][] = cvResults.map((r) => (r.status === "fulfilled" ? r.value : []));
+        // Covalent main sources
+        const cvTx = await Promise.allSettled(chains.map((c) => fetchChainTx(c, owner, !!soft)));
+        const cvTxLists: TxItem[][] = cvTx.map((r) => (r.status === "fulfilled" ? r.value : []));
+        const cvTok = await Promise.allSettled(chains.map((c) => fetchTokenTransfers(c, owner, !!soft)));
+        const cvTokLists: TxItem[][] = cvTok.map((r) => (r.status === "fulfilled" ? r.value : []));
 
-        // include local optimistic sender txs
+        // Local optimistic sender txs (native only affects value column; tokens handled via transfers)
         const localRaw = await AsyncStorage.getItem("localTxs");
         if (localRaw) {
           const locals: any[] = JSON.parse(localRaw);
@@ -343,37 +479,27 @@ export default function HistoryTab() {
             from: (l.from || "").toLowerCase(),
             to: (l.to || "").toLowerCase(),
             valueWei: (l.value || "0").toString(),
-            gasUsed: null,
-            gasPrice: null,
-            feesPaidWei: null,
+            gasUsed: null, gasPrice: null, feesPaidWei: null,
             successful: true,
             chainId: l.chainId,
             explorerBase: chains.find((c) => c.chainId === l.chainId)?.explorerBase || "",
             nativeSymbol: (chains.find((c) => c.chainId === l.chainId)?.nativeSymbol || "ETH") as "ETH" | "BNB" | "MATIC",
             _source: "rpc",
           }));
-          cvLists.push(localList);
+          cvTxLists.push(localList);
         }
 
-        // 2) Explorer fallback only on hard load (avoid soft-refresh delay)
-        let exLists: TxItem[][] = [];
-        if (!soft) {
-          const exResults = await Promise.allSettled(chains.map((c) => fetchExplorerTxs(c, owner, false)));
-          exLists = exResults.map((r) => (r.status === "fulfilled" ? r.value : []));
-        }
+        // optional explorer (native)
+        const exResults = await Promise.allSettled(chains.map((c) => fetchExplorerTxs(c, owner)));
+        const exLists: TxItem[][] = exResults.map((r) => (r.status === "fulfilled" ? r.value : []));
 
-        // Reload sticky quickly
         const stickyNow = await loadRxCache(owner);
 
-        // 3) Merge and show
-        const baseMerged = mergeAndSort([...cvLists, ...exLists, stickyNow]);
-        if (baseMerged.length > 0) {
-          setItems((prev) => mergeAndSort([prev, baseMerged])); // never-shrink
-        }
+        const baseMerged = mergeAndSort([...cvTxLists, ...exLists, ...cvTokLists, stickyNow]);
+        if (baseMerged.length > 0) setItems((prev) => mergeAndSort([prev, baseMerged]));
         setFirstLoading(false);
         setIsRefreshing(false);
 
-        // 4) Background RPC poller
         startRpcPoller(owner, baseMerged, stickyNow.map((t) => ({ ...t, _source: "sticky" as const })));
       } catch {
         setFirstLoading(false);
@@ -415,10 +541,22 @@ export default function HistoryTab() {
 
   const renderItem = ({ item }: { item: TxItem }) => {
     const me = (address || "").toLowerCase();
-    const isSend = me && item.from === me;
-    const valueNative = parseFloat(ethers.utils.formatEther(item.valueWei || "0"));
-    const { text: amtText, unit } = toDisplay(valueNative, item.nativeSymbol);
+    const isSend = item.isToken
+      ? (item.direction === "OUT" || (me && item.from === me))
+      : (me && item.from === me);
     const successful = item.successful !== false;
+
+    let amountText = "";
+    let unitText = "";
+    if (item.isToken) {
+      amountText = item.tokenValueUnits || "0";
+      unitText = item.tokenSymbol || "TOKEN";
+    } else {
+      const valueNative = parseFloat(ethers.utils.formatEther(item.valueWei || "0"));
+      const disp = toDisplay(valueNative, item.nativeSymbol);
+      amountText = disp.text;
+      unitText = disp.unit;
+    }
 
     return (
       <TouchableOpacity activeOpacity={0.85} onPress={() => openExplorer(item)}>
@@ -432,7 +570,7 @@ export default function HistoryTab() {
             />
             <Text style={styles.date}>{new Date(item.timestamp).toLocaleString()}</Text>
             <View style={{ flex: 1 }} />
-            <Text style={styles.chainTag}>{item.nativeSymbol}</Text>
+            <Text style={styles.chainTag}>{item.isToken ? (item.tokenSymbol || "TOKEN") : item.nativeSymbol}</Text>
           </View>
 
           <View style={styles.line} />
@@ -440,7 +578,7 @@ export default function HistoryTab() {
           <View style={styles.row}>
             <Text style={styles.label}>Amount:</Text>
             <Text style={styles.value}>
-              {amtText} {unit}
+              {amountText} {unitText}
             </Text>
           </View>
 
@@ -495,7 +633,9 @@ export default function HistoryTab() {
         <FlatList
           data={items}
           renderItem={renderItem}
-          keyExtractor={(it, i) => (it.hash ? `${it.hash}:${it.chainId}` : String(i))}
+          keyExtractor={(it, i) =>
+            it.hash ? `${it.hash}:${it.chainId}:${it.isToken ? (it.tokenContract || "token") : "native"}:${it.from}:${it.to}:${amountKey(it)}` : String(i)
+          }
           contentContainerStyle={styles.listContainer}
           ListEmptyComponent={<Text style={styles.empty}>No transactions yet.</Text>}
           refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={["#0A84FF"]} />}
