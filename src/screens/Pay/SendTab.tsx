@@ -1,3 +1,4 @@
+// src/screens/Pay/SendTab.tsx
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View, Text, TextInput, Alert, StyleSheet,
@@ -12,11 +13,10 @@ import * as Localization from 'expo-localization';
 import * as Clipboard from 'expo-clipboard';
 
 import { useWalletStore } from '../../store/useWalletStore';
-import { useChain } from '../../hooks/useChain';
+import { useChain } from '../../hooks/useChain';           // only for default chain selection
 import { CHAINS, EvmChain } from '../../config/chainRegistry';
 import { covalentGet } from '../../lib/covalent';
 
-// ─────────────────────────────────────────────────────────────
 type AssetChoice = {
   key: string;                 // `${chainId}:${isNative ? 'native' : contract}`
   chainId: number;
@@ -37,8 +37,8 @@ const ERC20_ABI = [
 ];
 
 const CHAIN_FEE_FLOORS: Record<number, { minPriorityGwei: number; minGasGwei: number }> = {
-  80002: { minPriorityGwei: 30, minGasGwei: 30 },
-  137:   { minPriorityGwei: 30, minGasGwei: 30 },
+  80002: { minPriorityGwei: 30, minGasGwei: 30 }, // Polygon Amoy
+  137:   { minPriorityGwei: 30, minGasGwei: 30 }, // Polygon
 };
 const DEFAULT_MIN_PRIORITY_GWEI = 2;
 const DEFAULT_MIN_GAS_GWEI = 2;
@@ -51,8 +51,9 @@ const FEE_TIMEOUT_MS = 1500;
 const MAX_FETCH_MS  = 6500;
 const SOFT_FETCH_MS = 3500;
 
-const ASSET_INDEX_TTL_MS = 10 * 60 * 1000;
+const ASSET_INDEX_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const ASSET_INDEX_KEY = (addr: string) => `assetIndex_v1:${addr.toLowerCase()}`;
+const INVALIDATE_KEY  = (addr: string, cid: number) => `assetsInvalidate:${addr.toLowerCase()}:${cid}`;
 
 const CG_IDS: Record<'ETH' | 'BNB' | 'MATIC', string> = {
   ETH: 'ethereum',
@@ -61,28 +62,32 @@ const CG_IDS: Record<'ETH' | 'BNB' | 'MATIC', string> = {
 };
 
 const gwei = (n: number) => ethers.utils.parseUnits(String(n), 'gwei');
+
 const maskAddr = (a: string) => (a?.startsWith('0x') && a.length >= 10 ? `${a.slice(0,6)}…${a.slice(-4)}` : a);
 const fmt = (n: number, dp = 6) => Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/,'').replace(/\.$/,'') : '…';
 
 function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => T): Promise<T> {
   return new Promise((resolve, reject) => {
     const t = setTimeout(() => { onTimeout ? resolve(onTimeout()) : reject(new Error('timeout')); }, ms);
-    p.then(v => { clearTimeout(t); resolve(v); }).catch(e => { clearTimeout(t); onTimeout ? resolve(onTimeout()) : reject(e); });
+    p.then(v => { clearTimeout(t); resolve(v); })
+     .catch(e => { clearTimeout(t); onTimeout ? resolve(onTimeout()) : reject(e); });
   });
 }
 
 function parseDeepError(e: any): string {
   const tryBodies = [e?.error?.body, e?.body];
   for (const b of tryBodies) {
-    if (typeof b === 'string') { try { const j = JSON.parse(b); const m = j?.error?.message || j?.message; if (m) return String(m); } catch {} }
+    if (typeof b === 'string') {
+      try { const j = JSON.parse(b); const m = j?.error?.message || j?.message; if (m) return String(m); }
+      catch {}
+    }
   }
   return (e?.reason || e?.error?.message || e?.data?.message || e?.message || String(e));
 }
-// ─────────────────────────────────────────────────────────────
 
 const SendTab = () => {
   const { address: fromAddress } = useWalletStore();
-  const { chain: defaultChain } = useChain();
+  const { chain: defaultChain } = useChain(); // default selection
 
   // QR
   const [permission, requestPermission] = useCameraPermissions();
@@ -94,7 +99,7 @@ const SendTab = () => {
   const [amount, setAmount] = useState('');
   const [busyStage, setBusyStage] = useState<null | 'preparing' | 'fee' | 'submitting'>(null);
 
-  // Units
+  // Units (native only)
   const [amountUnit, setAmountUnit] = useState<'token' | 'usd' | 'local'>('token');
 
   // Prices (native only)
@@ -104,16 +109,23 @@ const SendTab = () => {
   const [nativePriceUSD, setNativePriceUSD] = useState(2000);
   const [usdToLocal, setUsdToLocal] = useState(1);
 
-  // Assets
+  // Assets (owned across chains)
   const [assetOptions, setAssetOptions] = useState<AssetChoice[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>('');
-  const selectedAsset = useMemo(() => assetOptions.find(a => a.key === selectedKey) || null, [assetOptions, selectedKey]);
+  const selectedAsset = useMemo(
+    () => assetOptions.find(a => a.key === selectedKey) || null,
+    [assetOptions, selectedKey]
+  );
 
   // Fee preview
   const [feeEstimate, setFeeEstimate] = useState('Enter details');
 
-  // Convenience
-  const activeChain: EvmChain = useMemo(() => selectedAsset?.chain || defaultChain, [selectedAsset, defaultChain]);
+  // Convenience derived values
+  const activeChain: EvmChain = useMemo(
+    () => selectedAsset?.chain || defaultChain,
+    [selectedAsset, defaultChain]
+  );
+
   const floors = useMemo(() => {
     const cid = activeChain.chainId;
     return CHAIN_FEE_FLOORS[cid] || { minPriorityGwei: DEFAULT_MIN_PRIORITY_GWEI, minGasGwei: DEFAULT_MIN_GAS_GWEI };
@@ -135,7 +147,10 @@ const SendTab = () => {
     return wallet.connect(makeProvider());
   };
 
-  const normalizeAddress = (raw: string) => (/^[0-9a-fA-F]{40}$/.test(raw.trim()) ? `0x${raw.trim()}` : raw.trim());
+  const normalizeAddress = (raw: string) => {
+    const t = raw.trim();
+    return /^[0-9a-fA-F]{40}$/.test(t) ? `0x${t}` : t;
+  };
   const isValidAddress = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a);
 
   // ───────────── Asset Index (owned assets across chains) ─────────────
@@ -144,28 +159,29 @@ const SendTab = () => {
       const raw = await AsyncStorage.getItem(ASSET_INDEX_KEY(owner));
       if (raw) {
         const { at, list } = JSON.parse(raw);
-        if (Date.now() - (at || 0) < ASSET_INDEX_TTL_MS && Array.isArray(list)) return list as AssetChoice[];
+        if (Date.now() - (at || 0) < ASSET_INDEX_TTL_MS && Array.isArray(list)) {
+          return list as AssetChoice[];
+        }
       }
     } catch {}
 
     const out: AssetChoice[] = [];
+
     await Promise.allSettled(CHAINS.map(async (c) => {
       const provider = new ethers.providers.StaticJsonRpcProvider(c.rpcUrls[0], { chainId: c.chainId, name: c.name });
 
-      // Native
-      let nativeBalWei = '0';
+      // Native via RPC
       try {
         const bal = await withTimeout(provider.getBalance(owner), SOFT_FETCH_MS, () => ethers.constants.Zero);
-        nativeBalWei = bal.toString();
+        if (!bal.isZero()) {
+          out.push({
+            key: `${c.chainId}:native`,
+            chainId: c.chainId, chain: c, isNative: true,
+            symbol: c.nativeSymbol, name: `${c.nativeSymbol} on ${c.shortName || c.name}`,
+            decimals: 18, balanceWei: bal.toString(), balanceFormatted: ethers.utils.formatEther(bal),
+          });
+        }
       } catch {}
-      if (ethers.BigNumber.from(nativeBalWei).gt(0)) {
-        out.push({
-          key: `${c.chainId}:native`,
-          chainId: c.chainId, chain: c, isNative: true,
-          symbol: c.nativeSymbol, name: `${c.nativeSymbol} on ${c.shortName || c.name}`,
-          decimals: 18, balanceWei: nativeBalWei, balanceFormatted: ethers.utils.formatEther(nativeBalWei),
-        });
-      }
 
       // ERC-20 via Covalent
       try {
@@ -206,15 +222,21 @@ const SendTab = () => {
     })();
   }, [fromAddress, loadAssetIndex, defaultChain.chainId]);
 
-  // Prices (native only)
+  // Rates for native
   useEffect(() => {
     const fetchRates = async () => {
       try {
-        const id = (CG_IDS as any)[NATIVE_SYMBOL] || 'ethereum';
-        const p = await withTimeout(fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`).then(r => r.json()), 3500, () => null);
+        const id = CG_IDS[NATIVE_SYMBOL] || 'ethereum';
+        const p = await withTimeout(
+          fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`).then(r => r.json()),
+          3500, () => null
+        );
         if (p) setNativePriceUSD(p?.[id]?.usd || 2000);
-        const local = await withTimeout(fetch(`https://api.coingecko.com/api/v3/simple/price?ids=usdt&vs_currencies=${localVsParam}`).then(r => r.json()), 3500, () => null);
-        const maybeLocal = Number((local as any)?.usdt?.[localVsParam]);
+        const local = await withTimeout(
+          fetch(`https://api.coingecko.com/api/v3/simple/price?ids=usdt&vs_currencies=${localVsParam}`).then(r => r.json()),
+          3500, () => null
+        );
+        const maybeLocal = Number(local?.usdt?.[localVsParam]);
         setUsdToLocal(Number.isFinite(maybeLocal) && maybeLocal > 0 ? maybeLocal : 1);
       } catch { setUsdToLocal(1); }
     };
@@ -231,26 +253,40 @@ const SendTab = () => {
     (async () => {
       try {
         const provider = makeProvider();
-        const fd = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, () => ({ gasPrice: FALLBACK_GAS_PRICE, maxFeePerGas: null, maxPriorityFeePerGas: null } as any));
+        const fd = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, () => ({
+          gasPrice: FALLBACK_GAS_PRICE, maxFeePerGas: null, maxPriorityFeePerGas: null,
+        } as any));
 
         let gasLim: ethers.BigNumber;
         if (selectedAsset.isNative) {
           const value = parseAmountToWei(amount, selectedAsset, amountUnit, nativePriceUSD, usdToLocal);
-          gasLim = await withTimeout(provider.estimateGas({ to: candidate, value }), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_NATIVE);
+          gasLim = await withTimeout(
+            provider.estimateGas({ to: candidate, value }),
+            FEE_TIMEOUT_MS,
+            () => FALLBACK_GAS_LIMIT_NATIVE
+          );
         } else {
           const signer = (ethers.Wallet.createRandom()).connect(provider);
           const contract = new ethers.Contract(selectedAsset.contract!, ERC20_ABI, signer);
           const value = ethers.utils.parseUnits(amount || '0', selectedAsset.decimals || 18);
-          gasLim = await withTimeout(contract.estimateGas.transfer(candidate, value, {}), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_ERC20);
+          gasLim = await withTimeout(
+            contract.estimateGas.transfer(candidate, value, {}),
+            FEE_TIMEOUT_MS,
+            () => FALLBACK_GAS_LIMIT_ERC20
+          );
         }
 
         let perGas: ethers.BigNumber;
         if (fd.maxFeePerGas && fd.maxPriorityFeePerGas) {
-          let tip = fd.maxPriorityFeePerGas; if (tip.lt(MIN_TIP)) tip = MIN_TIP;
-          let maxFee = fd.maxFeePerGas; const floorMax = tip.mul(2).add(gwei(20)); if (maxFee.lt(floorMax)) maxFee = floorMax;
+          let tip = fd.maxPriorityFeePerGas;
+          if (tip.lt(MIN_TIP)) tip = MIN_TIP;
+          let maxFee = fd.maxFeePerGas;
+          const floorMax = tip.mul(2).add(ethers.utils.parseUnits('20', 'gwei'));
+          if (maxFee.lt(floorMax)) maxFee = floorMax;
           perGas = maxFee;
         } else {
-          let gp = fd.gasPrice ?? FALLBACK_GAS_PRICE; if (gp.lt(MIN_GAS)) gp = MIN_GAS;
+          let gp = fd.gasPrice ?? FALLBACK_GAS_PRICE;
+          if (gp.lt(MIN_GAS)) gp = MIN_GAS;
           perGas = gp;
         }
 
@@ -288,7 +324,7 @@ const SendTab = () => {
     else Alert.alert('Invalid QR', 'Not a valid address.');
   };
 
-  // ───────────── SEND ─────────────
+  // SEND
   const handleSend = async () => {
     const candidate = normalizeAddress(toAddress);
     if (!selectedAsset) return Alert.alert('Error', 'Select an asset to send');
@@ -308,11 +344,13 @@ const SendTab = () => {
 
       // Fee overrides
       setBusyStage('fee');
-      const fd = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, () => ({ gasPrice: FALLBACK_GAS_PRICE, maxFeePerGas: null, maxPriorityFeePerGas: null } as any));
+      const fd = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, () => ({
+        gasPrice: FALLBACK_GAS_PRICE, maxFeePerGas: null, maxPriorityFeePerGas: null,
+      } as any));
       let overrides: any = {};
       if (fd.maxFeePerGas && fd.maxPriorityFeePerGas) {
         let tip = fd.maxPriorityFeePerGas; if (tip.lt(MIN_TIP)) tip = MIN_TIP;
-        let maxFee = fd.maxFeePerGas; const floorMax = tip.mul(2).add(gwei(20)); if (maxFee.lt(floorMax)) maxFee = floorMax;
+        let maxFee = fd.maxFeePerGas; const floorMax = tip.mul(2).add(ethers.utils.parseUnits('20','gwei')); if (maxFee.lt(floorMax)) maxFee = floorMax;
         overrides.maxPriorityFeePerGas = tip; overrides.maxFeePerGas = maxFee;
       } else {
         let gp = fd.gasPrice ?? FALLBACK_GAS_PRICE; if (gp.lt(MIN_GAS)) gp = MIN_GAS;
@@ -344,8 +382,6 @@ const SendTab = () => {
                   effectiveFeeNative = parseFloat(ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice)));
 
                   await afterSuccessUpdateCaches(fromAddress!, selectedAsset, valueBN, effectiveFeeNative, txHash, candidate, true, activeChain, EXPLORER_BASE, NATIVE_SYMBOL);
-
-                  setToAddress(''); setAmount(''); setAmountUnit('token'); setFeeEstimate('Enter details');
                 } catch (e: any) { onSendError(e); }
               },
             },
@@ -366,8 +402,6 @@ const SendTab = () => {
       effectiveFeeNative = parseFloat(ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice)));
 
       await afterSuccessUpdateCaches(fromAddress!, selectedAsset, valueBN, effectiveFeeNative, txHash, candidate, false, activeChain, EXPLORER_BASE, NATIVE_SYMBOL);
-
-      setToAddress(''); setAmount(''); setAmountUnit('token'); setFeeEstimate('Enter details');
     } catch (e: any) { onSendError(e); }
   };
 
@@ -385,7 +419,7 @@ const SendTab = () => {
   ) {
     setBusyStage(null);
 
-    // Log into localTxs so sender History shows instantly (native only affects value)
+    // localTxs for History
     const localTx = {
       hash: txHash,
       from: owner,
@@ -400,7 +434,10 @@ const SendTab = () => {
     lst.push(localTx);
     await AsyncStorage.setItem('localTxs', JSON.stringify(lst));
 
-    // 🔹 Optimistically decrement local AssetIndex cache (so balances drop immediately)
+    // 🔔 invalidate Wallet balances for this chain (fast refresh)
+    await AsyncStorage.setItem(INVALIDATE_KEY(owner, activeChain.chainId), String(Date.now()));
+
+    // Optimistically decrement AssetIndex cache (so picker shows updated balances)
     try {
       const key = ASSET_INDEX_KEY(owner);
       const raw = await AsyncStorage.getItem(key);
@@ -411,7 +448,6 @@ const SendTab = () => {
         if (idx >= 0) {
           let cur = ethers.BigNumber.from(list[idx].balanceWei || '0');
           if (isNative) {
-            // native: deduct value + fee
             cur = cur.sub(valueBN).sub(ethers.utils.parseEther(String(feeNative)));
           } else {
             cur = cur.sub(valueBN);
@@ -422,7 +458,6 @@ const SendTab = () => {
             ? ethers.utils.formatEther(cur)
             : ethers.utils.formatUnits(cur, asset.decimals || 18);
           await AsyncStorage.setItem(key, JSON.stringify({ at: Date.now(), list }));
-          // also update state so picker balance updates immediately
           setAssetOptions(list.slice());
         }
       }
@@ -450,7 +485,13 @@ const SendTab = () => {
       ]
     );
 
-    // refresh asset index asynchronously for accuracy
+    // reset form
+    setToAddress('');
+    setAmount('');
+    setAmountUnit('token');
+    setFeeEstimate('Enter details');
+
+    // refresh asset index asynchronously
     loadAssetIndex(owner).then(setAssetOptions).catch(()=>{});
   }
 
@@ -471,6 +512,7 @@ const SendTab = () => {
         : amountUnit === 'usd' ? 'Enter USD Amount'
         : `Enter ${localCode} Amount`)
       : `Enter ${selectedAsset?.symbol || 'TOKEN'} Amount`;
+
   const disableUsdLocal = !selectedAsset?.isNative;
 
   const pickerOptions = useMemo(() => {
@@ -480,7 +522,9 @@ const SendTab = () => {
     }));
   }, [assetOptions]);
 
-  useEffect(() => { if (showScanner && !permission?.granted) requestPermission(); }, [showScanner, permission, requestPermission]);
+  useEffect(() => {
+    if (showScanner && !permission?.granted) requestPermission();
+  }, [showScanner, permission, requestPermission]);
 
   return (
     <View style={styles.container}>
@@ -503,10 +547,14 @@ const SendTab = () => {
       </View>
       <View style={styles.separator} />
 
-      {/* Asset picker */}
+      {/* Asset picker (owned assets across all chains) */}
       <View style={styles.section}>
         <Text style={styles.label}>What crypto currency would you like to send:</Text>
-        <Picker selectedValue={selectedKey} onValueChange={(val) => setSelectedKey(String(val))} style={styles.picker as any}>
+        <Picker
+          selectedValue={selectedKey}
+          onValueChange={(val) => setSelectedKey(String(val))}
+          style={styles.picker as any}
+        >
           {pickerOptions.length === 0
             ? <Picker.Item label="No assets with balance" value="" />
             : pickerOptions.map(opt => <Picker.Item key={opt.value} label={opt.label} value={opt.value} />)}
@@ -518,25 +566,47 @@ const SendTab = () => {
       <View style={styles.section}>
         <Text style={styles.label}>How much do you want to send:</Text>
         <View style={styles.unitRow}>
-          <TouchableOpacity style={amountUnit === 'token' ? styles.unitButtonActive : styles.unitButton} onPress={() => setAmountUnit('token')}>
+          <TouchableOpacity
+            style={amountUnit === 'token' ? styles.unitButtonActive : styles.unitButton}
+            onPress={() => setAmountUnit('token')}
+          >
             <Text style={amountUnit === 'token' ? styles.unitTextActive : styles.unitText}>
               {selectedAsset?.isNative ? NATIVE_SYMBOL : (selectedAsset?.symbol || 'TOKEN')}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity disabled={disableUsdLocal} style={(amountUnit === 'usd' && !disableUsdLocal) ? styles.unitButtonActive : styles.unitButtonDisabled} onPress={() => !disableUsdLocal && setAmountUnit('usd')}>
+
+          <TouchableOpacity
+            disabled={disableUsdLocal}
+            style={(amountUnit === 'usd' && !disableUsdLocal) ? styles.unitButtonActive : styles.unitButtonDisabled}
+            onPress={() => !disableUsdLocal && setAmountUnit('usd')}
+          >
             <Text style={(amountUnit === 'usd' && !disableUsdLocal) ? styles.unitTextActive : styles.unitTextDisabled}>USD</Text>
           </TouchableOpacity>
-          <TouchableOpacity disabled={disableUsdLocal} style={(amountUnit === 'local' && !disableUsdLocal) ? styles.unitButtonActive : styles.unitButtonDisabled} onPress={() => !disableUsdLocal && setAmountUnit('local')}>
-            <Text style={(amountUnit === 'local' && !disableUsdLocal) ? styles.unitTextActive : styles.unitTextDisabled}>{localCode}</Text>
+
+          <TouchableOpacity
+            disabled={disableUsdLocal}
+            style={(amountUnit === 'local' && !disableUsdLocal) ? styles.unitButtonActive : styles.unitButtonDisabled}
+            onPress={() => !disableUsdLocal && setAmountUnit('local')}
+          >
+            <Text style={(amountUnit === 'local' && !disableUsdLocal) ? styles.unitTextActive : styles.unitTextDisabled}>
+              {localCode}
+            </Text>
           </TouchableOpacity>
         </View>
 
-        <TextInput style={styles.amountInput} placeholder={amountPlaceholder} value={amount} onChangeText={setAmount} keyboardType="numeric" />
+        <TextInput
+          style={styles.amountInput}
+          placeholder={amountPlaceholder}
+          value={amount}
+          onChangeText={setAmount}
+          keyboardType="numeric"
+        />
+
         <Text style={styles.feeInline}>Check entries carefully before sending payments, the estimated fee is: {feeEstimate}</Text>
       </View>
       <View style={styles.separator} />
 
-      {/* Send */}
+      {/* send */}
       <View style={styles.section}>
         <TouchableOpacity style={styles.sendButton} onPress={handleSend} disabled={!selectedAsset}>
           <Text style={styles.sendButtonText}>SEND PAYMENT</Text>
@@ -587,18 +657,14 @@ const SendTab = () => {
   );
 };
 
-// ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, padding: 16, backgroundColor: '#fff' },
   section: { marginBottom: 16 },
   separator: { height: 1, backgroundColor: '#E6E6E6', marginVertical: 8 },
   label: { fontSize: 16, fontWeight: 'bold', marginBottom: 8, color: '#111' },
-
   addressRow: { flexDirection: 'row', alignItems: 'center' },
   input: { flex: 1, borderWidth: 1, padding: 10, borderColor: '#ddd', marginRight: 8, borderRadius: 8 },
-
   picker: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8 },
-
   unitRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 8 },
   unitButton: { paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#f3f4f6', borderRadius: 20 },
   unitButtonActive: { paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#0A84FF', borderRadius: 20 },
@@ -606,22 +672,17 @@ const styles = StyleSheet.create({
   unitText: { color: '#0A84FF', fontWeight: 'bold' },
   unitTextActive: { color: '#fff', fontWeight: 'bold' },
   unitTextDisabled: { color: '#9ca3af', fontWeight: 'bold' },
-
   amountInput: { borderWidth: 1, padding: 10, borderColor: '#ddd', borderRadius: 8, height: 44 },
   feeInline: { marginTop: 8, color: '#f70808ff', fontWeight: '600' },
-
   sendButton: { backgroundColor: '#0A84FF', padding: 14, borderRadius: 10, alignItems: 'center' },
   sendButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-
   qrBtn: { backgroundColor: '#0A84FF', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8 },
   qrText: { color: '#fff', fontWeight: 'bold' },
-
   scannerContainer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'black', justifyContent: 'center', alignItems: 'center' },
   camera: { flex: 1, width: '100%' },
   closeButton: { position: 'absolute', top: 40, right: 20, backgroundColor: 'white', padding: 10, borderRadius: 5 },
   closeText: { color: 'black' },
   scanAgainButton: { backgroundColor: 'white', padding: 10, borderRadius: 5, marginTop: 20 },
-
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
 });
 

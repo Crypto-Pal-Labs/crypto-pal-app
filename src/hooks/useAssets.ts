@@ -5,245 +5,254 @@ import * as ethers from "ethers";
 import { useChain } from "../hooks/useChain";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Localization from "expo-localization";
-import { Alert } from "react-native";
-import { covalent } from "../lib/covalent";
-import { getExtra } from "../config/extra";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { covalentGet } from "../lib/covalent";
 
-interface CovalentItem {
-  contract_ticker_symbol?: string;
-  balance: string;
-  quote?: number;
-  logo_url?: string;
-  type: string;
-  contract_address?: string;
-  nft_data?: any[];
-  contract_name?: string;
-  contract_decimals?: number;
-}
-
-export type BalanceItem = {
+type BalanceItem = {
   contract_ticker_symbol: string;
-  balance: string;
-  quoteLocal: number;
-  quoteUsd: number;
-  logo_url: string;
+  balance: string;                // base units (token decimals)
+  quoteLocal?: number;            // local fiat (approx)
+  quoteUsd?: number;              // USD fiat (approx)
+  logo_url?: string;
+  contract_address?: string;
+  contract_decimals?: number;
+  contract_name?: string;
 };
 
-export type NFTItem = {
-  token_id: string;
-  token_balance: string;
-  contract_name: string;
-  contract_address: string;
-  logo_url: string;
+type UseAssetsResult = {
+  balances: BalanceItem[];
+  nfts: any[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => void;
 };
 
-export const useAssets = () => {
+const ERC20_ABI = [
+  "function balanceOf(address) view returns (uint256)",
+  "function decimals() view returns (uint8)",
+  "function symbol() view returns (string)",
+];
+
+// Sticky cache from HistoryTab (contains recent token contracts seen)
+const RX_CACHE_KEY = (addr: string) => `rxCache_v1:${addr.toLowerCase()}`;
+const INVALIDATE_KEY = (addr: string, chainId: number) => `assetsInvalidate:${addr.toLowerCase()}:${chainId}`;
+
+const CG_IDS: Record<"ETH" | "BNB" | "MATIC", string> = {
+  ETH: "ethereum",
+  BNB: "binancecoin",
+  MATIC: "matic-network",
+};
+
+export function useAssets(): UseAssetsResult {
   const address = useWalletStore((s) => s.address);
   const { chain } = useChain();
-  const [balances, setBalances] = useState<BalanceItem[]>([]);
-  const [nfts, setNfts] = useState<NFTItem[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const isActiveRef = useRef(true);
 
-  const EXTRA = getExtra();
-  const HAS_AUTH =
-    typeof EXTRA?.COVALENT_AUTH_B64 === "string" &&
-    EXTRA.COVALENT_AUTH_B64.length > 10;
+  const [balances, setBalances] = useState<BalanceItem[]>([]);
+  const [nfts] = useState<any[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isActiveRef = useRef<boolean>(false);
+  const lastInvalidateRef = useRef<string | null>(null);
 
   const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
-  const localCurrency = (locale.currencyCode || "usd").toLowerCase();
+  const localCurrency = (locale.currencyCode || "USD").toUpperCase();
+  const localVs = localCurrency.toLowerCase();
 
-  const RPC_URL = chain.rpcUrls[0] || "";
+  const RPC_URL = chain.rpcUrls?.[0] || "";
 
-  // ---- simple helpers ----
-  const retryFetch = async (fn: () => Promise<any>, retries = 3, delay = 5000) => {
-    for (let attempt = 1; attempt <= retries; attempt++) {
+  const fetchPrices = useCallback(async (sym: "ETH" | "BNB" | "MATIC") => {
+    try {
+      const id = CG_IDS[sym] || "ethereum";
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd,${localVs}`;
+      const j = await fetch(url).then((r) => r.json());
+      const usd = Number(j?.[id]?.usd || 0);
+      const local = Number(j?.[id]?.[localVs] || 0);
+      return { usd, local };
+    } catch {
+      return { usd: 0, local: 0 };
+    }
+  }, [localVs]);
+
+  // Merge RPC token balances for contracts seen in recent History (receiver immediacy)
+  const mergeRpcTokenBalances = useCallback(async (owner: string, list: BalanceItem[]) => {
+    if (!owner || !RPC_URL) return list;
+    const provider = new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: chain.chainId, name: chain.name });
+
+    // collect contracts from sticky cache for this chain
+    let contracts: string[] = [];
+    try {
+      const raw = await AsyncStorage.getItem(RX_CACHE_KEY(owner));
+      if (raw) {
+        const arr = JSON.parse(raw) as any[];
+        const set = new Set<string>();
+        for (const t of arr) {
+          if (t?.isToken && Number(t.chainId) === Number(chain.chainId) && t?.tokenContract) {
+            set.add(String(t.tokenContract).toLowerCase());
+          }
+        }
+        contracts = Array.from(set).slice(0, 40);
+      }
+    } catch {}
+
+    const byAddr = new Map<string, BalanceItem>();
+    list.forEach((b) => {
+      if (b.contract_address) byAddr.set(b.contract_address.toLowerCase(), b);
+    });
+
+    for (const ct of contracts) {
+      if (!ct || byAddr.has(ct)) continue;
       try {
-        return await fn();
-      } catch (err: any) {
-        console.warn(`Retry attempt ${attempt} failed:`, err?.message || err);
-        if (attempt === retries) throw err;
-        await new Promise((r) => setTimeout(r, delay));
-      }
-    }
-  };
+        const erc20 = new ethers.Contract(ct, ERC20_ABI, provider);
+        const [bal, symR, decR] = await Promise.all([
+          erc20.balanceOf(owner),
+          erc20.symbol().catch(() => "TOKEN"),
+          erc20.decimals().catch(() => 18),
+        ]);
+        if (!bal || bal.isZero()) continue;
+        const sym = String(symR || "TOKEN");
+        const dec = Number(decR) || 18;
 
-  const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout = 10000) => {
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), timeout);
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    clearTimeout(id);
-    return response;
-  };
-
-  // ---- CoinGecko price map used in both main and fallback paths ----
-  const tickerToIdMap = {
-    ETH: "ethereum",
-    USDC: "usd-coin",
-    BNB: "binancecoin",
-    MATIC: "matic-network",
-  } as const;
-
-  const loadCgPrices = async (symbols: string[]) => {
-    const ids = [
-      ...new Set(
-        symbols
-          .map((sym) => tickerToIdMap[sym as keyof typeof tickerToIdMap] || "")
-          .filter(Boolean)
-      ),
-    ];
-    if (ids.length === 0) return {};
-    const vsCurrencies = `usd,${localCurrency}`;
-    const priceUrl = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(
-      ","
-    )}&vs_currencies=${vsCurrencies}`;
-    const priceResp = await fetchWithTimeout(priceUrl);
-    if (!priceResp.ok) return {};
-    return priceResp.json();
-  };
-
-  // ---- Fallback for chains where Covalent isn't supported (e.g., Polygon Amoy) ----
-  const fetchAssetsFallback = async () => {
-    if (!address) {
-      setError("No wallet address found.");
-      setLoading(false);
-      return;
-    }
-
-    try {
-      const provider = new ethers.providers.StaticJsonRpcProvider(RPC_URL, {
-        chainId: chain.chainId,
-        name: chain.name,
-      });
-      const wei = await provider.getBalance(address);
-      const symbol = chain.nativeSymbol;
-      const prices = await loadCgPrices([symbol]);
-      const id = tickerToIdMap[symbol as keyof typeof tickerToIdMap] || "";
-      const parsed = Number(ethers.utils.formatUnits(wei, 18)) || 0;
-      const quoteLocal = parsed * (prices?.[id]?.[localCurrency] ?? 0);
-      const quoteUsd = parsed * (prices?.[id]?.usd ?? 0);
-
-      const nativeRow: BalanceItem = {
-        contract_ticker_symbol: symbol,
-        balance: wei.toString(),
-        quoteLocal,
-        quoteUsd,
-        logo_url: "https://placeholder.com/40x40", // optional: add chain logo later
-      };
-
-      setBalances(parsed > 0 ? [nativeRow] : []); // only native balance for fallback
-      setNfts([]); // NFTs unsupported via fallback
-      setError(null);
-    } catch (e: any) {
-      setError(e?.message || "RPC error while loading balance.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchAssetsInternal = async () => {
-    if (!isActiveRef.current) return;
-
-    if (!address) {
-      setError("No wallet address found.");
-      setLoading(false);
-      return;
-    }
-
-    // If Covalent isn't supported for this chain → use fallback immediately
-    if (chain.covalentSupported === false) {
-      await fetchAssetsFallback();
-      return;
-    }
-
-    if (!HAS_AUTH) {
-      setError("Covalent auth missing in build. Check EXPO_PUBLIC_COVALENT_KEY.");
-      setLoading(false);
-      Alert.alert("Config Error", "Covalent auth missing in build.");
-      return;
-    }
-
-    setError(null);
-    try {
-      await retryFetch(async () => {
-        const data = await covalent.balances(chain.covalentChainId, address, { includeNft: true });
-        const items: CovalentItem[] = data?.data?.items || [];
-
-        const tempBalances = items.filter((i) => i.type !== "nft" && i.balance !== "0");
-        const nftItems =
-          items
-            .filter((i) => i.type === "nft" && (i.nft_data?.length ?? 0) > 0)
-            .flatMap((i) =>
-              (i.nft_data || []).map((nft) => ({
-                token_id: nft.token_id,
-                token_balance: nft.token_balance,
-                contract_name: i.contract_name || "Unknown",
-                contract_address: i.contract_address || "",
-                logo_url: nft.token_url || i.logo_url || "https://placeholder.com/40x40",
-              }))
-            ) || [];
-
-        setNfts(nftItems);
-
-        const prices = await loadCgPrices(
-          tempBalances.map((i) => (i.contract_ticker_symbol || "").toUpperCase())
-        );
-
-        const pricedBalances = tempBalances.map((i) => {
-          const ticker = (i.contract_ticker_symbol || "").toUpperCase();
-          const id = tickerToIdMap[ticker as keyof typeof tickerToIdMap] || "";
-          const decimals = i.contract_decimals ?? 18;
-          const parsed = Number(ethers.utils.formatUnits(i.balance || "0", decimals)) || 0;
-          const quoteLocal = parsed * (prices?.[id]?.[localCurrency] ?? 0);
-          const quoteUsd = parsed * (prices?.[id]?.usd ?? 0);
-          return {
-            contract_ticker_symbol: i.contract_ticker_symbol || "Unknown",
-            balance: i.balance || "0",
-            quoteLocal,
-            quoteUsd,
-            logo_url: i.logo_url || "https://placeholder.com/40x40",
-          };
+        list.push({
+          contract_ticker_symbol: sym.toUpperCase(),
+          balance: bal.toString(),
+          quoteLocal: 0,
+          quoteUsd: 0,
+          logo_url: "https://placeholder.com/40x40",
+          contract_address: ct,
+          contract_decimals: dec,
+          contract_name: undefined,
         });
-
-        setBalances(pricedBalances);
-      });
-    } catch (err: any) {
-      const msg = String(err?.message || err);
-      // If Covalent replies "not supported", silently fallback to RPC
-      if (msg.includes("not supported") || msg.includes("501")) {
-        await fetchAssetsFallback();
-        return;
+      } catch {
+        // ignore single token errors
       }
-      setError(msg);
-      Alert.alert("Load Error", `Failed to load assets: ${msg}. Pull to refresh.`);
-    } finally {
-      setLoading(false);
     }
-  };
+    return list;
+  }, [RPC_URL, chain.chainId, chain.name]);
 
-  const debounce = (fn: () => void, ms: number) => {
-    let timeout: any = null;
-    return () => {
-      if (timeout) clearTimeout(timeout);
-      timeout = setTimeout(fn, ms);
-    };
-  };
-  const debouncedFetch = debounce(fetchAssetsInternal, 500);
+  const fetchAssetsInternal = useCallback(async () => {
+    if (!address || !chain) return;
+    setLoading(true); setError(null);
+    try {
+      const owner = address.toLowerCase();
+
+      // 1) Covalent balances
+      const url = `https://api.covalenthq.com/v1/${chain.covalentChainId}/address/${owner}/balances_v2/?quote-currency=USD&nft=false&no-nft-fetch=true`;
+      const json = await covalentGet(url);
+      const items: any[] = json?.data?.items || [];
+
+      // Map covalent items -> BalanceItem (only non-zero)
+      let list: BalanceItem[] = [];
+      for (const it of items) {
+        const balStr = String(it?.balance || "0");
+        if (!balStr || balStr === "0") continue;
+
+        const ca = String(it?.contract_address || "").toLowerCase();
+        // Skip null/placeholder address
+        if (ca === "0x0000000000000000000000000000000000000000") continue;
+
+        const sym = String(it?.contract_ticker_symbol || "TOKEN").toUpperCase();
+        const dec = Number(it?.contract_decimals ?? 18);
+        const quote_rate = Number(it?.quote_rate || 0);
+        const logo = it?.logo_url || null;
+
+        // Covalent 'quote' often in USD (balance * quote_rate)
+        const qty = Number(ethers.utils.formatUnits(balStr, Number.isFinite(dec) ? dec : 18)) || 0;
+        const quoteUsd = quote_rate ? qty * quote_rate : 0;
+
+        list.push({
+          contract_ticker_symbol: sym,
+          balance: balStr,
+          quoteUsd,
+          // local will be filled later for native; tokens left 0 here (unless we add CG map later)
+          quoteLocal: 0,
+          logo_url: logo || undefined,
+          contract_address: ca || undefined,
+          contract_decimals: Number.isFinite(dec) ? dec : 18,
+          contract_name: it?.contract_name || undefined,
+        });
+      }
+
+      // 2) Ensure native balance via RPC (authoritative & immediate)
+      try {
+        const provider = new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: chain.chainId, name: chain.name });
+        const nativeBal = await provider.getBalance(owner);
+        const nativeIndex = list.findIndex(
+          (b) => !b.contract_address || b.contract_ticker_symbol === chain.nativeSymbol
+        );
+        const nativeRow: BalanceItem = {
+          contract_ticker_symbol: chain.nativeSymbol,
+          balance: nativeBal.toString(),
+          logo_url: "https://placeholder.com/40x40",
+          quoteLocal: 0,
+          quoteUsd: 0,
+          contract_address: undefined,
+          contract_decimals: 18,
+          contract_name: chain.nativeSymbol,
+        };
+        if (nativeIndex >= 0) list[nativeIndex] = nativeRow; else list.unshift(nativeRow);
+      } catch {
+        // ignore RPC native errors
+      }
+
+      // 3) Merge tokens from RPC for contracts seen in recent History
+      list = await mergeRpcTokenBalances(owner, list);
+
+      // 4) Compute pricing for native (USD + local)
+      const px = await fetchPrices(chain.nativeSymbol as "ETH" | "BNB" | "MATIC");
+      list = list.map((b) => {
+        if (b.contract_ticker_symbol === chain.nativeSymbol) {
+          const qty = Number(ethers.utils.formatUnits(b.balance, 18)) || 0;
+          return { ...b, quoteUsd: qty * (px.usd || 0), quoteLocal: qty * (px.local || 0) };
+        }
+        return b;
+      });
+
+      // 5) Sort by fiat value desc, fallback to symbol
+      list.sort((a, b) => (b.quoteUsd || 0) - (a.quoteUsd || 0) || (b.quoteLocal || 0) - (a.quoteLocal || 0) || (a.contract_ticker_symbol || "").localeCompare(b.contract_ticker_symbol || ""));
+
+      if (isActiveRef.current) setBalances(list);
+    } catch (e: any) {
+      if (isActiveRef.current) setError(String(e?.message || e));
+    } finally {
+      if (isActiveRef.current) setLoading(false);
+    }
+  }, [address, chain, RPC_URL, fetchPrices, mergeRpcTokenBalances]);
+
+  const debouncedFetch = useCallback(() => {
+    fetchAssetsInternal();
+  }, [fetchAssetsInternal]);
 
   useFocusEffect(
     useCallback(() => {
+      if (!address) return;
       isActiveRef.current = true;
       debouncedFetch();
-      const interval = setInterval(() => {
+
+      // slow periodic refresh
+      const slow = setInterval(() => {
         if (!loading && isActiveRef.current) debouncedFetch();
       }, 10000);
+
+      // watch invalidation bumps (fast)
+      const invKey = INVALIDATE_KEY(address, chain.chainId);
+      const fast = setInterval(async () => {
+        try {
+          const bump = await AsyncStorage.getItem(invKey);
+          if (bump && bump !== lastInvalidateRef.current) {
+            lastInvalidateRef.current = bump;
+            fetchAssetsInternal();
+          }
+        } catch {}
+      }, 1500);
+
       return () => {
         isActiveRef.current = false;
-        clearInterval(interval);
+        clearInterval(slow);
+        clearInterval(fast);
       };
-    }, [chain.covalentChainId, chain.covalentSupported, chain.rpcUrls, address])
+    }, [address, chain.chainId, debouncedFetch, fetchAssetsInternal, loading])
   );
 
   return { balances, nfts, loading, error, refresh: debouncedFetch };
-};
+}
