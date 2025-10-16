@@ -1,3 +1,4 @@
+// src/screens/HistoryTab.tsx
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   View, Text, ActivityIndicator, FlatList, StyleSheet, Linking,
@@ -18,8 +19,7 @@ type TxItem = {
   timestamp: string;
   from: string;
   to: string;
-  // Native amount (wei) if native; "0" for pure token rows
-  valueWei: string;
+  valueWei: string; // native value if native row; "0" for token rows
   gasUsed?: string | number | null;
   gasPrice?: string | number | null;
   feesPaidWei?: string | number | null;
@@ -28,12 +28,12 @@ type TxItem = {
   explorerBase: string;
   nativeSymbol: "ETH" | "BNB" | "MATIC";
   _source?: "covalent" | "rpc" | "explorer" | "sticky" | "erc20_rpc" | "erc20_covalent";
-  // ── ERC-20 extras (present if token row) ──
+  // token extras
   isToken?: boolean;
   tokenSymbol?: string;
   tokenDecimals?: number;
   tokenContract?: string;
-  tokenValueUnits?: string; // human units string
+  tokenValueUnits?: string;
   direction?: "IN" | "OUT";
 };
 
@@ -56,14 +56,13 @@ const maskAddr = (a: string) =>
 const fmt = (n: number, dp = 6) =>
   Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/, "").replace(/\.$/, "") : "—";
 
-// ---- tuning knobs ----
+// ---- tuning ----
 const COVALENT_PAGE_SIZE = 100;
 const RPC_LOOKBACK_BLOCKS = 12;
 const INITIAL_RPC_LOOKBACK_BLOCKS = 24;
 const RX_CACHE_TTL_MS = 30 * 60 * 1000;
 const RPC_POLL_SCHEDULE_MS = [0, 3000, 8000, 15000];
 
-// Timeouts
 const MAX_FETCH_MS = 6500;
 const SOFT_FETCH_MS = 3500;
 
@@ -98,10 +97,9 @@ export default function HistoryTab() {
   const pollTimersRef = useRef<NodeJS.Timeout[]>([]);
   const cancelledRef = useRef<boolean>(false);
 
-  // cache for ERC-20 meta (symbol/decimals) per chain+contract (memory only)
   const erc20MetaRef = useRef<Map<string, { symbol: string; decimals: number }>>(new Map());
 
-  // ---- prices (non-blocking) ----
+  // prices
   const loadPrices = useCallback(async () => {
     try {
       const ids = Array.from(new Set(chains.map((c) => PRICE_IDS[c.nativeSymbol])));
@@ -122,7 +120,7 @@ export default function HistoryTab() {
     } catch {}
   }, [chains, localCurrency]);
 
-  // ---- helpers ----
+  // helpers
   const toNativeTxItems = (raw: any[], c: EvmChain, source: TxItem["_source"]): TxItem[] =>
     (raw || []).map((t: any) => ({
       hash: t.tx_hash || t.hash || "",
@@ -143,10 +141,8 @@ export default function HistoryTab() {
       _source: source,
     }));
 
-  const toTokenItemsFromCovalent = (raw: any[], c: EvmChain): TxItem[] => {
-    // Expect items with fields: tx_hash, block_signed_at, from_address, to_address, delta (string),
-    // contract_decimals, contract_ticker_symbol, contract_address, transfer_type ("IN"/"OUT")
-    return (raw || []).map((t: any) => {
+  const toTokenItemsFromCovalent = (raw: any[], c: EvmChain): TxItem[] =>
+    (raw || []).map((t: any) => {
       const dec = Number(t.contract_decimals ?? 18);
       const rawUnits = String(t.delta || "0");
       const units = ethers.utils.formatUnits(rawUnits, Number.isFinite(dec) ? dec : 18);
@@ -160,7 +156,7 @@ export default function HistoryTab() {
         chainId: c.chainId,
         explorerBase: c.explorerBase,
         nativeSymbol: c.nativeSymbol,
-        _source: "erc20_covalent" as const,
+        _source: "erc20_covalent",
         isToken: true,
         tokenSymbol: String(t.contract_ticker_symbol || "TOKEN"),
         tokenDecimals: Number.isFinite(dec) ? dec : 18,
@@ -169,19 +165,16 @@ export default function HistoryTab() {
         direction: String(t.transfer_type || "").toUpperCase() === "IN" ? "IN" : "OUT",
       };
     });
-  };
 
   const amountKey = (t: TxItem) => t.isToken ? `${t.tokenContract}:${t.tokenValueUnits}` : t.valueWei;
 
   const mergeAndSort = (lists: TxItem[][]): TxItem[] => {
-    // NOTE: allow multiple rows per tx when different token transfers occur
     const map = new Map<string, TxItem>();
     for (const list of lists) {
       for (const t of list) {
         if (!t.hash) continue;
         const uniq = `${t.hash}:${t.chainId}:${t.isToken ? (t.tokenContract || "token") : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
         const prev = map.get(uniq);
-        // prefer Covalent entries over RPC synthesized ones
         if (!prev) map.set(uniq, t);
         else if ((prev._source || "").includes("rpc") && (t._source || "").includes("covalent")) map.set(uniq, t);
       }
@@ -191,7 +184,7 @@ export default function HistoryTab() {
     );
   };
 
-  // ---- sticky cache ----
+  // sticky
   const loadRxCache = useCallback(async (owner: string) => {
     try {
       const raw = await AsyncStorage.getItem(RX_CACHE_KEY(owner));
@@ -199,92 +192,50 @@ export default function HistoryTab() {
       const now = Date.now();
       const arr: TxItem[] = JSON.parse(raw);
       return arr.filter((t) => now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS);
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   }, []);
 
-  const safeSaveRxCache = useCallback(
-    async (owner: string, nextList: TxItem[]) => {
-      try {
-        if (!nextList || nextList.length === 0) return;
-        const existing = await loadRxCache(owner);
-        const now = Date.now();
-        const map = new Map<string, TxItem>();
-        for (const t of existing) {
-          if (now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS) {
-            const key = `${t.hash}:${t.chainId}:${t.isToken ? t.tokenContract : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
-            map.set(key, { ...t, _source: "sticky" as const });
-          }
-        }
-        for (const t of nextList) {
+  const safeSaveRxCache = useCallback(async (owner: string, nextList: TxItem[]) => {
+    try {
+      if (!nextList || nextList.length === 0) return;
+      const existing = await loadRxCache(owner);
+      const now = Date.now();
+      const map = new Map<string, TxItem>();
+      for (const t of existing) {
+        if (now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS) {
           const key = `${t.hash}:${t.chainId}:${t.isToken ? t.tokenContract : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
           map.set(key, { ...t, _source: "sticky" as const });
         }
-        const merged = Array.from(map.values()).slice(0, 200);
-        await AsyncStorage.setItem(RX_CACHE_KEY(owner), JSON.stringify(merged));
-      } catch {}
-    },
-    [loadRxCache]
-  );
+      }
+      for (const t of nextList) {
+        const key = `${t.hash}:${t.chainId}:${t.isToken ? t.tokenContract : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
+        map.set(key, { ...t, _source: "sticky" as const });
+      }
+      const merged = Array.from(map.values()).slice(0, 200);
+      await AsyncStorage.setItem(RX_CACHE_KEY(owner), JSON.stringify(merged));
+    } catch {}
+  }, [loadRxCache]);
 
-  // ---- Covalent (native txs) ----
+  // covalent (native)
   const fetchChainTx = async (c: EvmChain, owner: string, soft: boolean) => {
-    const url =
-      `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}` +
-      `/transactions_v3/?no-logs=true&page-size=${COVALENT_PAGE_SIZE}`;
+    const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/transactions_v3/?no-logs=true&page-size=${COVALENT_PAGE_SIZE}`;
     try {
       const json = await withTimeout(covalentGet(url), soft ? SOFT_FETCH_MS : MAX_FETCH_MS, () => ({ data: { items: [] } } as any));
       return toNativeTxItems((json as any)?.data?.items ?? [], c, "covalent");
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   };
 
-  // ---- Covalent (ERC-20 transfers) ----
+  // covalent (erc20)
   const fetchTokenTransfers = async (c: EvmChain, owner: string, soft: boolean): Promise<TxItem[]> => {
     const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/transfers_v3/?contract-address=all&no-logs=false&page-size=${COVALENT_PAGE_SIZE}`;
     try {
       const json = await withTimeout(covalentGet(url), soft ? SOFT_FETCH_MS : MAX_FETCH_MS, () => ({ data: { items: [] } } as any));
       const items: any[] = (json as any)?.data?.items || [];
       return toTokenItemsFromCovalent(items, c);
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   };
 
-  // ---- Explorer fallback (unchanged; native only) ----
-  const ETHERSCAN_KEY = process.env.EXPO_PUBLIC_ETHERSCAN_API_KEY || "";
-  const POLYGONSCAN_KEY = process.env.EXPO_PUBLIC_POLYGONSCAN_API_KEY || "";
-  const BSCSCAN_KEY = process.env.EXPO_PUBLIC_BSCSCAN_API_KEY || "";
-
-  function explorerApiBase(c: EvmChain): string | null {
-    if (c.nativeSymbol === "ETH" && c.testnet) return "https://api-sepolia.etherscan.io/api";
-    if (c.nativeSymbol === "MATIC" && c.testnet) return "https://api-amoy.polygonscan.com/api";
-    if (c.nativeSymbol === "BNB" && c.testnet) return "https://api-testnet.bscscan.com/api";
-    return null;
-  }
-
-  const fetchExplorerTxs = async (c: EvmChain, owner: string): Promise<TxItem[]> => {
-    const base = explorerApiBase(c);
-    if (!base) return [];
-    const apiKey =
-      c.nativeSymbol === "ETH" ? ETHERSCAN_KEY :
-      c.nativeSymbol === "MATIC" ? POLYGONSCAN_KEY :
-      c.nativeSymbol === "BNB" ? BSCSCAN_KEY : "";
-    if (!apiKey) return [];
-    const url = `${base}?module=account&action=txlist&address=${owner}&sort=desc&page=1&offset=100&apikey=${apiKey}`;
-    try {
-      const json = await withTimeout(fetch(url).then((r) => r.json()), MAX_FETCH_MS, () => ({ status: "0" } as any));
-      const ok = String((json as any)?.status || "0") === "1";
-      if (!ok) return [];
-      return toNativeTxItems((json as any).result || [], c, "explorer");
-    } catch {
-      return [];
-    }
-  };
-
-  // ---- RPC supplement: native incoming (existing) ----
+  // rpc native incoming
   async function rpcIncomingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
     if (!c.testnet) return [];
     try {
@@ -309,9 +260,7 @@ export default function HistoryTab() {
             from: (tx.from || "").toLowerCase(),
             to,
             valueWei: (tx.value || ethers.constants.Zero).toString(),
-            gasUsed: null,
-            gasPrice: null,
-            feesPaidWei: null,
+            gasUsed: null, gasPrice: null, feesPaidWei: null,
             successful: true,
             chainId: c.chainId,
             explorerBase: c.explorerBase,
@@ -321,12 +270,10 @@ export default function HistoryTab() {
         }
       }
       return out;
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   }
 
-  // ---- RPC supplement: ERC-20 incoming (Transfer logs) ----
+  // rpc erc20 incoming (logs)
   async function rpcErc20IncomingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
     if (!c.testnet) return [];
     try {
@@ -335,12 +282,8 @@ export default function HistoryTab() {
       const provider = new ethers.providers.StaticJsonRpcProvider(rpc, { chainId: c.chainId, name: c.name });
       const latest = await provider.getBlockNumber();
       const fromBlock = Math.max(0, latest - Math.max(1, lookbackBlocks - 1));
-      const ownerTopic = ethers.utils.hexZeroPad(owner, 32); // indexed 'to' topic
-      const logs = await provider.getLogs({
-        fromBlock, toBlock: latest,
-        topics: [TRANSFER_TOPIC, null, ownerTopic],
-      });
-
+      const ownerTopic = ethers.utils.hexZeroPad(owner, 32);
+      const logs = await provider.getLogs({ fromBlock, toBlock: latest, topics: [TRANSFER_TOPIC, null, ownerTopic] });
       const out: TxItem[] = [];
       for (const log of logs) {
         try {
@@ -350,31 +293,22 @@ export default function HistoryTab() {
           const value = parsed.args[2] as ethers.BigNumber;
           const txHash = log.transactionHash;
           const contractAddr = log.address.toLowerCase();
-
-          // get meta (symbol/decimals) with small cache
           const metaKey = `${c.chainId}:${contractAddr}`;
           let meta = erc20MetaRef.current.get(metaKey);
           if (!meta) {
             try {
               const contract = new ethers.Contract(contractAddr, ERC20_IFACE.fragments, provider);
-              const [sym, dec] = await Promise.allSettled([
-                contract.symbol(), contract.decimals()
-              ]);
+              const [sym, dec] = await Promise.allSettled([contract.symbol(), contract.decimals()]);
               meta = {
                 symbol: sym.status === "fulfilled" ? String(sym.value) : "TOKEN",
                 decimals: dec.status === "fulfilled" ? Number(dec.value) : 18,
               };
-            } catch {
-              meta = { symbol: "TOKEN", decimals: 18 };
-            }
+            } catch { meta = { symbol: "TOKEN", decimals: 18 }; }
             erc20MetaRef.current.set(metaKey, meta);
           }
           const units = ethers.utils.formatUnits(value, meta.decimals);
-
-          // need timestamp
           const blk = await provider.getBlock(log.blockNumber);
           const ts = (blk?.timestamp || Math.floor(Date.now() / 1000)) * 1000;
-
           out.push({
             hash: txHash,
             timestamp: new Date(ts).toISOString(),
@@ -392,12 +326,10 @@ export default function HistoryTab() {
             tokenValueUnits: units,
             direction: "IN",
           });
-        } catch { /* ignore parse errors */ }
+        } catch {}
       }
       return out;
-    } catch {
-      return [];
-    }
+    } catch { return []; }
   }
 
   function cancelPollers() {
@@ -418,10 +350,7 @@ export default function HistoryTab() {
       const erc20Lists:  TxItem[][] = erc20Results.map((r) => (r.status === "fulfilled" ? r.value : []));
       const merged = mergeAndSort([baseList, ...nativeLists, ...erc20Lists, stickyStart]);
       setItems((prev) => mergeAndSort([prev, merged]));
-
-      const candidateSticky: TxItem[] = mergeAndSort([stickyStart, ...nativeLists, ...erc20Lists]).map((t) => ({
-        ...t, _source: "sticky" as const,
-      }));
+      const candidateSticky: TxItem[] = mergeAndSort([stickyStart, ...nativeLists, ...erc20Lists]).map((t) => ({ ...t, _source: "sticky" as const }));
       await safeSaveRxCache(owner, candidateSticky);
     };
     schedule.forEach((ms) => {
@@ -445,7 +374,6 @@ export default function HistoryTab() {
       try {
         loadPrices();
 
-        // show sticky quickly
         const sticky = await loadRxCache(owner);
         if (sticky.length > 0) {
           setItems((prev) => mergeAndSort([prev, sticky]));
@@ -453,7 +381,6 @@ export default function HistoryTab() {
           if (soft) setIsRefreshing(false);
         }
 
-        // one-time wider native+erc20 rpc backfill only on hard load
         if (!soft) {
           const backNative = await Promise.allSettled(chains.map((c) => rpcIncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS)));
           const backErc20  = await Promise.allSettled(chains.map((c) => rpcErc20IncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS)));
@@ -463,13 +390,11 @@ export default function HistoryTab() {
           await safeSaveRxCache(owner, backfillSticky);
         }
 
-        // Covalent main sources
         const cvTx = await Promise.allSettled(chains.map((c) => fetchChainTx(c, owner, !!soft)));
         const cvTxLists: TxItem[][] = cvTx.map((r) => (r.status === "fulfilled" ? r.value : []));
         const cvTok = await Promise.allSettled(chains.map((c) => fetchTokenTransfers(c, owner, !!soft)));
         const cvTokLists: TxItem[][] = cvTok.map((r) => (r.status === "fulfilled" ? r.value : []));
 
-        // Local optimistic sender txs (native only affects value column; tokens handled via transfers)
         const localRaw = await AsyncStorage.getItem("localTxs");
         if (localRaw) {
           const locals: any[] = JSON.parse(localRaw);
@@ -489,18 +414,12 @@ export default function HistoryTab() {
           cvTxLists.push(localList);
         }
 
-        // optional explorer (native)
-        const exResults = await Promise.allSettled(chains.map((c) => fetchExplorerTxs(c, owner)));
-        const exLists: TxItem[][] = exResults.map((r) => (r.status === "fulfilled" ? r.value : []));
-
-        const stickyNow = await loadRxCache(owner);
-
-        const baseMerged = mergeAndSort([...cvTxLists, ...exLists, ...cvTokLists, stickyNow]);
+        const baseMerged = mergeAndSort([...cvTxLists, ...cvTokLists, sticky]);
         if (baseMerged.length > 0) setItems((prev) => mergeAndSort([prev, baseMerged]));
         setFirstLoading(false);
         setIsRefreshing(false);
 
-        startRpcPoller(owner, baseMerged, stickyNow.map((t) => ({ ...t, _source: "sticky" as const })));
+        startRpcPoller(owner, baseMerged, sticky.map((t) => ({ ...t, _source: "sticky" as const })));
       } catch {
         setFirstLoading(false);
         setIsRefreshing(false);
@@ -509,10 +428,7 @@ export default function HistoryTab() {
     [address, chains, loadPrices, loadRxCache, safeSaveRxCache, firstLoading]
   );
 
-  useEffect(() => {
-    fetchHistory(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  useEffect(() => { fetchHistory(false); /* eslint-disable-next-line */ }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -521,11 +437,8 @@ export default function HistoryTab() {
     }, [fetchHistory])
   );
 
-  const onRefresh = useCallback(async () => {
-    await fetchHistory(true);
-  }, [fetchHistory]);
+  const onRefresh = useCallback(async () => { await fetchHistory(true); }, [fetchHistory]);
 
-  // ---- display helpers ----
   const priceFor = (sym: "ETH" | "BNB" | "MATIC") => priceMap[sym] || { usd: 0, local: 0 };
   const toDisplay = (nativeAmount: number, sym: "ETH" | "BNB" | "MATIC") => {
     if (displayUnit === "USD") return { text: (nativeAmount * priceFor(sym).usd).toFixed(2), unit: "USD" };
@@ -648,13 +561,8 @@ export default function HistoryTab() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff" },
   heading: {
-    fontSize: 36,
-    fontWeight: "bold",
-    color: "#0A84FF",
-    marginTop: 50,
-    paddingHorizontal: 16,
-    marginBottom: 8,
-    textAlign: "center",
+    fontSize: 36, fontWeight: "bold", color: "#0A84FF",
+    marginTop: 50, paddingHorizontal: 16, marginBottom: 8, textAlign: "center",
   },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
   listContainer: { padding: 16 },
@@ -669,30 +577,19 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: "#F5F9FF",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E6F0FF",
+    borderRadius: 12, padding: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: "#E6F0FF",
   },
   rowTop: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
   chainTag: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: "#E8F1FF",
-    color: "#0A84FF",
-    fontWeight: "700",
+    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+    backgroundColor: "#E8F1FF", color: "#0A84FF", fontWeight: "700",
   },
   line: { height: 1, backgroundColor: "#E6EAF2", marginVertical: 6 },
   row: { flexDirection: "row", alignItems: "flex-start", marginTop: 6 },
   label: { width: 86, fontWeight: "bold", color: "#000" },
   value: { flex: 1, color: "#111" },
-  valueAddr: {
-    flex: 1,
-    color: "#333",
-    fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: undefined }),
-  },
+  valueAddr: { flex: 1, color: "#333", fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: undefined }) },
   date: { color: "#333", fontWeight: "600" },
   statusConfirmed: { color: "#16A34A", fontWeight: "700" },
   statusFailed: { color: "#DC2626", fontWeight: "700" },
