@@ -17,11 +17,9 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-
     "clean:win": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"Remove-Item -Recurse -Force node_modules,.expo,android\\app\\build -ErrorAction SilentlyContinue\"",
     "clean": "rimraf node_modules .expo android/app/build",
     "doctor": "expo-doctor",
-
     "build:apk": "eas build -p android --profile preview",
     "build:internal": "eas build -p android --profile internal",
     "submit:internal": "eas submit -p android --profile internal --latest",
@@ -49,6 +47,7 @@
     "expo-camera": "^16.1.11",
     "expo-clipboard": "~7.1.5",
     "expo-font": "~13.3.2",
+    "expo-local-authentication": "~16.0.5",
     "expo-localization": "~16.1.6",
     "expo-secure-store": "~14.2.4",
     "expo-sharing": "^13.1.5",
@@ -86,8 +85,8 @@
     "husky": "^9.1.7",
     "lint-staged": "^16.1.2",
     "prettier": "^3.6.2",
-    "typescript": "~5.8.3",
-    "rimraf": "^6.0.1"
+    "rimraf": "^6.0.1",
+    "typescript": "~5.8.3"
   },
   "packageManager": "yarn@1.22.19",
   "expo": {

@@ -3,7 +3,7 @@
 import "react-native-get-random-values";
 import "@ethersproject/shims";
 import { Buffer } from "buffer";
-if (!(global).Buffer) (global).Buffer = Buffer;
+if (!global.Buffer) global.Buffer = Buffer;
 
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
@@ -11,9 +11,11 @@ import * as SecureStore from "expo-secure-store";
 
 import { useAuthStore } from "./src/store/useAuthStore";
 import { useWalletStore } from "./src/store/useWalletStore";
+import { useSettingsStore } from "./src/store/useSettingsStore";
 import AppNavigator from "./src/navigation/AppNavigator";
 import { getWalletAddress, clearWallet } from "./src/utils/wallet";
 import { getExtra } from "./src/config/extra";
+import { canUseBiometrics, promptBiometric } from "./src/lib/biometrics";
 
 export default function App() {
   const { setAuthenticated, setHasMnemonic, setHasPin } = useAuthStore();
@@ -24,6 +26,11 @@ export default function App() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // Hydrate settings (biometricEnabled)
+        await useSettingsStore.getState().hydrate();
+        const biometricEnabled = useSettingsStore.getState().biometricEnabled;
+
+        // --- migrate old keys ---
         const oldMnemonic = await SecureStore.getItemAsync("user_mnemonic");
         if (oldMnemonic) {
           await SecureStore.setItemAsync("mnemonic", oldMnemonic);
@@ -37,6 +44,7 @@ export default function App() {
           console.log("Migrated old pin key.");
         }
 
+        // --- read current auth facts ---
         const mnemonic = await SecureStore.getItemAsync("mnemonic");
         const pin = await SecureStore.getItemAsync("pin");
         const hasMn = !!mnemonic;
@@ -44,24 +52,31 @@ export default function App() {
 
         setHasMnemonic(hasMn);
         setHasPin(hasP);
-        setAuthenticated(hasMn && hasP);
-        console.log("Auth check:", { hasMnemonic: hasMn, hasPin: hasP });
+        setAuthenticated(hasMn && hasP); // preserve your semantics
 
         if (hasMn && hasP) {
-          if (!mnemonic) {
-            console.error("Mismatch: hasMnemonic true but mnemonic null—resetting.");
-            Alert.alert("Error", "Wallet data inconsistent. Clearing storage and redirecting to setup.");
-            await clearWallet();
-            setHasMnemonic(false);
-            setHasPin(false);
-            setAuthenticated(false);
-            setInitialRoute({ name: "Welcome" });
+          // Returning user → try biometric if enabled
+          if (biometricEnabled && (await canUseBiometrics())) {
+            const res = await promptBiometric("Unlock Crypto Pal");
+            if (res.success) {
+              // Skip PIN and go straight to the app
+              const currentAddress = await getWalletAddress();
+              if (currentAddress) setAddress(currentAddress);
+              setInitialRoute({ name: "AppTabs" });
+            } else {
+              // Fallback to PIN
+              const currentAddress = await getWalletAddress();
+              if (currentAddress) setAddress(currentAddress);
+              setInitialRoute({ name: "Pin", params: { isSetup: false } });
+            }
           } else {
+            // No biometrics (or disabled) → PIN as before
             const currentAddress = await getWalletAddress();
             if (currentAddress) setAddress(currentAddress);
             setInitialRoute({ name: "Pin", params: { isSetup: false } });
           }
         } else {
+          // New user path
           setInitialRoute({ name: "Welcome" });
         }
       } catch (error) {
@@ -80,7 +95,6 @@ export default function App() {
     const rawKey = EXTRA?.COVALENT_KEY || "";
     const authLen = EXTRA?.COVALENT_AUTH_B64?.length || 0;
     const keyPrefix = typeof rawKey === "string" ? rawKey.slice(0, 4) : "";
-    // declare dbg ONCE here
     const dbg = String(process.env.EXPO_PUBLIC_DEBUG_AUTH || EXTRA?.EXPO_PUBLIC_DEBUG_AUTH || "");
 
     if (__DEV__) {
@@ -95,7 +109,6 @@ export default function App() {
       });
     }
 
-    // One-time alert in release if EXPO_PUBLIC_DEBUG_AUTH=1
     if (!__DEV__ && dbg === "1") {
       setTimeout(() => {
         Alert.alert(
