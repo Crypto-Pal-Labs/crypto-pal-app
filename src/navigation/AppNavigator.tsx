@@ -1,4 +1,5 @@
 import React from 'react';
+import { View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { NavigationContainer } from '@react-navigation/native';
 
@@ -11,35 +12,41 @@ import AppTabs from './AppTabs';
 import EnableBiometricsScreen from '../screens/EnableBiometricsScreen';
 
 import { RootStackParamList } from '../types/navigation';
+import { navigationRef } from './navigationRef';
+import { useLockStore } from '../store/useLockStore';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-type InitialRouteProp = {
-  name: keyof RootStackParamList;
-  params?: any;
+type AppNavigatorProps = {
+  initialRoute?: { name: keyof RootStackParamList; params?: any };
 };
 
-export default function AppNavigator({ initialRoute = { name: 'Welcome' } as InitialRouteProp }) {
+export default function AppNavigator({ initialRoute = { name: 'Welcome' } }: AppNavigatorProps) {
   const pinInitialParams =
     initialRoute.name === 'Pin' && initialRoute.params
       ? (initialRoute.params as { isSetup: boolean })
       : ({ isSetup: true } as { isSetup: boolean });
 
+  // Catch touches at the root to track activity without blocking UI
+  const touch = useLockStore(s => s.touch);
+
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName={initialRoute.name} screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        <Stack.Screen name="Pin" component={PinSetupScreen} initialParams={pinInitialParams} />
-        <Stack.Screen
-          name="EnableBiometrics"
-          component={EnableBiometricsScreen}
-          options={{ headerShown: true, title: 'Enable Biometrics' }}
-        />
-        <Stack.Screen name="CreateWallet" component={CreateWalletScreen} />
-        <Stack.Screen name="RestoreWallet" component={RestoreWalletScreen} />
-        <Stack.Screen name="MnemonicBackup" component={MnemonicBackupScreen} />
-        <Stack.Screen name="AppTabs" component={AppTabs} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <View style={{ flex: 1 }} onTouchStart={touch}>
+      <NavigationContainer ref={navigationRef}>
+        <Stack.Navigator initialRouteName={initialRoute.name} screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Welcome" component={WelcomeScreen} />
+          <Stack.Screen name="Pin" component={PinSetupScreen} initialParams={pinInitialParams} />
+          <Stack.Screen
+            name="EnableBiometrics"
+            component={EnableBiometricsScreen}
+            options={{ headerShown: true, title: 'Enable Biometrics' }}
+          />
+          <Stack.Screen name="CreateWallet" component={CreateWalletScreen} />
+          <Stack.Screen name="RestoreWallet" component={RestoreWalletScreen} />
+          <Stack.Screen name="MnemonicBackup" component={MnemonicBackupScreen} />
+          <Stack.Screen name="AppTabs" component={AppTabs} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </View>
   );
 }

@@ -6,16 +6,20 @@ import { Buffer } from "buffer";
 if (!global.Buffer) global.Buffer = Buffer;
 
 import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Alert, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Alert, StyleSheet, View, AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
 import { useAuthStore } from "./src/store/useAuthStore";
 import { useWalletStore } from "./src/store/useWalletStore";
 import { useSettingsStore } from "./src/store/useSettingsStore";
 import AppNavigator from "./src/navigation/AppNavigator";
-import { getWalletAddress, clearWallet } from "./src/utils/wallet";
+import { getWalletAddress } from "./src/utils/wallet";
 import { getExtra } from "./src/config/extra";
 import { canUseBiometrics, promptBiometric } from "./src/lib/biometrics";
+
+// Step 6: auto-lock imports
+import { useLockStore } from "./src/store/useLockStore";
+import { triggerReauth } from "./src/utils/reauth";
 
 export default function App() {
   const { setAuthenticated, setHasMnemonic, setHasPin } = useAuthStore();
@@ -23,6 +27,7 @@ export default function App() {
   const [initialRoute, setInitialRoute] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // ---- EXISTING AUTH / BOOTSTRAP ----
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -119,6 +124,52 @@ export default function App() {
       }, 400);
     }
     // ----------------------------
+  }, []);
+
+  // ---- STEP 6: AUTO-LOCK (background + idle) ----
+  useEffect(() => {
+    // Track app state transitions (background/foreground)
+    const sub = AppState.addEventListener("change", async (state) => {
+      if (state === "background") {
+        // record when we left the app
+        try {
+          useLockStore.getState().wentBackground();
+        } catch {}
+      }
+
+      if (state === "active") {
+        try {
+          const st = useLockStore.getState();
+          const sinceBG = st.lastBackgroundAt ? Date.now() - st.lastBackgroundAt : 0;
+          if (sinceBG >= st.inactivityMs) {
+            await triggerReauth();
+            return;
+          }
+          // Also check idle time accrued while foreground (e.g., no touches)
+          const idle = Date.now() - st.lastInteractionAt;
+          if (idle >= st.inactivityMs) {
+            await triggerReauth();
+          }
+        } catch {}
+      }
+    });
+
+    // Lightweight idle checker while app is active
+    const timer = setInterval(async () => {
+      try {
+        const st = useLockStore.getState();
+        if (st.isLocked) return; // already locked
+        const idle = Date.now() - st.lastInteractionAt;
+        if (idle >= st.inactivityMs) {
+          await triggerReauth();
+        }
+      } catch {}
+    }, 15000); // check every 15s
+
+    return () => {
+      sub.remove();
+      clearInterval(timer);
+    };
   }, []);
 
   if (loading || !initialRoute) {

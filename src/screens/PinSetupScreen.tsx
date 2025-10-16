@@ -1,17 +1,27 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { SafeAreaView, View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
+import {
+  SafeAreaView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { useAuthStore } from '../store/useAuthStore';
 import { useSettingsStore } from '../store/useSettingsStore';
+import { useLockStore } from '../store/useLockStore';
 import { RootStackParamList } from '../types/navigation';
 import { canUseBiometrics, promptBiometric } from '../lib/biometrics';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Pin'>;
 
-// Helper to read current secrets
+// Helper to read current secrets from SecureStore
 async function readSecrets() {
   const [mnemonic, pin] = await Promise.all([
     SecureStore.getItemAsync('mnemonic'),
@@ -21,28 +31,29 @@ async function readSecrets() {
 }
 
 export default function PinSetupScreen({ route, navigation }: Props) {
-  // --- STATE ---
+  // Stores
   const { setAuthenticated, setHasPin } = useAuthStore();
-  const biometricEnabled = useSettingsStore(s => s.biometricEnabled);
-  const setBiometricEnabled = useSettingsStore(s => s.setBiometricEnabled);
+  const biometricEnabled = useSettingsStore((s) => s.biometricEnabled);
+  const setBiometricEnabled = useSettingsStore((s) => s.setBiometricEnabled);
+  const unlockLockState = useLockStore((s) => s.unlock); // Step 7: we’ll call this on success
 
-  // If the navigator didn’t pass isSetup reliably, we compute it.
+  // Mode resolution (setup vs unlock)
   const [modeResolved, setModeResolved] = useState<'LOADING' | 'SETUP' | 'UNLOCK'>('LOADING');
 
+  // PIN fields
   const [pin, setPin] = useState('');
   const [confirm, setConfirm] = useState('');
 
+  // Biometrics availability on this device
   const [bioAvailable, setBioAvailable] = useState(false);
 
-  // Resolve whether this screen should be setup or unlock
+  // Resolve mode based on route params or actual secrets
   useEffect(() => {
     (async () => {
-      // If the route told us, trust it; otherwise infer from secrets
       if (typeof route.params?.isSetup === 'boolean') {
         setModeResolved(route.params.isSetup ? 'SETUP' : 'UNLOCK');
       } else {
         const { hasMnemonic, hasPin } = await readSecrets();
-        // If both exist, this is an unlock; otherwise, it’s first-time setup.
         setModeResolved(hasMnemonic && hasPin ? 'UNLOCK' : 'SETUP');
       }
       setBioAvailable(await canUseBiometrics());
@@ -50,7 +61,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
   }, [route.params?.isSetup]);
 
   const isSetup = useMemo(() => modeResolved === 'SETUP', [modeResolved]);
-  const pinsMatch = isSetup ? (pin.length === 6 && pin === confirm) : pin.length === 6;
+  const pinsMatch = isSetup ? pin.length === 6 && pin === confirm : pin.length === 6;
 
   if (modeResolved === 'LOADING') {
     return (
@@ -62,16 +73,16 @@ export default function PinSetupScreen({ route, navigation }: Props) {
     );
   }
 
-  // --- HANDLERS ---
+  // --- Handlers ---
 
-  // PIN “continue / unlock”
+  // Continue/Unlock with PIN
   const handleSubmit = async () => {
     if (isSetup) {
       try {
         await SecureStore.setItemAsync('pin', pin);
         setHasPin(true);
 
-        // Immediately offer biometrics after PIN setup
+        // After PIN setup, offer biometrics
         navigation.reset({
           index: 0,
           routes: [{ name: 'EnableBiometrics', params: { next: 'CreateWallet' } }],
@@ -84,6 +95,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
         const storedPin = await SecureStore.getItemAsync('pin');
         if (pin === storedPin) {
           setAuthenticated(true);
+          unlockLockState(); // Step 7: clear lock state on successful PIN unlock
           navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
         } else {
           Alert.alert('Invalid PIN', 'Try again.');
@@ -95,21 +107,25 @@ export default function PinSetupScreen({ route, navigation }: Props) {
     }
   };
 
-  // Show biometric option on the PIN page whenever the device supports it.
-  // If user hasn’t opted in yet, a successful biometric unlock will silently enable it for next time.
+  // Try biometrics from the PIN screen (unlock flow)
   const handleTryBiometric = async () => {
     if (!bioAvailable) return;
     const res = await promptBiometric(isSetup ? 'Confirm biometrics' : 'Unlock with biometrics');
     if (res.success) {
+      // If user hadn’t previously enabled the toggle, silently enable for next time
       if (!biometricEnabled) {
-        try { await setBiometricEnabled(true); } catch {}
+        try {
+          await setBiometricEnabled(true);
+        } catch {}
       }
       setAuthenticated(true);
+      unlockLockState(); // Step 7: clear lock state on successful biometric unlock
       navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
     }
   };
 
   // --- UI ---
+
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
@@ -130,6 +146,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
           onChangeText={setPin}
           style={styles.input}
         />
+
         {isSetup && (
           <TextInput
             secureTextEntry
@@ -151,7 +168,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
           <Text style={styles.buttonText}>{isSetup ? 'Continue' : 'Unlock'}</Text>
         </TouchableOpacity>
 
-        {/* Always show biometric option when hardware is available */}
+        {/* Show biometric option on the unlock view when hardware is available */}
         {!isSetup && bioAvailable && (
           <TouchableOpacity style={{ padding: 12 }} onPress={handleTryBiometric}>
             <Text style={{ textAlign: 'center', color: '#0A84FF', fontWeight: '600' }}>
@@ -171,8 +188,13 @@ const styles = StyleSheet.create({
   title: { fontSize: 28, fontWeight: '700', color: '#0A84FF', marginBottom: 16, textAlign: 'center' },
   subtitle: { fontSize: 16, color: '#333', textAlign: 'center', marginBottom: 24 },
   input: {
-    borderWidth: 1, borderColor: '#ccc', borderRadius: 12,
-    paddingVertical: 12, paddingHorizontal: 16, fontSize: 18, marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    fontSize: 18,
+    marginBottom: 16,
   },
   button: { backgroundColor: '#0A84FF', paddingVertical: 16, borderRadius: 12, marginTop: 8 },
   buttonText: { textAlign: 'center', color: '#fff', fontSize: 18, fontWeight: '600' },
