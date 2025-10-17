@@ -22,10 +22,11 @@ type AppNavigatorProps = {
 };
 
 export default function AppNavigator({ initialRoute = { name: 'Welcome' } }: AppNavigatorProps) {
-  const pinInitialParams =
+  // 👇 Type this to the actual Pin route params (includes optional autoPrompt)
+  const pinInitialParams: RootStackParamList['Pin'] =
     initialRoute.name === 'Pin' && initialRoute.params
-      ? (initialRoute.params as { isSetup: boolean })
-      : ({ isSetup: true } as { isSetup: boolean });
+      ? (initialRoute.params as RootStackParamList['Pin'])
+      : ({ isSetup: true } as RootStackParamList['Pin']);
 
   // Catch touches at the root to track activity without blocking UI
   const touch = useLockStore(s => s.touch);
