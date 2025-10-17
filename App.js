@@ -9,77 +9,74 @@ import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View, AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
 
+import AppNavigator from "./src/navigation/AppNavigator";
+
 import { useAuthStore } from "./src/store/useAuthStore";
 import { useWalletStore } from "./src/store/useWalletStore";
 import { useSettingsStore } from "./src/store/useSettingsStore";
-import AppNavigator from "./src/navigation/AppNavigator";
+import { useLockStore } from "./src/store/useLockStore";
+
 import { getWalletAddress } from "./src/utils/wallet";
 import { getExtra } from "./src/config/extra";
-import { canUseBiometrics, promptBiometric } from "./src/lib/biometrics";
-
-// Step 6: auto-lock imports
-import { useLockStore } from "./src/store/useLockStore";
+import { canUseBiometrics } from "./src/lib/biometrics";
 import { triggerReauth } from "./src/utils/reauth";
 
 export default function App() {
   const { setAuthenticated, setHasMnemonic, setHasPin } = useAuthStore();
   const setAddress = useWalletStore((s) => s.setAddress);
+
   const [initialRoute, setInitialRoute] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // ---- EXISTING AUTH / BOOTSTRAP ----
+  // ---- AUTH / BOOTSTRAP ----
   useEffect(() => {
     const checkAuth = async () => {
       try {
         // Hydrate settings (biometricEnabled)
-        await useSettingsStore.getState().hydrate();
-        const biometricEnabled = useSettingsStore.getState().biometricEnabled;
+        if (typeof useSettingsStore.getState().hydrate === "function") {
+          await useSettingsStore.getState().hydrate();
+        }
+        const biometricEnabled = !!useSettingsStore.getState().biometricEnabled;
 
-        // --- migrate old keys ---
-        const oldMnemonic = await SecureStore.getItemAsync("user_mnemonic");
-        if (oldMnemonic) {
-          await SecureStore.setItemAsync("mnemonic", oldMnemonic);
-          await SecureStore.deleteItemAsync("user_mnemonic");
-          console.log("Migrated old mnemonic key.");
-        }
-        const oldPin = await SecureStore.getItemAsync("user_pin");
-        if (oldPin) {
-          await SecureStore.setItemAsync("pin", oldPin);
-          await SecureStore.deleteItemAsync("user_pin");
-          console.log("Migrated old pin key.");
-        }
+        // --- migrate old keys (legacy key names) ---
+        try {
+          const oldMnemonic = await SecureStore.getItemAsync("user_mnemonic");
+          if (oldMnemonic) {
+            await SecureStore.setItemAsync("mnemonic", oldMnemonic);
+            await SecureStore.deleteItemAsync("user_mnemonic");
+            console.log("Migrated old mnemonic key.");
+          }
+        } catch {}
+        try {
+          const oldPin = await SecureStore.getItemAsync("user_pin");
+          if (oldPin) {
+            await SecureStore.setItemAsync("pin", oldPin);
+            await SecureStore.deleteItemAsync("user_pin");
+            console.log("Migrated old pin key.");
+          }
+        } catch {}
 
         // --- read current auth facts ---
-        const mnemonic = await SecureStore.getItemAsync("mnemonic");
-        const pin = await SecureStore.getItemAsync("pin");
+        const [mnemonic, pin] = await Promise.all([
+          SecureStore.getItemAsync("mnemonic"),
+          SecureStore.getItemAsync("pin"),
+        ]);
+
         const hasMn = !!mnemonic;
         const hasP = !!pin;
 
         setHasMnemonic(hasMn);
         setHasPin(hasP);
-        setAuthenticated(hasMn && hasP); // preserve your semantics
+        setAuthenticated(hasMn && hasP);
 
         if (hasMn && hasP) {
-          // Returning user → try biometric if enabled
-          if (biometricEnabled && (await canUseBiometrics())) {
-            const res = await promptBiometric("Unlock Crypto Pal");
-            if (res.success) {
-              // Skip PIN and go straight to the app
-              const currentAddress = await getWalletAddress();
-              if (currentAddress) setAddress(currentAddress);
-              setInitialRoute({ name: "AppTabs" });
-            } else {
-              // Fallback to PIN
-              const currentAddress = await getWalletAddress();
-              if (currentAddress) setAddress(currentAddress);
-              setInitialRoute({ name: "Pin", params: { isSetup: false } });
-            }
-          } else {
-            // No biometrics (or disabled) → PIN as before
-            const currentAddress = await getWalletAddress();
-            if (currentAddress) setAddress(currentAddress);
-            setInitialRoute({ name: "Pin", params: { isSetup: false } });
-          }
+          // Returning user: set address and go to PIN.
+          // If biometrics are enabled and available, tell the PIN screen to auto-prompt.
+          const currentAddress = await getWalletAddress().catch(() => null);
+          if (currentAddress) setAddress(currentAddress);
+
+          const autoPrompt = biometricEnabled && (await canUseBiometrics());
+          setInitialRoute({ name: "Pin", params: { isSetup: false, autoPrompt } });
         } else {
           // New user path
           setInitialRoute({ name: "Welcome" });
@@ -96,44 +93,44 @@ export default function App() {
     checkAuth();
 
     // ---- Diagnostics (safe) ----
-    const EXTRA = getExtra();
-    const rawKey = EXTRA?.COVALENT_KEY || "";
-    const authLen = EXTRA?.COVALENT_AUTH_B64?.length || 0;
-    const keyPrefix = typeof rawKey === "string" ? rawKey.slice(0, 4) : "";
-    const dbg = String(process.env.EXPO_PUBLIC_DEBUG_AUTH || EXTRA?.EXPO_PUBLIC_DEBUG_AUTH || "");
+    try {
+      const EXTRA = getExtra();
+      const rawKey = EXTRA?.COVALENT_KEY || "";
+      const authLen = EXTRA?.COVALENT_AUTH_B64?.length || 0;
+      const keyPrefix = typeof rawKey === "string" ? rawKey.slice(0, 4) : "";
+      const dbg = String(process.env.EXPO_PUBLIC_DEBUG_AUTH || EXTRA?.EXPO_PUBLIC_DEBUG_AUTH || "");
 
-    if (__DEV__) {
-      console.log("[ENV_CHECK]", {
-        keyPrefix,
-        keyLen: (rawKey || "").length,
-        b64Len: authLen,
-        ethRpc: EXTRA?.ETH_RPC_URL || null,
-        bscRpc: EXTRA?.BSC_RPC_URL || null,
-        etherscan: EXTRA?.ETHERSCAN_BASE || null,
-        bscscan: EXTRA?.BSCSCAN_BASE || null,
-      });
-    }
+      if (__DEV__) {
+        console.log("[ENV_CHECK]", {
+          keyPrefix,
+          keyLen: (rawKey || "").length,
+          b64Len: authLen,
+          ethRpc: EXTRA?.ETH_RPC_URL || null,
+          bscRpc: EXTRA?.BSC_RPC_URL || null,
+          etherscan: EXTRA?.ETHERSCAN_BASE || null,
+          bscscan: EXTRA?.BSCSCAN_BASE || null,
+        });
+      }
 
-    if (!__DEV__ && dbg === "1") {
-      setTimeout(() => {
-        Alert.alert(
-          "DEBUG",
-          `COVALENT_KEY len=${(rawKey || "").length} prefix=${keyPrefix}\n` +
-            `COVALENT_AUTH_B64 len=${authLen}`
-        );
-      }, 400);
-    }
-    // ----------------------------
+      if (!__DEV__ && dbg === "1") {
+        setTimeout(() => {
+          Alert.alert(
+            "DEBUG",
+            `COVALENT_KEY len=${(rawKey || "").length} prefix=${keyPrefix}\n` +
+              `COVALENT_AUTH_B64 len=${authLen}`
+          );
+        }, 400);
+      }
+    } catch {}
   }, []);
 
-  // ---- STEP 6: AUTO-LOCK (background + idle) ----
+  // ---- AUTO-LOCK: background + idle ----
   useEffect(() => {
-    // Track app state transitions (background/foreground)
     const sub = AppState.addEventListener("change", async (state) => {
       if (state === "background") {
-        // record when we left the app
         try {
-          useLockStore.getState().wentBackground();
+          // record when we left the app
+          useLockStore.getState().wentBackground?.();
         } catch {}
       }
 
@@ -145,7 +142,7 @@ export default function App() {
             await triggerReauth();
             return;
           }
-          // Also check idle time accrued while foreground (e.g., no touches)
+          // Check idle while foreground
           const idle = Date.now() - st.lastInteractionAt;
           if (idle >= st.inactivityMs) {
             await triggerReauth();
@@ -158,13 +155,13 @@ export default function App() {
     const timer = setInterval(async () => {
       try {
         const st = useLockStore.getState();
-        if (st.isLocked) return; // already locked
+        if (st.isLocked) return;
         const idle = Date.now() - st.lastInteractionAt;
         if (idle >= st.inactivityMs) {
           await triggerReauth();
         }
       } catch {}
-    }, 15000); // check every 15s
+    }, 15000);
 
     return () => {
       sub.remove();

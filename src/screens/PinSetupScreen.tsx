@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   SafeAreaView,
   View,
@@ -12,6 +12,7 @@ import {
 import * as SecureStore from 'expo-secure-store';
 import { Ionicons } from '@expo/vector-icons';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { useAuthStore } from '../store/useAuthStore';
 import { useSettingsStore } from '../store/useSettingsStore';
@@ -35,7 +36,7 @@ export default function PinSetupScreen({ route, navigation }: Props) {
   const { setAuthenticated, setHasPin } = useAuthStore();
   const biometricEnabled = useSettingsStore((s) => s.biometricEnabled);
   const setBiometricEnabled = useSettingsStore((s) => s.setBiometricEnabled);
-  const unlockLockState = useLockStore((s) => s.unlock); // Step 7: we’ll call this on success
+  const unlockLockState = useLockStore((s) => s.unlock); // clear lock on success
 
   // Mode resolution (setup vs unlock)
   const [modeResolved, setModeResolved] = useState<'LOADING' | 'SETUP' | 'UNLOCK'>('LOADING');
@@ -47,7 +48,10 @@ export default function PinSetupScreen({ route, navigation }: Props) {
   // Biometrics availability on this device
   const [bioAvailable, setBioAvailable] = useState(false);
 
-  // Resolve mode based on route params or actual secrets
+  // Ensure we only auto-prompt once per focus
+  const [autoPrompted, setAutoPrompted] = useState(false);
+
+  // Resolve mode based on route params or stored secrets
   useEffect(() => {
     (async () => {
       if (typeof route.params?.isSetup === 'boolean') {
@@ -62,6 +66,40 @@ export default function PinSetupScreen({ route, navigation }: Props) {
 
   const isSetup = useMemo(() => modeResolved === 'SETUP', [modeResolved]);
   const pinsMatch = isSetup ? pin.length === 6 && pin === confirm : pin.length === 6;
+
+  // Try biometrics (shared)
+  const tryBiometric = useCallback(async () => {
+    if (!bioAvailable) return;
+    const res = await promptBiometric(isSetup ? 'Confirm biometrics' : 'Unlock with biometrics');
+    if (res.success) {
+      // enable toggle silently if not set yet
+      if (!biometricEnabled) {
+        try { await setBiometricEnabled(true); } catch {}
+      }
+      setAuthenticated(true);
+      unlockLockState();
+      navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
+    }
+  }, [bioAvailable, biometricEnabled, isSetup, navigation, setAuthenticated, setBiometricEnabled, unlockLockState]);
+
+  // Auto-prompt once when screen gains focus (unlock mode, allowed, and requested)
+  useFocusEffect(
+    useCallback(() => {
+      const shouldAuto =
+        !isSetup &&
+        biometricEnabled &&
+        bioAvailable &&
+        route.params?.autoPrompt === true &&
+        !autoPrompted;
+
+      if (shouldAuto) {
+        setAutoPrompted(true);
+        // fire-and-forget; button remains visible if user cancels
+        tryBiometric();
+      }
+      return () => {};
+    }, [isSetup, biometricEnabled, bioAvailable, route.params?.autoPrompt, autoPrompted, tryBiometric])
+  );
 
   if (modeResolved === 'LOADING') {
     return (
@@ -81,13 +119,12 @@ export default function PinSetupScreen({ route, navigation }: Props) {
       try {
         await SecureStore.setItemAsync('pin', pin);
         setHasPin(true);
-
         // After PIN setup, offer biometrics
         navigation.reset({
           index: 0,
           routes: [{ name: 'EnableBiometrics', params: { next: 'CreateWallet' } }],
         });
-      } catch (error) {
+      } catch {
         Alert.alert('Error', 'Failed to save PIN.');
       }
     } else {
@@ -95,33 +132,21 @@ export default function PinSetupScreen({ route, navigation }: Props) {
         const storedPin = await SecureStore.getItemAsync('pin');
         if (pin === storedPin) {
           setAuthenticated(true);
-          unlockLockState(); // Step 7: clear lock state on successful PIN unlock
+          unlockLockState();
           navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
         } else {
           Alert.alert('Invalid PIN', 'Try again.');
           setPin('');
         }
-      } catch (error) {
+      } catch {
         Alert.alert('Error', 'Failed to verify PIN.');
       }
     }
   };
 
-  // Try biometrics from the PIN screen (unlock flow)
+  // Manual biometric button
   const handleTryBiometric = async () => {
-    if (!bioAvailable) return;
-    const res = await promptBiometric(isSetup ? 'Confirm biometrics' : 'Unlock with biometrics');
-    if (res.success) {
-      // If user hadn’t previously enabled the toggle, silently enable for next time
-      if (!biometricEnabled) {
-        try {
-          await setBiometricEnabled(true);
-        } catch {}
-      }
-      setAuthenticated(true);
-      unlockLockState(); // Step 7: clear lock state on successful biometric unlock
-      navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
-    }
+    await tryBiometric();
   };
 
   // --- UI ---

@@ -1,72 +1,45 @@
 // src/screens/HistoryTab.tsx
-import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
   View, Text, ActivityIndicator, FlatList, StyleSheet, Linking,
-  TouchableOpacity, RefreshControl, Platform,
+  TouchableOpacity, RefreshControl,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
-import * as Localization from "expo-localization";
 import * as ethers from "ethers";
 
 import { useWalletStore } from "../store/useWalletStore";
 import { CHAINS, EvmChain } from "../config/chainRegistry";
 import { covalentGet } from "../lib/covalent";
 
-type TxItem = {
-  hash: string;
-  timestamp: string;
-  from: string;
-  to: string;
-  valueWei: string; // native value if native row; "0" for token rows
-  gasUsed?: string | number | null;
-  gasPrice?: string | number | null;
-  feesPaidWei?: string | number | null;
-  successful: boolean;
-  chainId: number;
-  explorerBase: string;
-  nativeSymbol: "ETH" | "BNB" | "MATIC";
-  _source?: "covalent" | "rpc" | "explorer" | "sticky" | "erc20_rpc" | "erc20_covalent";
-  // token extras
-  isToken?: boolean;
-  tokenSymbol?: string;
-  tokenDecimals?: number;
-  tokenContract?: string;
-  tokenValueUnits?: string;
-  direction?: "IN" | "OUT";
-};
-
-const ERC20_IFACE = new ethers.utils.Interface([
-  "event Transfer(address indexed from, address indexed to, uint256 value)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)",
-]);
-
-const TRANSFER_TOPIC = ethers.utils.id("Transfer(address,address,uint256)");
-
-const PRICE_IDS: Record<"ETH" | "BNB" | "MATIC", string> = {
-  ETH: "ethereum",
-  BNB: "binancecoin",
-  MATIC: "matic-network",
-};
-
-const maskAddr = (a: string) =>
-  a?.startsWith("0x") && a.length >= 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
 const fmt = (n: number, dp = 6) =>
   Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/, "").replace(/\.$/, "") : "—";
+const maskAddr = (a?: string) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : "");
 
-// ---- tuning ----
-const COVALENT_PAGE_SIZE = 100;
-const RPC_LOOKBACK_BLOCKS = 12;
-const INITIAL_RPC_LOOKBACK_BLOCKS = 24;
-const RX_CACHE_TTL_MS = 30 * 60 * 1000;
-const RPC_POLL_SCHEDULE_MS = [0, 3000, 8000, 15000];
+type TxItem = {
+  hash: string;
+  timestamp: string;              // ISO
+  from?: string;
+  to?: string;
+  valueWei?: string;              // native
+  tokenSymbol?: string;           // if token
+  tokenAmount?: string;           // decimal string
+  tokenContract?: string;         // address
+  chainId: number;
+  isToken?: boolean;
+  direction?: "IN" | "OUT";
+  status?: "Pending" | "Confirmed" | "Failed";
+};
 
-const MAX_FETCH_MS = 6500;
+const MAX_MERGED = 500;
 const SOFT_FETCH_MS = 3500;
 
-const RX_CACHE_KEY = (addr: string) => `rxCache_v1:${addr.toLowerCase()}`;
+// 🔁 bump if you want to clear old short-TTL caches once:
+const RX_CACHE_KEY = (addr: string) => `rxCache_v2:${addr.toLowerCase()}`;
+
+// ✅ Keep receiver “sticky” items long-term so they don’t drop between polls
+const RX_CACHE_TTL_MS = 180 * 24 * 60 * 60 * 1000; // 180 days
 
 function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => T): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -75,483 +48,229 @@ function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => T): Promise
   });
 }
 
-export default function HistoryTab() {
-  const address = useWalletStore((s) => s.address);
+function uniqKey(t: TxItem): string {
+  const assetKey = t.isToken ? (t.tokenContract?.toLowerCase() || "token") : "native";
+  return `${t.chainId}:${assetKey}:${(t.hash || "").toLowerCase()}`;
+}
 
-  const [displayUnit, setDisplayUnit] = useState<"TOKEN" | "USD" | string>("TOKEN");
-  const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
-  const localCurrency = (locale.currencyCode || "USD").toUpperCase();
+function mergeAndSort(groups: TxItem[][]): TxItem[] {
+  const map = new Map<string, TxItem>();
+  for (const g of groups) for (const t of g) map.set(uniqKey(t), t);
+  const arr = Array.from(map.values());
+  arr.sort((a, b) => (b.timestamp || "").localeCompare(a.timestamp || ""));
+  return arr;
+}
 
-  const chains: EvmChain[] = useMemo(() => CHAINS, []);
-  const [items, setItems] = useState<TxItem[]>([]);
-  const [firstLoading, setFirstLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-
-  const [priceMap, setPriceMap] = useState<Record<"ETH" | "BNB" | "MATIC", { usd: number; local: number }>>({
-    ETH: { usd: 0, local: 0 },
-    BNB: { usd: 0, local: 0 },
-    MATIC: { usd: 0, local: 0 },
-  });
-
-  const lastFetchAtRef = useRef<number>(0);
-  const pollTimersRef = useRef<NodeJS.Timeout[]>([]);
-  const cancelledRef = useRef<boolean>(false);
-
-  const erc20MetaRef = useRef<Map<string, { symbol: string; decimals: number }>>(new Map());
-
-  // prices
-  const loadPrices = useCallback(async () => {
-    try {
-      const ids = Array.from(new Set(chains.map((c) => PRICE_IDS[c.nativeSymbol])));
-      if (!ids.length) return;
-      const vs = (localCurrency || "usd").toLowerCase();
-      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd,${vs}`;
-      const data = await withTimeout(fetch(url).then((r) => r.json()), 3500, () => null as any);
-      if (!data) return;
-      setPriceMap((prev) => {
-        const next = { ...prev };
-        (Object.keys(PRICE_IDS) as ("ETH" | "BNB" | "MATIC")[]).forEach((sym) => {
-          const id = PRICE_IDS[sym];
-          const d = (data as any)?.[id] || {};
-          next[sym] = { usd: Number(d?.usd || prev[sym].usd || 0), local: Number(d?.[vs] || prev[sym].local || 0) };
-        });
-        return next;
-      });
-    } catch {}
-  }, [chains, localCurrency]);
-
-  // helpers
-  const toNativeTxItems = (raw: any[], c: EvmChain, source: TxItem["_source"]): TxItem[] =>
-    (raw || []).map((t: any) => ({
-      hash: t.tx_hash || t.hash || "",
-      timestamp:
-        t.block_signed_at || t.timeStamp
-          ? new Date((t.block_signed_at ? Date.parse(t.block_signed_at) : Number(t.timeStamp) * 1000)).toISOString()
-          : new Date().toISOString(),
-      from: (t.from_address || t.from || "").toLowerCase(),
-      to: (t.to_address || t.to || "").toLowerCase(),
-      valueWei: String(t.value || t.value_wei || t.valueWei || "0"),
-      gasUsed: t.gas_spent ?? t.gas_used ?? t.gasUsed ?? null,
-      gasPrice: t.effective_gas_price ?? t.gas_price ?? t.gasPrice ?? null,
-      feesPaidWei: t.fees_paid ?? null,
-      successful: t.txreceipt_status !== undefined ? t.txreceipt_status === "1" : t.successful !== false,
-      chainId: c.chainId,
-      explorerBase: c.explorerBase,
-      nativeSymbol: c.nativeSymbol,
-      _source: source,
+async function fetchChainTx(chain: EvmChain, owner: string, soft = false): Promise<TxItem[]> {
+  const base = `https://api.covalenthq.com/v1/${chain.covalentChainId}/address/${owner}/transactions_v3/`;
+  try {
+    const json = await (soft ? withTimeout(covalentGet(base), SOFT_FETCH_MS, () => ({ data: { items: [] } })) : covalentGet(base));
+    const items = json?.data?.items || [];
+    const out: TxItem[] = items.map((it: any) => ({
+      hash: it.tx_hash,
+      timestamp: it.block_signed_at || new Date().toISOString(),
+      from: (it.from_address || "").toLowerCase(),
+      to: (it.to_address || "").toLowerCase(),
+      valueWei: it.value,
+      chainId: chain.chainId,
+      isToken: false,
+      direction: ((it.to_address || "").toLowerCase() === owner) ? "IN" : "OUT",
+      status: it.successful ? "Confirmed" : "Failed",
     }));
+    return out;
+  } catch { return []; }
+}
 
-  const toTokenItemsFromCovalent = (raw: any[], c: EvmChain): TxItem[] =>
-    (raw || []).map((t: any) => {
-      const dec = Number(t.contract_decimals ?? 18);
-      const rawUnits = String(t.delta || "0");
-      const units = ethers.utils.formatUnits(rawUnits, Number.isFinite(dec) ? dec : 18);
-      return {
-        hash: t.tx_hash || "",
-        timestamp: t.block_signed_at ? new Date(Date.parse(t.block_signed_at)).toISOString() : new Date().toISOString(),
-        from: (t.from_address || "").toLowerCase(),
-        to: (t.to_address || "").toLowerCase(),
-        valueWei: "0",
-        successful: true,
-        chainId: c.chainId,
-        explorerBase: c.explorerBase,
-        nativeSymbol: c.nativeSymbol,
-        _source: "erc20_covalent",
-        isToken: true,
-        tokenSymbol: String(t.contract_ticker_symbol || "TOKEN"),
-        tokenDecimals: Number.isFinite(dec) ? dec : 18,
-        tokenContract: (t.contract_address || "").toLowerCase(),
-        tokenValueUnits: units,
-        direction: String(t.transfer_type || "").toUpperCase() === "IN" ? "IN" : "OUT",
-      };
-    });
-
-  const amountKey = (t: TxItem) => t.isToken ? `${t.tokenContract}:${t.tokenValueUnits}` : t.valueWei;
-
-  const mergeAndSort = (lists: TxItem[][]): TxItem[] => {
-    const map = new Map<string, TxItem>();
-    for (const list of lists) {
-      for (const t of list) {
-        if (!t.hash) continue;
-        const uniq = `${t.hash}:${t.chainId}:${t.isToken ? (t.tokenContract || "token") : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
-        const prev = map.get(uniq);
-        if (!prev) map.set(uniq, t);
-        else if ((prev._source || "").includes("rpc") && (t._source || "").includes("covalent")) map.set(uniq, t);
+async function fetchTokenTransfers(chain: EvmChain, owner: string, soft = false): Promise<TxItem[]> {
+  const url = `https://api.covalenthq.com/v1/${chain.covalentChainId}/address/${owner}/transfers_v2/?no-spam=true`;
+  try {
+    const json = await (soft ? withTimeout(covalentGet(url), SOFT_FETCH_MS, () => ({ data: { items: [] } })) : covalentGet(url));
+    const lists = json?.data?.items || [];
+    const out: TxItem[] = [];
+    for (const row of lists) {
+      const transfers = row.transfers || [];
+      for (const t of transfers) {
+        out.push({
+          hash: t.tx_hash,
+          timestamp: t.block_signed_at || new Date().toISOString(),
+          from: (t.from_address || "").toLowerCase(),
+          to: (t.to_address || "").toLowerCase(),
+          chainId: chain.chainId,
+          isToken: true,
+          tokenSymbol: row.contract_ticker_symbol,
+          tokenContract: (row.contract_address || "").toLowerCase(),
+          tokenAmount: t.delta, // string, decimal-formatted by covalent
+          direction: ((t.to_address || "").toLowerCase() === owner) ? "IN" : "OUT",
+          status: t.successful ? "Confirmed" : "Failed",
+        });
       }
     }
-    return Array.from(map.values()).sort(
-      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-  };
+    return out;
+  } catch { return []; }
+}
 
-  // sticky
-  const loadRxCache = useCallback(async (owner: string) => {
+async function safeLoadRxCache(addr: string): Promise<TxItem[]> {
+  try {
+    const raw = await AsyncStorage.getItem(RX_CACHE_KEY(addr));
+    if (!raw) return [];
+    const { ts, items } = JSON.parse(raw);
+    if (Date.now() - ts > RX_CACHE_TTL_MS) return [];
+    return Array.isArray(items) ? items : [];
+  } catch { return []; }
+}
+
+async function safeSaveRxCache(addr: string, items: TxItem[]) {
+  try {
+    const existing = await safeLoadRxCache(addr);
+    const merged = mergeAndSort([existing, items]).slice(0, MAX_MERGED);
+    await AsyncStorage.setItem(RX_CACHE_KEY(addr), JSON.stringify({ ts: Date.now(), items: merged }));
+  } catch {}
+}
+
+export default function HistoryTab() {
+  const { address } = useWalletStore();
+  const owner = (address || "").toLowerCase();
+
+  const [loading, setLoading] = useState(true);
+  const [list, setList] = useState<TxItem[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Prime list from sticky cache immediately (keeps UI intact)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const sticky = await safeLoadRxCache(owner);
+      if (mounted && sticky.length) setList(sticky);
+    })();
+    return () => { mounted = false; };
+  }, [owner]);
+
+  const chains = useMemo(() => CHAINS.filter(c => !!c.covalentChainId), []);
+
+  const fetchHistory = useCallback(async (softMode = false) => {
+    if (!owner) return;
+    if (!softMode) setLoading(true);
+
     try {
-      const raw = await AsyncStorage.getItem(RX_CACHE_KEY(owner));
-      if (!raw) return [];
-      const now = Date.now();
-      const arr: TxItem[] = JSON.parse(raw);
-      return arr.filter((t) => now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS);
-    } catch { return []; }
-  }, []);
+      // 1) Covalent (native + tokens)
+      const cvTx = await Promise.allSettled(chains.map((c) => fetchChainTx(c, owner, !!softMode)));
+      const cvTxLists: TxItem[][] = cvTx.map((r) => (r.status === "fulfilled" ? r.value : []));
+      const cvTok = await Promise.allSettled(chains.map((c) => fetchTokenTransfers(c, owner, !!softMode)));
+      const cvTokLists: TxItem[][] = cvTok.map((r) => (r.status === "fulfilled" ? r.value : []));
 
-  const safeSaveRxCache = useCallback(async (owner: string, nextList: TxItem[]) => {
-    try {
-      if (!nextList || nextList.length === 0) return;
-      const existing = await loadRxCache(owner);
-      const now = Date.now();
-      const map = new Map<string, TxItem>();
-      for (const t of existing) {
-        if (now - new Date(t.timestamp).getTime() < RX_CACHE_TTL_MS) {
-          const key = `${t.hash}:${t.chainId}:${t.isToken ? t.tokenContract : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
-          map.set(key, { ...t, _source: "sticky" as const });
-        }
-      }
-      for (const t of nextList) {
-        const key = `${t.hash}:${t.chainId}:${t.isToken ? t.tokenContract : "native"}:${t.from}:${t.to}:${amountKey(t)}`;
-        map.set(key, { ...t, _source: "sticky" as const });
-      }
-      const merged = Array.from(map.values()).slice(0, 200);
-      await AsyncStorage.setItem(RX_CACHE_KEY(owner), JSON.stringify(merged));
-    } catch {}
-  }, [loadRxCache]);
-
-  // covalent (native)
-  const fetchChainTx = async (c: EvmChain, owner: string, soft: boolean) => {
-    const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/transactions_v3/?no-logs=true&page-size=${COVALENT_PAGE_SIZE}`;
-    try {
-      const json = await withTimeout(covalentGet(url), soft ? SOFT_FETCH_MS : MAX_FETCH_MS, () => ({ data: { items: [] } } as any));
-      return toNativeTxItems((json as any)?.data?.items ?? [], c, "covalent");
-    } catch { return []; }
-  };
-
-  // covalent (erc20)
-  const fetchTokenTransfers = async (c: EvmChain, owner: string, soft: boolean): Promise<TxItem[]> => {
-    const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/transfers_v3/?contract-address=all&no-logs=false&page-size=${COVALENT_PAGE_SIZE}`;
-    try {
-      const json = await withTimeout(covalentGet(url), soft ? SOFT_FETCH_MS : MAX_FETCH_MS, () => ({ data: { items: [] } } as any));
-      const items: any[] = (json as any)?.data?.items || [];
-      return toTokenItemsFromCovalent(items, c);
-    } catch { return []; }
-  };
-
-  // rpc native incoming
-  async function rpcIncomingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
-    if (!c.testnet) return [];
-    try {
-      const rpc = c.rpcUrls?.[0];
-      if (!rpc) return [];
-      const provider = new ethers.providers.StaticJsonRpcProvider(rpc, { chainId: c.chainId, name: c.name });
-      const latest = await provider.getBlockNumber();
-      const lower = Math.max(0, latest - Math.max(1, lookbackBlocks - 1));
-      const out: TxItem[] = [];
-      const blocks = Array.from({ length: latest - lower + 1 }, (_, i) => latest - i).slice(0, lookbackBlocks);
-      const blockDatas = await Promise.allSettled(blocks.map((bn) => provider.getBlockWithTransactions(bn)));
-      for (const res of blockDatas) {
-        if (res.status !== "fulfilled" || !res.value) continue;
-        const block = res.value;
-        const ts = (block?.timestamp || Math.floor(Date.now() / 1000)) * 1000;
-        for (const tx of block.transactions || []) {
-          const to = (tx.to || "").toLowerCase();
-          if (!to || to !== owner) continue;
-          out.push({
-            hash: tx.hash || "",
-            timestamp: new Date(ts).toISOString(),
-            from: (tx.from || "").toLowerCase(),
-            to,
-            valueWei: (tx.value || ethers.constants.Zero).toString(),
-            gasUsed: null, gasPrice: null, feesPaidWei: null,
-            successful: true,
-            chainId: c.chainId,
-            explorerBase: c.explorerBase,
-            nativeSymbol: c.nativeSymbol,
-            _source: "rpc",
-          });
-        }
-      }
-      return out;
-    } catch { return []; }
-  }
-
-  // rpc erc20 incoming (logs)
-  async function rpcErc20IncomingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
-    if (!c.testnet) return [];
-    try {
-      const rpc = c.rpcUrls?.[0];
-      if (!rpc) return [];
-      const provider = new ethers.providers.StaticJsonRpcProvider(rpc, { chainId: c.chainId, name: c.name });
-      const latest = await provider.getBlockNumber();
-      const fromBlock = Math.max(0, latest - Math.max(1, lookbackBlocks - 1));
-      const ownerTopic = ethers.utils.hexZeroPad(owner, 32);
-      const logs = await provider.getLogs({ fromBlock, toBlock: latest, topics: [TRANSFER_TOPIC, null, ownerTopic] });
-      const out: TxItem[] = [];
-      for (const log of logs) {
-        try {
-          const parsed = ERC20_IFACE.parseLog(log);
-          const from = (parsed.args[0] as string).toLowerCase();
-          const to = (parsed.args[1] as string).toLowerCase();
-          const value = parsed.args[2] as ethers.BigNumber;
-          const txHash = log.transactionHash;
-          const contractAddr = log.address.toLowerCase();
-          const metaKey = `${c.chainId}:${contractAddr}`;
-          let meta = erc20MetaRef.current.get(metaKey);
-          if (!meta) {
-            try {
-              const contract = new ethers.Contract(contractAddr, ERC20_IFACE.fragments, provider);
-              const [sym, dec] = await Promise.allSettled([contract.symbol(), contract.decimals()]);
-              meta = {
-                symbol: sym.status === "fulfilled" ? String(sym.value) : "TOKEN",
-                decimals: dec.status === "fulfilled" ? Number(dec.value) : 18,
-              };
-            } catch { meta = { symbol: "TOKEN", decimals: 18 }; }
-            erc20MetaRef.current.set(metaKey, meta);
-          }
-          const units = ethers.utils.formatUnits(value, meta.decimals);
-          const blk = await provider.getBlock(log.blockNumber);
-          const ts = (blk?.timestamp || Math.floor(Date.now() / 1000)) * 1000;
-          out.push({
-            hash: txHash,
-            timestamp: new Date(ts).toISOString(),
-            from, to,
-            valueWei: "0",
-            successful: true,
-            chainId: c.chainId,
-            explorerBase: c.explorerBase,
-            nativeSymbol: c.nativeSymbol,
-            _source: "erc20_rpc",
-            isToken: true,
-            tokenSymbol: meta.symbol,
-            tokenDecimals: meta.decimals,
-            tokenContract: contractAddr,
-            tokenValueUnits: units,
-            direction: "IN",
-          });
-        } catch {}
-      }
-      return out;
-    } catch { return []; }
-  }
-
-  function cancelPollers() {
-    for (const t of pollTimersRef.current) clearTimeout(t);
-    pollTimersRef.current = [];
-    cancelledRef.current = true;
-    setTimeout(() => (cancelledRef.current = false), 0);
-  }
-
-  function startRpcPoller(owner: string, baseList: TxItem[], stickyStart: TxItem[]) {
-    cancelPollers();
-    const schedule = RPC_POLL_SCHEDULE_MS.slice();
-    const runOnce = async () => {
-      if (cancelledRef.current) return;
-      const nativeResults = await Promise.allSettled(chains.map((c) => rpcIncomingLookback(c, owner, RPC_LOOKBACK_BLOCKS)));
-      const erc20Results  = await Promise.allSettled(chains.map((c) => rpcErc20IncomingLookback(c, owner, RPC_LOOKBACK_BLOCKS)));
-      const nativeLists: TxItem[][] = nativeResults.map((r) => (r.status === "fulfilled" ? r.value : []));
-      const erc20Lists:  TxItem[][] = erc20Results.map((r) => (r.status === "fulfilled" ? r.value : []));
-      const merged = mergeAndSort([baseList, ...nativeLists, ...erc20Lists, stickyStart]);
-      setItems((prev) => mergeAndSort([prev, merged]));
-      const candidateSticky: TxItem[] = mergeAndSort([stickyStart, ...nativeLists, ...erc20Lists]).map((t) => ({ ...t, _source: "sticky" as const }));
-      await safeSaveRxCache(owner, candidateSticky);
-    };
-    schedule.forEach((ms) => {
-      const t = setTimeout(runOnce, ms);
-      pollTimersRef.current.push(t);
-    });
-  }
-
-  const fetchHistory = useCallback(
-    async (soft = false) => {
-      if (!address) return;
-      const now = Date.now();
-      if (!soft && now - lastFetchAtRef.current < 8000) return;
-      lastFetchAtRef.current = now;
-
-      cancelPollers();
-      if (soft) setIsRefreshing(true);
-
-      const owner = address.toLowerCase();
-
+      // ✅ 2) Persist inbound Covalent rows so receiver history remains even if APIs lag later
       try {
-        loadPrices();
-
-        const sticky = await loadRxCache(owner);
-        if (sticky.length > 0) {
-          setItems((prev) => mergeAndSort([prev, sticky]));
-          if (firstLoading) setFirstLoading(false);
-          if (soft) setIsRefreshing(false);
+        const covInboundNative = cvTxLists.flat().filter((t) => (t.to || "").toLowerCase() === owner);
+        const covInboundTokens = cvTokLists.flat().filter((t) => t.isToken && t.direction === "IN");
+        if (covInboundNative.length || covInboundTokens.length) {
+          await safeSaveRxCache(owner, mergeAndSort([covInboundNative, covInboundTokens]));
         }
+      } catch {}
 
-        if (!soft) {
-          const backNative = await Promise.allSettled(chains.map((c) => rpcIncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS)));
-          const backErc20  = await Promise.allSettled(chains.map((c) => rpcErc20IncomingLookback(c, owner, INITIAL_RPC_LOOKBACK_BLOCKS)));
-          const backListsN = backNative.map((r) => (r.status === "fulfilled" ? r.value : []));
-          const backListsT = backErc20.map((r) => (r.status === "fulfilled" ? r.value : []));
-          const backfillSticky = mergeAndSort([sticky, ...backListsN, ...backListsT]).map((t) => ({ ...t, _source: "sticky" as const }));
-          await safeSaveRxCache(owner, backfillSticky);
-        }
+      // 3) Merge covalent all
+      const covAll = mergeAndSort([cvTxLists.flat(), cvTokLists.flat()]);
 
-        const cvTx = await Promise.allSettled(chains.map((c) => fetchChainTx(c, owner, !!soft)));
-        const cvTxLists: TxItem[][] = cvTx.map((r) => (r.status === "fulfilled" ? r.value : []));
-        const cvTok = await Promise.allSettled(chains.map((c) => fetchTokenTransfers(c, owner, !!soft)));
-        const cvTokLists: TxItem[][] = cvTok.map((r) => (r.status === "fulfilled" ? r.value : []));
+      // 4) localTxs (sender optimistic)
+      let localTxs: TxItem[] = [];
+      try {
+        const raw = (await AsyncStorage.getItem("localTxs")) || "[]";
+        const arr = JSON.parse(raw) as any[];
+        localTxs = (arr || []).map((t) => ({
+          hash: t.hash,
+          timestamp: t.timestamp,
+          from: (t.from || "").toLowerCase(),
+          to: (t.to || "").toLowerCase(),
+          valueWei: t.value,
+          chainId: t.chainId,
+          isToken: false,
+          direction: owner === (t.from || "").toLowerCase() ? "OUT" : "IN",
+          status: "Confirmed",
+        }));
+      } catch {}
 
-        const localRaw = await AsyncStorage.getItem("localTxs");
-        if (localRaw) {
-          const locals: any[] = JSON.parse(localRaw);
-          const localList: TxItem[] = locals.map((l) => ({
-            hash: l.hash,
-            timestamp: l.timestamp || new Date().toISOString(),
-            from: (l.from || "").toLowerCase(),
-            to: (l.to || "").toLowerCase(),
-            valueWei: (l.value || "0").toString(),
-            gasUsed: null, gasPrice: null, feesPaidWei: null,
-            successful: true,
-            chainId: l.chainId,
-            explorerBase: chains.find((c) => c.chainId === l.chainId)?.explorerBase || "",
-            nativeSymbol: (chains.find((c) => c.chainId === l.chainId)?.nativeSymbol || "ETH") as "ETH" | "BNB" | "MATIC",
-            _source: "rpc",
-          }));
-          cvTxLists.push(localList);
-        }
+      const merged = mergeAndSort([covAll, localTxs]).slice(0, MAX_MERGED);
+      setList(merged);
 
-        const baseMerged = mergeAndSort([...cvTxLists, ...cvTokLists, sticky]);
-        if (baseMerged.length > 0) setItems((prev) => mergeAndSort([prev, baseMerged]));
-        setFirstLoading(false);
-        setIsRefreshing(false);
-
-        startRpcPoller(owner, baseMerged, sticky.map((t) => ({ ...t, _source: "sticky" as const })));
-      } catch {
-        setFirstLoading(false);
-        setIsRefreshing(false);
-      }
-    },
-    [address, chains, loadPrices, loadRxCache, safeSaveRxCache, firstLoading]
-  );
-
-  useEffect(() => { fetchHistory(false); /* eslint-disable-next-line */ }, []);
+      // 5) Save sticky so it persists between app launches (covers sender & receiver)
+      await safeSaveRxCache(owner, merged);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [chains, owner]);
 
   useFocusEffect(
     useCallback(() => {
+      let mounted = true;
       fetchHistory(true);
-      return () => cancelPollers();
+      const id = setInterval(() => mounted && fetchHistory(true), 8000);
+      return () => { mounted = false; clearInterval(id); };
     }, [fetchHistory])
   );
 
-  const onRefresh = useCallback(async () => { await fetchHistory(true); }, [fetchHistory]);
-
-  const priceFor = (sym: "ETH" | "BNB" | "MATIC") => priceMap[sym] || { usd: 0, local: 0 };
-  const toDisplay = (nativeAmount: number, sym: "ETH" | "BNB" | "MATIC") => {
-    if (displayUnit === "USD") return { text: (nativeAmount * priceFor(sym).usd).toFixed(2), unit: "USD" };
-    if (displayUnit === localCurrency)
-      return { text: (nativeAmount * priceFor(sym).local).toFixed(2), unit: localCurrency };
-    return { text: fmt(nativeAmount, 6), unit: sym };
-  };
-
-  const openExplorer = (t: TxItem) => {
-    if (!t.explorerBase || !t.hash) return;
-    Linking.openURL(`${t.explorerBase}/tx/${t.hash}`);
-  };
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchHistory(false);
+  }, [fetchHistory]);
 
   const renderItem = ({ item }: { item: TxItem }) => {
-    const me = (address || "").toLowerCase();
-    const isSend = item.isToken
-      ? (item.direction === "OUT" || (me && item.from === me))
-      : (me && item.from === me);
-    const successful = item.successful !== false;
-
-    let amountText = "";
-    let unitText = "";
-    if (item.isToken) {
-      amountText = item.tokenValueUnits || "0";
-      unitText = item.tokenSymbol || "TOKEN";
-    } else {
-      const valueNative = parseFloat(ethers.utils.formatEther(item.valueWei || "0"));
-      const disp = toDisplay(valueNative, item.nativeSymbol);
-      amountText = disp.text;
-      unitText = disp.unit;
-    }
+    const isOut = item.direction === "OUT";
+    const symbol = item.isToken ? (item.tokenSymbol || "TOKEN") : "ETH";
+    const amount = item.isToken ? item.tokenAmount : (item.valueWei ? ethers.utils.formatEther(item.valueWei) : "0");
+    const color = isOut ? "#b91c1c" : "#059669";
+    const label = isOut ? "To" : "From";
+    const who = isOut ? maskAddr(item.to) : maskAddr(item.from);
+    const status = item.status || "Confirmed";
 
     return (
-      <TouchableOpacity activeOpacity={0.85} onPress={() => openExplorer(item)}>
-        <View style={styles.card}>
-          <View style={styles.rowTop}>
-            <Ionicons
-              name={isSend ? "arrow-up" : "arrow-down"}
-              size={22}
-              color={isSend ? "#E11D48" : "#16A34A"}
-              style={{ marginRight: 8 }}
-            />
-            <Text style={styles.date}>{new Date(item.timestamp).toLocaleString()}</Text>
-            <View style={{ flex: 1 }} />
-            <Text style={styles.chainTag}>{item.isToken ? (item.tokenSymbol || "TOKEN") : item.nativeSymbol}</Text>
-          </View>
-
-          <View style={styles.line} />
-
-          <View style={styles.row}>
-            <Text style={styles.label}>Amount:</Text>
-            <Text style={styles.value}>
-              {amountText} {unitText}
-            </Text>
-          </View>
-
-          <View style={styles.row}>
-            <Text style={styles.label}>Status:</Text>
-            <Text style={[styles.value, successful ? styles.statusConfirmed : styles.statusFailed]}>
-              {successful ? "Confirmed" : "Failed"}
-            </Text>
-          </View>
-
-          <View style={styles.row}>
-            <Text style={styles.label}>{isSend ? "To:" : "From:"}</Text>
-            <Text style={styles.valueAddr}>{isSend ? maskAddr(item.to) : maskAddr(item.from)}</Text>
+      <View style={styles.card}>
+        <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 6 }}>
+          <Ionicons name={isOut ? "arrow-up" : "arrow-down"} size={18} color={color} />
+          <Text style={{ marginLeft: 8, fontWeight: "600" }}>{new Date(item.timestamp).toLocaleString()}</Text>
+          <View style={{ marginLeft: "auto", backgroundColor: "#eef2ff", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 16 }}>
+            <Text style={{ color: "#2563eb", fontWeight: "700" }}>{symbol}</Text>
           </View>
         </View>
-      </TouchableOpacity>
+
+        <Text style={styles.row}><Text style={styles.key}>Amount:</Text>  {fmt(parseFloat(amount || "0"), 6)} {symbol}</Text>
+        <Text style={styles.row}><Text style={styles.key}>Status:</Text>  <Text style={{ color: "#059669", fontWeight: "700" }}>{status}</Text></Text>
+        <Text style={styles.row}><Text style={styles.key}>{label}:</Text> {who}</Text>
+
+        <TouchableOpacity onPress={() => {
+          const base = CHAINS.find(c => c.chainId === item.chainId)?.explorerBase || "";
+          if (base) Linking.openURL(`${base}/tx/${item.hash}`);
+        }}>
+          <Text style={{ color: "#2563eb", marginTop: 6 }}>View on Explorer</Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.heading}>Transaction History</Text>
+    <View style={{ flex: 1, backgroundColor: "#fff", paddingHorizontal: 16, paddingTop: 24 }}>
+      <Text style={{ fontSize: 32, fontWeight: "800", color: "#0A84FF", marginBottom: 12 }}>Transaction History</Text>
 
-      <View style={styles.controlsBlockCentered}>
-        <View style={styles.unitRow}>
-          <TouchableOpacity
-            style={displayUnit === "TOKEN" ? styles.unitButtonActive : styles.unitButton}
-            onPress={() => setDisplayUnit("TOKEN")}
-          >
-            <Text style={displayUnit === "TOKEN" ? styles.unitTextActive : styles.unitText}>TOKEN</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={displayUnit === "USD" ? styles.unitButtonActive : styles.unitButton}
-            onPress={() => setDisplayUnit("USD")}
-          >
-            <Text style={displayUnit === "USD" ? styles.unitTextActive : styles.unitText}>USD</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={displayUnit === localCurrency ? styles.unitButtonActive : styles.unitButton}
-            onPress={() => setDisplayUnit(localCurrency)}
-          >
-            <Text style={displayUnit === localCurrency ? styles.unitTextActive : styles.unitText}>{localCurrency}</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {firstLoading && items.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color="#0A84FF" />
+      {loading && list.length === 0 ? (
+        <View style={{ marginTop: 40 }}>
+          <ActivityIndicator />
+          <Text style={{ textAlign: "center", marginTop: 8 }}>Loading…</Text>
         </View>
       ) : (
         <FlatList
-          data={items}
+          data={list}
+          keyExtractor={(item) => uniqKey(item)}
           renderItem={renderItem}
-          keyExtractor={(it, i) =>
-            it.hash ? `${it.hash}:${it.chainId}:${it.isToken ? (it.tokenContract || "token") : "native"}:${it.from}:${it.to}:${amountKey(it)}` : String(i)
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0A84FF" />
           }
-          contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={<Text style={styles.empty}>No transactions yet.</Text>}
-          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={["#0A84FF"]} />}
+          ListEmptyComponent={
+            <Text style={{ textAlign: "center", marginTop: 40, color: "#6b7280" }}>
+              No transactions yet.
+            </Text>
+          }
+          contentContainerStyle={{ paddingBottom: 40 }}
         />
       )}
     </View>
@@ -559,38 +278,10 @@ export default function HistoryTab() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  heading: {
-    fontSize: 36, fontWeight: "bold", color: "#0A84FF",
-    marginTop: 50, paddingHorizontal: 16, marginBottom: 8, textAlign: "center",
-  },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  listContainer: { padding: 16 },
-  empty: { textAlign: "center", color: "#888", marginTop: 24 },
-
-  controlsBlockCentered: { paddingHorizontal: 16, marginBottom: 6, alignItems: "center" },
-  unitRow: { flexDirection: "row", gap: 8, justifyContent: "center", alignItems: "center" },
-  unitButton: { paddingVertical: 8, paddingHorizontal: 14, backgroundColor: "#f3f4f6", borderRadius: 20 },
-  unitButtonActive: { paddingVertical: 8, paddingHorizontal: 14, backgroundColor: "#0A84FF", borderRadius: 20 },
-  unitText: { color: "#0A84FF", fontWeight: "bold" },
-  unitTextActive: { color: "#fff", fontWeight: "bold" },
-
   card: {
-    backgroundColor: "#F5F9FF",
-    borderRadius: 12, padding: 12, marginBottom: 12,
-    borderWidth: 1, borderColor: "#E6F0FF",
+    borderWidth: 1, borderColor: "#e5e7eb", borderRadius: 12,
+    padding: 12, marginBottom: 10, backgroundColor: "#fff",
   },
-  rowTop: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  chainTag: {
-    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
-    backgroundColor: "#E8F1FF", color: "#0A84FF", fontWeight: "700",
-  },
-  line: { height: 1, backgroundColor: "#E6EAF2", marginVertical: 6 },
-  row: { flexDirection: "row", alignItems: "flex-start", marginTop: 6 },
-  label: { width: 86, fontWeight: "bold", color: "#000" },
-  value: { flex: 1, color: "#111" },
-  valueAddr: { flex: 1, color: "#333", fontFamily: Platform.select({ ios: "Menlo", android: "monospace", default: undefined }) },
-  date: { color: "#333", fontWeight: "600" },
-  statusConfirmed: { color: "#16A34A", fontWeight: "700" },
-  statusFailed: { color: "#DC2626", fontWeight: "700" },
+  row: { marginTop: 4, color: "#111" },
+  key: { fontWeight: "700", color: "#111" },
 });

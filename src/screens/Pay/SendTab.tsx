@@ -13,7 +13,7 @@ import * as Localization from 'expo-localization';
 import * as Clipboard from 'expo-clipboard';
 
 import { useWalletStore } from '../../store/useWalletStore';
-import { useChain } from '../../hooks/useChain';
+import { useChain } from '../../hooks/useChain';           // only for default chain selection
 import { CHAINS, EvmChain } from '../../config/chainRegistry';
 import { covalentGet } from '../../lib/covalent';
 
@@ -83,57 +83,6 @@ function parseDeepError(e: any): string {
     }
   }
   return (e?.reason || e?.error?.message || e?.data?.message || e?.message || String(e));
-}
-
-// Build a human-friendly confirmation summary (shows entered unit + equivalents)
-function confirmSummary(
-  opts: {
-    enteredAmount: string;
-    unit: 'token' | 'usd' | 'local';
-    assetSymbol: string;
-    isNative: boolean;
-    valueBN: ethers.BigNumber;
-    nativePriceUSD: number;
-    usdToLocal: number;
-    localCode: string;
-    feeEstimate: string; // "~0.00042 ETH" etc.
-    chainLabel: string;
-    toMasked: string;
-    nativeSymbol: 'ETH' | 'BNB' | 'MATIC';
-    decimals?: number;
-  }
-) {
-  const {
-    enteredAmount, unit, assetSymbol, isNative, valueBN,
-    nativePriceUSD, usdToLocal, localCode, feeEstimate,
-    chainLabel, toMasked, nativeSymbol, decimals = 18
-  } = opts;
-
-  const tokenQty = isNative
-    ? parseFloat(ethers.utils.formatEther(valueBN))
-    : parseFloat(ethers.utils.formatUnits(valueBN, decimals));
-
-  const tokenLine = `${fmt(tokenQty)} ${isNative ? nativeSymbol : assetSymbol}`;
-  const enteredLine =
-    unit === 'token'
-      ? `${enteredAmount} ${isNative ? nativeSymbol : assetSymbol}`
-      : unit === 'usd'
-      ? `$${fmt(parseFloat(enteredAmount), 2)} USD`
-      : `${fmt(parseFloat(enteredAmount), 2)} ${localCode}`;
-
-  const usdApprox = isNative ? ` • ≈ $${fmt(tokenQty * nativePriceUSD, 2)} USD` : '';
-  const locApprox = isNative ? ` • ≈ ${fmt(tokenQty * nativePriceUSD * usdToLocal, 2)} ${localCode}` : '';
-  const feeLine = isNative ? feeEstimate : `${feeEstimate} (paid in ${nativeSymbol})`;
-
-  return [
-    'Transactions are not reversible.',
-    '',
-    `You entered: ${enteredLine}`,
-    `Equivalent: ${tokenLine}${usdApprox}${locApprox}`,
-    `Network: ${chainLabel}`,
-    `To: ${toMasked}`,
-    `Estimated network fee: ${feeLine}`,
-  ].join('\n');
 }
 
 const SendTab = () => {
@@ -253,7 +202,7 @@ const SendTab = () => {
             chainId: c.chainId, chain: c, isNative: false, contract,
             symbol, name, decimals: Number.isFinite(decimals) ? decimals : 18,
             balanceWei: balStr,
-            balanceFormatted: ethers.utils.parseUnits('1', 0) ? ethers.utils.formatUnits(balStr, Number.isFinite(decimals) ? decimals : 18) : '0',
+            balanceFormatted: ethers.utils.formatUnits(balStr, Number.isFinite(decimals) ? decimals : 18),
           });
         }
       } catch {}
@@ -415,26 +364,27 @@ const SendTab = () => {
         const gasLim = await withTimeout(signer.estimateGas({ to: candidate, value: valueBN }), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_NATIVE);
         overrides.gasLimit = gasLim;
 
-        // ★ Accurate confirmation (entered unit + equivalents)
-        const summary = confirmSummary({
-          enteredAmount: amount,
-          unit: amountUnit,
-          assetSymbol: NATIVE_SYMBOL,
-          isNative: true,
-          valueBN,
-          nativePriceUSD,
-          usdToLocal,
-          localCode,
-          feeEstimate,
-          chainLabel: activeChain.shortName || activeChain.name,
-          toMasked: maskAddr(candidate),
-          nativeSymbol: NATIVE_SYMBOL,
-        });
+        // Build detailed confirmation that mirrors the user’s input and correct equivalents
+        const nativeAmtNum = parseFloat(ethers.utils.formatEther(valueBN));
+        const enteredLine =
+          amountUnit === 'usd'   ? `You entered: $${fmt(parseFloat(amount), 2)} USD`
+        : amountUnit === 'local' ? `You entered: ${fmt(parseFloat(amount), 2)} ${localCode}`
+                                 : `You entered: ${fmt(nativeAmtNum, 6)} ${NATIVE_SYMBOL}`;
+        const eqUsd   = nativeAmtNum * nativePriceUSD;
+        const eqLocal = eqUsd * usdToLocal;
 
         setBusyStage(null);
         Alert.alert(
-          'Confirm Send',
-          summary,
+          'WARNING',
+          [
+            'Transactions are not reversible.',
+            '',
+            enteredLine,
+            `Equivalent: ${fmt(nativeAmtNum, 6)} ${NATIVE_SYMBOL} • ≈ $${fmt(eqUsd, 2)} USD • ≈ ${fmt(eqLocal, 2)} ${localCode}`,
+            `Network: ${activeChain.shortName || activeChain.name}`,
+            `To: ${maskAddr(candidate)}`,
+            `Estimated fee: ${feeEstimate}`,
+          ].join('\n'),
           [
             { text: 'Cancel', style: 'cancel', onPress: () => setBusyStage(null) },
             {
@@ -456,40 +406,13 @@ const SendTab = () => {
         return;
       }
 
-      // ERC-20 transfer — show confirm first (fee in native coin)
-      const summaryErc20 = confirmSummary({
-        enteredAmount: amount,
-        unit: 'token',
-        assetSymbol: selectedAsset.symbol,
-        isNative: false,
-        valueBN,
-        nativePriceUSD,
-        usdToLocal,
-        localCode,
-        feeEstimate,
-        chainLabel: activeChain.shortName || activeChain.name,
-        toMasked: maskAddr(candidate),
-        nativeSymbol: NATIVE_SYMBOL,
-        decimals: selectedAsset.decimals || 18,
-      });
-
-      setBusyStage(null);
-      const proceed = await new Promise<boolean>((resolve) => {
-        Alert.alert(
-          'Confirm Send',
-          summaryErc20,
-          [
-            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-            { text: 'Continue', onPress: () => resolve(true) },
-          ]
-        );
-      });
-      if (!proceed) return;
-
-      setBusyStage('submitting');
+      // ERC-20 transfer (token units only)
       const contract = new ethers.Contract(selectedAsset.contract!, ERC20_ABI, signer);
       const gasLim = await withTimeout(contract.estimateGas.transfer(candidate, valueBN, {}), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_ERC20);
-      const tx = await contract.transfer(candidate, valueBN, { ...overrides, gasLimit: gasLim });
+      overrides.gasLimit = gasLim;
+
+      setBusyStage('submitting');
+      const tx = await contract.transfer(candidate, valueBN, overrides);
       const receipt = await tx.wait(1);
       txHash = receipt.transactionHash;
       effectiveFeeNative = parseFloat(ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice)));
@@ -529,15 +452,6 @@ const SendTab = () => {
 
     // 🔔 invalidate Wallet balances for this chain (fast refresh)
     await AsyncStorage.setItem(INVALIDATE_KEY(owner, activeChain.chainId), String(Date.now()));
-
-    // ★ NEW: local delta so Wallet shows reduced native balance immediately
-    try {
-      if (isNative) {
-        const prev = parseFloat((await AsyncStorage.getItem('localBalanceDelta')) || '0');
-        const sentAndFee = parseFloat(ethers.utils.formatEther(valueBN)) + (feeNative || 0);
-        await AsyncStorage.setItem('localBalanceDelta', String(prev - sentAndFee));
-      }
-    } catch {}
 
     // Optimistically decrement AssetIndex cache (so picker shows updated balances)
     try {
@@ -649,7 +563,7 @@ const SendTab = () => {
       </View>
       <View style={styles.separator} />
 
-      {/* Asset picker */}
+      {/* Asset picker (owned assets across all chains) */}
       <View style={styles.section}>
         <Text style={styles.label}>What crypto currency would you like to send:</Text>
         <Picker
