@@ -9,7 +9,7 @@ export type EvmChain = {
   nativeSymbol: "ETH" | "BNB" | "MATIC";
   decimals: number;
   testnet?: boolean;
-  covalentSupported?: boolean;    // <— NEW: if false, skip Covalent and use on-chain fallback
+  covalentSupported?: boolean;    // if false, skip Covalent and use fallbacks
 };
 
 // Keep to the networks you actually want visible for Phase 2A.
@@ -70,13 +70,13 @@ export const CHAINS: EvmChain[] = [
     chainId: 80002,
     name: "Polygon Amoy",
     shortName: "Polygon · Amoy",
-    covalentChainId: "matic-amoy", // Covalent returns 501 on this today
+    covalentChainId: "matic-amoy",            // Covalent returns 501 today
     rpcUrls: [process.env.EXPO_PUBLIC_POLYGON_RPC_URL ?? ""],
-    explorerBase: "https://www.oklink.com/amoy",
+    explorerBase: "https://amoy.polygonscan.com", // Explorer per Polygon docs
     nativeSymbol: "MATIC",
     decimals: 18,
     testnet: true,
-    covalentSupported: false,     // <— mark unsupported to trigger fallback
+    covalentSupported: false,                 // trigger fallbacks
   },
   {
     chainId: 137,

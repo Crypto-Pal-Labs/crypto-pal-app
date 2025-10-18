@@ -1,9 +1,10 @@
-// src/hooks/useHistory.ts
 import { useState, useEffect, useCallback } from "react";
 import { Alert } from "react-native";
 import { useWalletStore } from "../store/useWalletStore";
 import { covalentGet, CovalentError } from "../lib/covalent";
 import { CHAINS, EvmChain } from "../config/chainRegistry";
+import { useActiveChain } from '@thirdweb-dev/react-native';  // Correct RN path
+import { getProvider } from '../utils/eth';  // Assume from eth.ts
 
 /**
  * Minimal normalized transaction item for UI consumption.
@@ -30,8 +31,8 @@ const toTxItems = (items: any[], c: EvmChain): TxItem[] =>
     to: (t.to_address || "").toLowerCase(),
     valueWei: String(t.value || t.value_wei || "0"),
     chainId: c.chainId,
-    explorerBase: c.explorerBase,
-    nativeSymbol: c.nativeSymbol,
+    explorerBase: c.explorerBase || '',  // Use from custom EvmChain
+    nativeSymbol: c.nativeSymbol as "ETH" | "BNB" | "MATIC" || 'ETH',
     successful: t.successful === false ? false : true,
     raw: t,
   }));
@@ -51,6 +52,7 @@ const mergeAndSort = (lists: TxItem[][]): TxItem[] => {
 
 export const useHistory = () => {
   const address = useWalletStore((s) => s.address);
+  const activeChain = useActiveChain();  // New: Dynamic chain from thirdweb
   const [transactions, setTransactions] = useState<TxItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +93,34 @@ export const useHistory = () => {
       const lists: TxItem[][] = results.map((r) =>
         r.status === "fulfilled" ? (r.value as TxItem[]) : []
       );
+
+      // New: RPC fallback for receiver txs (poll logs for incoming on active chain)
+      if (activeChain) {
+        const provider = await getProvider(activeChain.chainId as any);  // Adjust type if needed
+        const currentBlock = await provider.getBlockNumber();  // Fixed: Get numeric block, subtract
+        const logs = await provider.getLogs({
+          fromBlock: currentBlock - 100,  // Last 100 blocks
+          toBlock: 'latest',
+          address: owner,
+        });
+        const rpcTxs = logs.map(log => {
+          // Parse log to TxItem (simplified - expand for full)
+          return {
+            hash: log.transactionHash || '',
+            timestamp: new Date().toISOString(),
+            from: '',  // Parse from data if needed
+            to: owner,
+            valueWei: '0',  // Parse value
+            chainId: activeChain.chainId,
+            explorerBase: activeChain.explorers?.[0]?.url || '',  // Fixed: Use explorers from thirdweb Chain
+            nativeSymbol: activeChain.nativeCurrency?.symbol as "ETH" | "BNB" | "MATIC" || 'ETH',  // Fixed: Use nativeCurrency.symbol
+            successful: true,
+            raw: log,
+          };
+        });
+        lists.push(rpcTxs);
+      }
+
       const merged = mergeAndSort(lists);
       setTransactions(merged);
     } catch (e: any) {
@@ -100,7 +130,7 @@ export const useHistory = () => {
     } finally {
       setLoading(false);
     }
-  }, [address]);
+  }, [address, activeChain]);
 
   useEffect(() => {
     fetchHistory();

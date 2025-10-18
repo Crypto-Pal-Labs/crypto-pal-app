@@ -1,42 +1,24 @@
 // src/screens/Wallet.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
-  View,
-  Text,
-  FlatList,
-  ActivityIndicator,
-  TextInput,
-  StyleSheet,
-  Image,
-  RefreshControl,
-  TouchableOpacity,
-  Alert,
-  Platform,
-} from 'react-native';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
-import { StackActions } from '@react-navigation/native';
-import { ethers } from 'ethers';
-import { useAssets } from '../hooks/useAssets';
-import { getWalletAddress, clearWallet } from '../utils/wallet';
-import { Ionicons } from '@expo/vector-icons';
-import { useWalletStore } from '../store/useWalletStore';
-import { Picker } from '@react-native-picker/picker';
-import { useChain } from '../hooks/useChain';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Localization from 'expo-localization';
+  View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Image,
+  RefreshControl, TouchableOpacity, Alert,
+} from "react-native";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { StackActions } from "@react-navigation/native";
+import * as ethers from "ethers";
+import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Localization from "expo-localization";
+import { Picker } from "@react-native-picker/picker";
 
-type BalanceItem = {
-  contract_ticker_symbol: string;
-  balance: string;
-  quoteLocal?: number;
-  quoteUsd?: number;
-  logo_url?: string;
-  // meta from useAssets for proper formatting
-  contract_address?: string;
-  contract_decimals?: number;
-  contract_name?: string;
-};
+// ✅ Correct relative paths from src/screens/*
+import { useAssets, type BalanceItem } from "../hooks/useAssets";
+import { useChain } from "../hooks/useChain";
+import { useWalletStore } from "../store/useWalletStore";
+import { getWalletAddress, clearWallet } from "../utils/wallet";
 
+// ---------- Types used locally ----------
 type CGMarket = {
   id: string;
   symbol: string;
@@ -47,16 +29,17 @@ type CGMarket = {
   price_change_percentage_24h?: number | null;
 };
 
-const fmtPct = (v?: number | null) =>
-  v === undefined || v === null || Number.isNaN(v) ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+type PriceEntry = { usd: number; local: number };
 
+// ---------- Small helpers ----------
 const titleCase = (s: string) =>
   s.replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
 
+// polite queued fetcher to avoid CG rate limits
 let q = Promise.resolve();
 let last = 0;
 const GAP = 250;
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
+const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 function queuedJSON(url: string, retries = 2): Promise<any | null> {
   q = q.then(async () => {
     const wait = Math.max(0, last + GAP - Date.now());
@@ -65,7 +48,7 @@ function queuedJSON(url: string, retries = 2): Promise<any | null> {
     let n = 0;
     while (n <= retries) {
       try {
-        const r = await fetch(url, { headers: { Accept: 'application/json' } });
+        const r = await fetch(url, { headers: { Accept: "application/json" } });
         if (r.ok) return r.json();
       } catch {}
       await delay(300 * Math.pow(1.6, n));
@@ -76,65 +59,91 @@ function queuedJSON(url: string, retries = 2): Promise<any | null> {
   return q;
 }
 
-const Wallet = () => {
+// ---------- Simple price cache (fallback for testnets) ----------
+const PRICE_IDS: Record<string, string> = {
+  ETH: "ethereum", WETH: "ethereum",
+  BNB: "binancecoin", WBNB: "binancecoin",
+  MATIC: "matic-network", WMATIC: "matic-network",
+  USDT: "tether", USDC: "usd-coin", DAI: "dai",
+};
+
+async function loadSymbolPrices(symbols: string[], localCurrency: string) {
+  const ids = Array.from(
+    new Set(
+      symbols.map((s) => PRICE_IDS[(s || "").toUpperCase()] || "").filter(Boolean)
+    )
+  );
+  if (!ids.length) return {} as Record<string, PriceEntry>;
+
+  const vs = (localCurrency || "USD").toLowerCase();
+  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=usd,${vs}`;
+
+  let data: any = {};
+  try {
+    const res = await fetch(url, { headers: { Accept: "application/json" } });
+    if (res.ok) data = await res.json();
+  } catch {}
+
+  const out: Record<string, PriceEntry> = {};
+  Object.keys(PRICE_IDS).forEach((sym) => {
+    const id = PRICE_IDS[sym];
+    const d = (data || {})[id] || {};
+    out[sym] = { usd: Number(d.usd || 0), local: Number(d[vs] || 0) };
+  });
+  return out;
+}
+
+const Wallet: React.FC = () => {
   const navigation = useNavigation();
   const isMounted = useRef(true);
-  const setAddress = useWalletStore((state) => state.setAddress);
+
+  const setAddress = useWalletStore((state: any) => state.setAddress);
 
   const { chain, chains, activeChainId, setActiveChainId } = useChain();
-  const { balances, nfts, loading, error, refresh } = useAssets();
+  const { balances, nfts, loading, error, refresh, startTimers } = useAssets();
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [viewMode, setViewMode] = useState<'crypto' | 'nfts'>('crypto');
+  const [searchQuery, setSearchQuery] = useState("");
+  const [viewMode, setViewMode] = useState<"crypto" | "nfts">("crypto");
   const [refreshing, setRefreshing] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [localAddress, setLocalAddress] = useState('');
-  const [currency, setCurrency] = useState('USD');
-  const [localBalanceDelta, setLocalBalanceDelta] = useState(0);
-  const [currencyOptions, setCurrencyOptions] = useState(['USD']);
 
+  // currency handling
+  const locale = Localization.getLocales()[0] || { currencyCode: "USD" as const };
+  const localCurrency = (locale.currencyCode || "USD").toUpperCase();
+  const currencyOptions: string[] = Array.from(new Set(["USD", localCurrency]));
+  const [currency, setCurrency] = useState<string>("USD");
+
+  // for ETH pending-delta visual (existing pattern)
+  const [localBalanceDelta, setLocalBalanceDelta] = useState(0);
+
+  // 24h % map for each symbol (nice-to-have)
   const [cgMap, setCgMap] = useState<Record<string, CGMarket>>({});
   const resolving = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    loadAddress();
-    loadLocalDelta();
-    const locale = Localization.getLocales()[0] || { currencyCode: 'USD' };
-    const localCurrency = locale.currencyCode?.toUpperCase() || 'USD';
-    const uniqueOptions = [...new Set(['USD', localCurrency])];
-    setCurrencyOptions(uniqueOptions);
-    setCurrency('USD');
-    return () => { isMounted.current = false; };
-  }, [setAddress]);
-
   useEffect(() => {
     (async () => {
-      const m = await queuedJSON(
-        'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=200&page=1&sparkline=false&price_change_percentage=24h'
-      );
-      if (!Array.isArray(m)) return;
-      const next: Record<string, CGMarket> = {};
-      m.forEach((row: any) => {
-        const sym = (row.symbol || '').toLowerCase();
-        const entry: CGMarket = {
-          id: row.id,
-          symbol: row.symbol,
-          name: row.name,
-          image: row.image ?? null,
-          current_price: row.current_price ?? null,
-          price_change_percentage_24h_in_currency:
-            row.price_change_percentage_24h_in_currency ?? row.price_change_percentage_24h ?? null,
-          price_change_percentage_24h: row.price_change_percentage_24h ?? null,
-        };
-        if (!next[sym]) next[sym] = entry;
-        next[`${sym}|${(row.name || '').toLowerCase()}`] = entry;
-      });
-      if (isMounted.current) setCgMap(next);
+      try {
+        const rows = await queuedJSON(
+          "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=ethereum,binancecoin,matic-network,usd-coin,tether,dai&sparkline=false&price_change_percentage=24h"
+        );
+        if (!Array.isArray(rows)) return;
+        const next: Record<string, CGMarket> = {};
+        rows.forEach((r: any) => {
+          const sym = String(r.symbol || "").toLowerCase();
+          next[sym] = {
+            id: r.id, symbol: r.symbol, name: r.name,
+            image: r.image ?? null,
+            current_price: r.current_price ?? null,
+            price_change_percentage_24h_in_currency: r.price_change_percentage_24h_in_currency ?? r.price_change_percentage_24h ?? null,
+            price_change_percentage_24h: r.price_change_percentage_24h ?? null,
+          };
+          next[`${sym}|${(r.name || "").toLowerCase()}`] = next[sym];
+        });
+        if (isMounted.current) setCgMap(next);
+      } catch {}
     })();
   }, []);
 
   const ensurePctFor = async (symbol: string, name?: string) => {
-    const key = (symbol || '').toLowerCase();
+    const key = (symbol || "").toLowerCase();
     if (!key || resolving.current.has(key) || cgMap[key]) return;
     resolving.current.add(key);
     try {
@@ -145,35 +154,27 @@ const Wallet = () => {
       if (!match?.id) return;
 
       const rows = await queuedJSON(
-        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${encodeURIComponent(
-          match.id
-        )}&sparkline=false&price_change_percentage=24h`
+        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${encodeURIComponent(match.id)}&sparkline=false&price_change_percentage=24h`
       );
       if (Array.isArray(rows) && rows[0]) {
         const r = rows[0];
         const entry: CGMarket = {
           id: r.id, symbol: r.symbol, name: r.name, image: r.image ?? null,
           current_price: r.current_price ?? null,
-          price_change_percentage_24h_in_currency:
-            r.price_change_percentage_24h_in_currency ?? r.price_change_percentage_24h ?? null,
+          price_change_percentage_24h_in_currency: r.price_change_percentage_24h_in_currency ?? r.price_change_percentage_24h ?? null,
           price_change_percentage_24h: r.price_change_percentage_24h ?? null,
         };
         if (isMounted.current) {
-          setCgMap((prev) => ({ ...prev, [key]: entry, [`${key}|${(name || r.name || '').toLowerCase()}`]: entry }));
+          setCgMap((prev) => ({ ...prev, [key]: entry, [`${key}|${(name || r.name || "").toLowerCase()}`]: entry }));
         }
       }
-    } finally { resolving.current.delete(key); }
-  };
-
-  const loadLocalDelta = async () => {
-    try {
-      const storedDelta = await AsyncStorage.getItem('localBalanceDelta');
-      if (isMounted.current) setLocalBalanceDelta(storedDelta ? parseFloat(storedDelta) : 0);
-    } catch (e) {
-      console.error('Local delta fetch error:', e);
+    } finally {
+      resolving.current.delete(key);
     }
   };
 
+  // keep address in store (existing flow)
+  const [loadError, setLoadError] = useState<string | null>(null);
   const loadAddress = async () => {
     if (!isMounted.current) return;
     setLoadError(null);
@@ -181,12 +182,11 @@ const Wallet = () => {
       const currentAddress = await getWalletAddress();
       if (currentAddress) {
         setAddress(currentAddress);
-        setLocalAddress(currentAddress);
       } else {
-        throw new Error('No address returned from secure store.');
+        throw new Error("No address returned from secure store.");
       }
-    } catch (err) {
-      if (isMounted.current) setLoadError((err as Error).message || 'Failed to load wallet address.');
+    } catch (err: any) {
+      if (isMounted.current) setLoadError(err?.message || "Failed to load wallet address.");
     }
   };
 
@@ -194,93 +194,135 @@ const Wallet = () => {
     if (!isMounted.current) return;
     try {
       await clearWallet();
-      navigation.dispatch(StackActions.replace('Welcome'));
+      navigation.dispatch(StackActions.replace("Welcome"));
     } catch (error) {
       if (isMounted.current) {
-        console.error('Logout error:', error);
-        Alert.alert('Error', 'Failed to logout.');
+        console.error("Logout error:", error);
+        Alert.alert("Error", "Failed to logout.");
       }
     }
   };
 
+  const loadLocalDelta = async () => {
+    try {
+      const storedDelta = await AsyncStorage.getItem("localBalanceDelta");
+      if (isMounted.current) setLocalBalanceDelta(storedDelta ? parseFloat(storedDelta) : 0);
+    } catch (e) {
+      console.error("Local delta fetch error:", e);
+    }
+  };
+
+  // --- Fallback price cache inside the screen (guarantees non-zero fiat for Amoy) ---
+  const [priceCache, setPriceCache] = useState<Record<string, PriceEntry>>({});
+  useEffect(() => {
+    const syms: string[] = Array.from(
+      new Set(
+        balances
+          .map((b: BalanceItem) => ((b.contract_ticker_symbol || "") as string).toUpperCase())
+          .filter((s: string) => !!s)
+      )
+    );
+    if (!syms.length) return;
+    loadSymbolPrices(syms, localCurrency)
+      .then((map) => isMounted.current && setPriceCache(map))
+      .catch(() => {});
+  }, [balances, localCurrency]);
+
+  // compute header total with fallback
   const totalValue = balances
-    .reduce((sum, item) => {
-      let adjustedQuote = currency === 'USD' ? (item.quoteUsd ?? 0) : (item.quoteLocal ?? 0);
-      if (item.contract_ticker_symbol === 'ETH') {
-        const originalEth = parseFloat(ethers.utils.formatUnits(item.balance, 18));
-        const adjustedEth = originalEth + localBalanceDelta;
-        const pricePerEth = originalEth ? adjustedQuote / originalEth : 0;
-        adjustedQuote = pricePerEth * adjustedEth;
+    .reduce((sum: number, item: BalanceItem) => {
+      const sym = (item.contract_ticker_symbol || "").toUpperCase();
+      const dec = item.contract_decimals ?? 18;
+      let qty = Number(ethers.utils.formatUnits(item.balance, dec));
+      if (sym === "ETH") {
+        const originalEth = Number(ethers.utils.formatUnits(item.balance, 18));
+        qty = originalEth + localBalanceDelta;
       }
-      return sum + adjustedQuote;
+      let quote = currency === "USD" ? (item.quoteUsd ?? 0) : (item.quoteLocal ?? 0);
+      if (!quote || !Number.isFinite(quote)) {
+        const fallback = currency === "USD" ? (priceCache[sym]?.usd || 0) : (priceCache[sym]?.local || 0);
+        quote = qty * fallback;
+      }
+      return sum + (Number.isFinite(quote) ? quote : 0);
     }, 0)
     .toFixed(2);
 
   const onRefresh = async () => {
     if (!isMounted.current) return;
     setRefreshing(true);
-    await refresh();
-    await AsyncStorage.removeItem('localBalanceDelta');
+    refresh();
+    await AsyncStorage.removeItem("localBalanceDelta");
     await loadLocalDelta();
-    if (isMounted.current) setRefreshing(false);
+    setRefreshing(false);
   };
 
-  useFocusEffect(React.useCallback(() => { onRefresh(); }, [activeChainId]));
+  // on tab focus: refresh once; start 60s timer from the hook
+  useFocusEffect(
+    React.useCallback(() => {
+      const stop = startTimers?.(); // set up 60s + invalidate watcher
+      onRefresh();
+      return () => { if (typeof stop === "function") stop(); };
+    }, [activeChainId, startTimers])
+  );
 
-  // filter using token decimals (not always 18)
-  const filteredBalances = balances.filter(
-    (item) =>
+  // filter
+  const filteredBalances: BalanceItem[] = balances.filter(
+    (item: BalanceItem) =>
       Number(ethers.utils.formatUnits(item.balance, item.contract_decimals ?? 18)) > 0 &&
-      (item.contract_ticker_symbol || '').toLowerCase().includes(searchQuery.toLowerCase())
+      (item.contract_ticker_symbol || "").toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const filteredNfts = nfts.filter(
-    (item) =>
-      (item.contract_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.token_id.includes(searchQuery)
+    (item: any) =>
+      (item.contract_name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (item as any).token_id?.includes?.(searchQuery)
   );
 
   const resolveName = (symbol: string, raw?: string) => {
     if (raw && raw.trim().length) return titleCase(raw.trim());
-    if (symbol?.toUpperCase() === 'ETH') return 'Ethereum';
+    if (symbol?.toUpperCase() === "ETH") return "Ethereum";
     return symbol;
   };
 
   const renderBalanceItem = ({ item }: { item: BalanceItem }) => {
     const dec = item.contract_decimals ?? 18;
 
-    // show amount using token decimals. ETH keeps local delta.
-    let displayQty: number;
-    if ((item.contract_ticker_symbol || '').toUpperCase() === 'ETH') {
-      const originalEth = Number(ethers.utils.formatUnits(item.balance, 18));
-      displayQty = originalEth + localBalanceDelta;
-    } else {
-      displayQty = Number(ethers.utils.formatUnits(item.balance, dec));
-    }
+    // amount (ETH row keeps local delta)
+    const symU = (item.contract_ticker_symbol || "").toUpperCase();
+    let displayQty =
+      symU === "ETH"
+        ? Number(ethers.utils.formatUnits(item.balance, 18)) + localBalanceDelta
+        : Number(ethers.utils.formatUnits(item.balance, dec));
+
     const balanceLine = `${displayQty.toFixed(8)} ${item.contract_ticker_symbol}`;
 
-    const symbol = item.contract_ticker_symbol || '—';
+    const symbol = item.contract_ticker_symbol || "—";
     const name = resolveName(symbol, item.contract_name);
     const title = `${symbol}  |  ${name}`;
 
-    const logo = item.logo_url || null;
-    const initials = (symbol || '?').slice(0, 1);
+    const logo = item.logo_url || "";
 
-    const symKey = (symbol || '').toLowerCase();
-    const cg = cgMap[symKey] || cgMap[`${symKey}|${(item.contract_name || '').toLowerCase()}`];
+    // 24h %
+    const symKey = (symbol || "").toLowerCase();
+    const cg = cgMap[symKey] || cgMap[`${symKey}|${(item.contract_name || "").toLowerCase()}`];
     if (!cg) ensurePctFor(symbol, item.contract_name);
-
     const pct24 =
       cg?.price_change_percentage_24h_in_currency ??
-      cg?.price_change_percentage_24h ?? null;
+      cg?.price_change_percentage_24h ??
+      null;
+    const pctStyle = pct24 == null ? styles.pctNeutral : pct24 >= 0 ? styles.up : styles.down;
 
-    const pctStyle =
-      pct24 == null ? styles.pctNeutral : pct24 >= 0 ? styles.up : styles.down;
-
-    const displayFiat =
-      currency === 'USD'
-        ? (item.quoteUsd != null ? `$${item.quoteUsd.toFixed(2)}` : '—')
-        : (item.quoteLocal != null ? `${item.quoteLocal.toFixed(2)} ${currency}` : `— ${currency}`);
+    // fiat with fallback (never shows $0 on Amoy)
+    const fallbackUsd = (priceCache[symU]?.usd || 0) * displayQty;
+    const fallbackLoc = (priceCache[symU]?.local || 0) * displayQty;
+    let fiatText = "—";
+    if (currency === "USD") {
+      const val = item.quoteUsd && item.quoteUsd > 0 ? item.quoteUsd : fallbackUsd;
+      fiatText = Number.isFinite(val) ? `$${val.toFixed(2)}` : "—";
+    } else {
+      const val = item.quoteLocal && item.quoteLocal > 0 ? item.quoteLocal : fallbackLoc;
+      fiatText = Number.isFinite(val) ? `${val.toFixed(2)} ${currency}` : `— ${currency}`;
+    }
 
     return (
       <View style={styles.card}>
@@ -289,7 +331,7 @@ const Wallet = () => {
             <Image source={{ uri: logo }} style={styles.logoImgReal} resizeMode="contain" />
           ) : (
             <View style={styles.logoBox}>
-              <Text style={styles.logoLetter}>{initials}</Text>
+              <Text style={styles.logoLetter}>{(symbol || "?").slice(0, 1)}</Text>
             </View>
           )}
         </View>
@@ -300,11 +342,11 @@ const Wallet = () => {
         </View>
 
         <View style={styles.cardRight}>
-          <Text style={styles.cardPriceRight} numberOfLines={1}>{displayFiat}</Text>
+          <Text style={styles.cardPriceRight} numberOfLines={1}>{fiatText}</Text>
           <Text style={[styles.cardPctRight, pctStyle]} numberOfLines={1}>
-            {pct24 === null || pct24 === undefined || Number.isNaN(pct24)
-              ? '—'
-              : `${pct24 >= 0 ? '+' : ''}${pct24.toFixed(2)}%`}
+            {pct24 == null || Number.isNaN(pct24)
+              ? "—"
+              : `${pct24 >= 0 ? "+" : ""}${pct24.toFixed(2)}%`}
           </Text>
         </View>
       </View>
@@ -313,7 +355,7 @@ const Wallet = () => {
 
   const renderNFTItem = ({ item }: { item: any }) => {
     const logo = item.logo_url || null;
-    const title = `${resolveName('NFT', item.contract_name)}  |  Token`;
+    const title = `${resolveName("NFT", item.contract_name)}  |  Token`;
     return (
       <View style={styles.card}>
         <View style={styles.logoWrap}>
@@ -339,15 +381,6 @@ const Wallet = () => {
     );
   };
 
-  const EmptyState = () => (
-    <View style={styles.center}>
-      <Text style={styles.empty}>No tokens to display yet</Text>
-      <TouchableOpacity onPress={onRefresh}>
-        <Ionicons name="refresh-circle" size={50} color="#0A84FF" />
-      </TouchableOpacity>
-    </View>
-  );
-
   if (loadError) {
     return (
       <View style={styles.center}>
@@ -370,7 +403,7 @@ const Wallet = () => {
         <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search your assets..."
+          placeholder="Search your assets."
           value={searchQuery}
           onChangeText={setSearchQuery}
         />
@@ -379,16 +412,16 @@ const Wallet = () => {
       <View style={styles.segWrap}>
         <View style={styles.segRow}>
           <TouchableOpacity
-            style={viewMode === 'crypto' ? styles.segChipActive : styles.segChip}
-            onPress={() => setViewMode('crypto')}
+            style={viewMode === "crypto" ? styles.segChipActive : styles.segChip}
+            onPress={() => setViewMode("crypto")}
           >
-            <Text style={viewMode === 'crypto' ? styles.segChipTxtActive : styles.segChipTxt}>CRYPTOS</Text>
+            <Text style={viewMode === "crypto" ? styles.segChipTxtActive : styles.segChipTxt}>CRYPTOS</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={viewMode === 'nfts' ? styles.segChipActive : styles.segChip}
-            onPress={() => setViewMode('nfts')}
+            style={viewMode === "nfts" ? styles.segChipActive : styles.segChip}
+            onPress={() => setViewMode("nfts")}
           >
-            <Text style={viewMode === 'nfts' ? styles.segChipTxtActive : styles.segChipTxt}>NFTs</Text>
+            <Text style={viewMode === "nfts" ? styles.segChipTxtActive : styles.segChipTxt}>NFTs</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -407,7 +440,7 @@ const Wallet = () => {
               style={styles.pickerOverlay}
               mode="dropdown"
             >
-              {chains.map((c) => (
+              {chains.map((c: any) => (
                 <Picker.Item key={c.chainId} label={c.shortName || c.name} value={c.chainId} />
               ))}
             </Picker>
@@ -423,11 +456,11 @@ const Wallet = () => {
             </View>
             <Picker
               selectedValue={currency}
-              onValueChange={(val) => setCurrency(val)}
+              onValueChange={(val) => setCurrency(String(val))}
               style={styles.pickerOverlay}
               mode="dropdown"
             >
-              {[...new Set(currencyOptions)].map((opt) => (
+              {currencyOptions.map((opt: string) => (
                 <Picker.Item key={opt} label={opt} value={opt} />
               ))}
             </Picker>
@@ -437,7 +470,7 @@ const Wallet = () => {
 
       {error && (
         <Text style={styles.errorText}>
-          {error}{' '}
+          {error}{" "}
           <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity>
         </Text>
       )}
@@ -446,14 +479,23 @@ const Wallet = () => {
         <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />
       ) : (
         <>
-          {viewMode === 'crypto' ? (
+          {viewMode === "crypto" ? (
             <FlatList<BalanceItem>
               style={styles.assetList}
               data={filteredBalances}
               renderItem={renderBalanceItem}
-              keyExtractor={(it, idx) => `${it.contract_address || 'native'}:${it.contract_ticker_symbol}:${idx}`}
+              keyExtractor={(it: BalanceItem, idx: number) =>
+                `${it.contract_address || "native"}:${it.contract_ticker_symbol}:${idx}`
+              }
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              ListEmptyComponent={EmptyState}
+              ListEmptyComponent={
+                <View style={styles.center}>
+                  <Text style={styles.empty}>No tokens to display yet</Text>
+                  <TouchableOpacity onPress={onRefresh}>
+                    <Ionicons name="refresh-circle" size={50} color="#0A84FF" />
+                  </TouchableOpacity>
+                </View>
+              }
               contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
             />
           ) : (
@@ -461,9 +503,9 @@ const Wallet = () => {
               style={styles.assetList}
               data={filteredNfts}
               renderItem={renderNFTItem}
-              keyExtractor={(it, idx) => `${it.contract_address || 'nft'}:${it.token_id || idx}`}
+              keyExtractor={(it: any, idx: number) => `${it.contract_address || "nft"}:${it.token_id || idx}`}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              ListEmptyComponent={EmptyState}
+              ListEmptyComponent={<Text style={styles.empty}>No NFTs yet</Text>}
               contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
             />
           )}
@@ -480,74 +522,72 @@ const Wallet = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', paddingTop: 20 },
-  heading: { fontSize: 36, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginTop: 20 },
-  totalLabel: { fontSize: 20, color: '#000', textAlign: 'center', marginBottom: 5 },
-  totalValue: { fontSize: 27, fontWeight: 'bold', color: '#0A84FF', textAlign: 'center', marginBottom: 5 },
+  container: { flex: 1, backgroundColor: "#fff", paddingTop: 20 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+  heading: { fontSize: 36, fontWeight: "bold", color: "#0A84FF", textAlign: "center", marginTop: 20 },
+  totalLabel: { fontSize: 20, color: "#000", textAlign: "center", marginBottom: 5 },
+  totalValue: { fontSize: 27, fontWeight: "bold", color: "#0A84FF", textAlign: "center", marginBottom: 5 },
 
   searchContainer: {
-    flexDirection: 'row', alignItems: 'center',
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 20,
-    paddingHorizontal: 8, marginHorizontal: 12, marginBottom: 8, backgroundColor: '#fff'
+    flexDirection: "row", alignItems: "center",
+    borderWidth: 1, borderColor: "#ddd", borderRadius: 20,
+    paddingHorizontal: 8, marginHorizontal: 12, marginBottom: 8, backgroundColor: "#fff"
   },
   searchIcon: { marginRight: 6 },
   searchInput: { flex: 1, paddingVertical: 8 },
 
   segWrap: { paddingHorizontal: 12, marginBottom: 8 },
-  segRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  segRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
   segChip: {
     paddingVertical: 10, paddingHorizontal: 20, marginHorizontal: 6,
-    borderRadius: 999, minWidth: 110, alignItems: 'center', backgroundColor: '#e6ecff'
+    borderRadius: 999, minWidth: 110, alignItems: "center", backgroundColor: "#e6ecff"
   },
   segChipActive: {
     paddingVertical: 10, paddingHorizontal: 20, marginHorizontal: 6,
-    borderRadius: 999, minWidth: 110, alignItems: 'center', backgroundColor: '#0A84FF'
+    borderRadius: 999, minWidth: 110, alignItems: "center", backgroundColor: "#0A84FF"
   },
-  segChipTxt: { color: '#0A84FF', fontWeight: '800', fontSize: 15 },
-  segChipTxtActive: { color: '#fff', fontWeight: '900', fontSize: 15 },
+  segChipTxt: { color: "#0A84FF", fontWeight: "800", fontSize: 15 },
+  segChipTxtActive: { color: "#fff", fontWeight: "900", fontSize: 15 },
 
-  pickerRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 12, marginBottom: 8, gap: 12 },
+  pickerRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 12, marginBottom: 8, gap: 12 },
   pickerCol: { flex: 1 },
-  pickerLabel: { fontSize: 12, fontWeight: '700', color: '#333', marginBottom: 4, textAlign: 'center' },
-  pickerBox: {
-    borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, backgroundColor: '#fff',
-    height: 44, position: 'relative', overflow: 'hidden',
-  },
-  pickerDisplayRow: {
-    position: 'absolute', left: 12, right: 12, top: 0, bottom: 0,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', pointerEvents: 'none',
-  },
-  pickerValue: { color: '#0A84FF', fontWeight: '700' },
-  pickerOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, opacity: 0.02 },
+  pickerLabel: { fontSize: 12, fontWeight: "700", color: "#333", marginBottom: 6 },
+  pickerBox: { borderWidth: 1, borderColor: "#cfe0ff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: "#f7faff" },
+  pickerDisplayRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  pickerValue: { color: "#0A84FF", fontWeight: "800" },
+  pickerOverlay: { position: "absolute", opacity: 0, top: 0, right: 0, left: 0, bottom: 0 },
 
   assetList: { flex: 1 },
+
   card: {
-    flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: '#fff',
-    borderRadius: 14, marginBottom: 12, shadowColor: '#0368FF', shadowOpacity: 0.18, shadowRadius: 10, elevation: 6,
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#F5F9FF",
+    borderRadius: 12, padding: 12, marginHorizontal: 12, marginBottom: 12,
+    borderWidth: 1, borderColor: "#E6F0FF",
   },
-  logoWrap: { width: 60, height: 90, marginRight: 8, alignItems: 'center', justifyContent: 'center' },
-  logoBox: { width: 60, height: 90, borderRadius: 12, backgroundColor: '#eef2ff', alignItems: 'center', justifyContent: 'center' },
-  logoLetter: { fontWeight: 'bold', color: '#2c3e50', fontSize: 20 },
-  logoImgReal: { width: 70, height: 90, borderRadius: 12 },
-  cardLeft: { flex: 1, paddingRight: 8 },
-  cardRight: { minWidth: 110, alignItems: 'flex-end', justifyContent: 'center' },
-  cardTitle: { fontWeight: 'bold', fontSize: 18, color: '#111' },
-  cardSub: { color: '#666', marginTop: 2, fontSize: 15 },
-  cardPriceRight: { fontWeight: '800', fontSize: 18, color: '#0A84FF' },
-  cardPctRight: { fontWeight: '800', fontSize: 14, marginTop: 4 },
-  pctNeutral: { color: '#666' },
-  up: { color: '#0a8f3a' },
-  down: { color: '#d12a2a' },
-  empty: { textAlign: 'center', color: '#888', marginTop: 50 },
-  errorText: { color: 'red', textAlign: 'center', marginBottom: 5 },
-  retry: { color: '#0A84FF', marginTop: 5 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  logoutContainer: { paddingHorizontal: 12, position: 'absolute', bottom: 20, left: 0, right: 0 },
-  btnLogout: {
-    backgroundColor: '#ff2d2d', borderRadius: 12, paddingVertical: 14, alignItems: 'center',
-    shadowColor: '#000', shadowRadius: 6, shadowOpacity: 0.08, elevation: 2,
-  },
-  btnLogoutTxt: { color: '#fff', fontWeight: '900', letterSpacing: 0.5 },
+  logoWrap: { width: 46, height: 46, borderRadius: 10, overflow: "hidden", marginRight: 10, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
+  logoImgReal: { width: 44, height: 44 },
+  logoBox: { width: 46, height: 46, borderRadius: 10, backgroundColor: "#E6EAF2", alignItems: "center", justifyContent: "center" },
+  logoLetter: { fontSize: 16, fontWeight: "900", color: "#4B5B76" },
+
+  cardLeft: { flex: 1, paddingRight: 10 },
+  cardTitle: { fontWeight: "800", color: "#000" },
+  cardSub: { color: "#333", marginTop: 3 },
+
+  cardRight: { alignItems: "flex-end" },
+  cardPriceRight: { fontWeight: "800", color: "#0A84FF" },
+  cardPctRight: { fontWeight: "900", marginTop: 3 },
+  up: { color: "#16A34A" }, down: { color: "#DC2626" }, pctNeutral: { color: "#6B7280" },
+
+  empty: { color: "#888" },
+
+  errorText: { color: "#B91C1C", textAlign: "center", marginVertical: 8 },
+  retry: { color: "#0A84FF", fontWeight: "800" },
+
+  logoutContainer: { padding: 16, alignItems: "center" },
+  btnLogout: { backgroundColor: "#0A84FF", paddingVertical: 12, paddingHorizontal: 24, borderRadius: 999 },
+  btnLogoutTxt: { color: "#fff", fontSize: 16, fontWeight: "900" },
 });
 
 export default Wallet;
