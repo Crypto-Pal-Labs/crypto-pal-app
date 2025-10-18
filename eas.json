@@ -10,7 +10,7 @@
       "android": {
         "gradleCommand": ":app:assembleDebug"
       },
-      "node": "20.19.4",
+      "node": "22.6.0",
       "env": {
         "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
         "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
@@ -123,7 +123,8 @@
     "production": {
       "android": {
         "serviceAccountKeyPath": "./play-service-account.json",
-        "track": "production"
+        "track": "production",
+        "node": "22.6.0"
       }
     }
   }
