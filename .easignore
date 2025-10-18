@@ -23,3 +23,14 @@ ios
 **/*.psd
 **/*.ai
 **/*.sketch
+.git
+node_modules
+.expo
+android
+ios
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+.idea
+.vscode
