@@ -32,20 +32,28 @@ module.exports = ({ config }) => ({
   ...config,
   name: 'Crypto Pal',
   slug: 'crypto-pal',
+
+  // ✅ Add/keep your Android applicationId so EAS won’t prompt.
+  //    If you already set one elsewhere, we preserve it.
+  android: {
+    ...(config.android ?? {}),
+    package: config.android?.package ?? 'trade.cryptopal.app',
+  },
+
   extra: {
-    ...config.extra,
+    ...(config.extra ?? {}),
     APP_ENV: envName,
 
     // Covalent
     EXPO_PUBLIC_COVALENT_KEY: covalentKey,
-    COVALENT_KEY: covalentKey,          // legacy alias for codepaths reading 'COVALENT_KEY'
-    COVALENT_BASIC_B64: covalentBasicB64, // <— satisfies b64Len>0 check
-    COVALENT_X_API_KEY: covalentKey,      // handy if any client uses X-API-Key
+    COVALENT_KEY: covalentKey,             // legacy alias for any old codepaths
+    COVALENT_BASIC_B64: covalentBasicB64,  // used by clients expecting Basic auth b64
+    COVALENT_X_API_KEY: covalentKey,       // handy if any client uses X-API-Key
 
     // Feature switch: network allowed in prod always, and in dev only if key looks valid
     FEATURES: { NETWORK_ENABLED: isProdBuild ? true : looksValid },
 
-    // --- NEW: expose RPC / explorer URLs under BOTH names the app might read
+    // RPC / explorer URLs under BOTH names the app might read
     EXPO_PUBLIC_ETHERSCAN_BASE: pick('EXPO_PUBLIC_ETHERSCAN_BASE', 'ETHERSCAN_BASE'),
     ETHERSCAN_BASE:             pick('ETHERSCAN_BASE', 'EXPO_PUBLIC_ETHERSCAN_BASE'),
 
@@ -61,7 +69,7 @@ module.exports = ({ config }) => ({
     EXPO_PUBLIC_POLYGON_RPC_URL: pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL'),
     POLYGON_RPC_URL:             pick('POLYGON_RPC_URL', 'EXPO_PUBLIC_POLYGON_RPC_URL'),
 
-    // (Optional but consistent) mainnets too, if your code reads them:
+    // Optional: mainnets too, if your code reads them
     EXPO_PUBLIC_ETH_MAINNET_RPC_URL: pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL'),
     ETH_MAINNET_RPC_URL:             pick('ETH_MAINNET_RPC_URL', 'EXPO_PUBLIC_ETH_MAINNET_RPC_URL'),
 
@@ -70,5 +78,11 @@ module.exports = ({ config }) => ({
 
     EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL: pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL'),
     POLYGON_MAINNET_RPC_URL:             pick('POLYGON_MAINNET_RPC_URL', 'EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL'),
+
+    // ✅ Required for EAS linkage with dynamic config
+    eas: {
+      ...(config.extra?.eas ?? {}),
+      projectId: '09671262-f041-418c-83ab-19f5d8003242',
+    },
   },
 });
