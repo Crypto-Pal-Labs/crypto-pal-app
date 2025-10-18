@@ -31,9 +31,9 @@ type AssetChoice = {
 };
 
 const ERC20_ABI = [
-  "function transfer(address to, uint256 amount) returns (bool)",
-  "function decimals() view returns (uint8)",
-  "function symbol() view returns (string)"
+  'function transfer(address to, uint256 amount) returns (bool)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
 ];
 
 const CHAIN_FEE_FLOORS: Record<number, { minPriorityGwei: number; minGasGwei: number }> = {
@@ -55,16 +55,29 @@ const ASSET_INDEX_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const ASSET_INDEX_KEY = (addr: string) => `assetIndex_v1:${addr.toLowerCase()}`;
 const INVALIDATE_KEY  = (addr: string, cid: number) => `assetsInvalidate:${addr.toLowerCase()}:${cid}`;
 
+// Native symbol → CoinGecko id
 const CG_IDS: Record<'ETH' | 'BNB' | 'MATIC', string> = {
   ETH: 'ethereum',
   BNB: 'binancecoin',
   MATIC: 'matic-network',
 };
+// Native symbol → CoinPaprika id
+const PAPRIKA_IDS: Record<'ETH' | 'BNB' | 'MATIC', string> = {
+  ETH: 'eth-ethereum',
+  BNB: 'bnb-binance-coin',
+  MATIC: 'matic-polygon',
+};
+
+// Optional CG API keys (demo or pro)
+const CG_DEMO = (process.env.EXPO_PUBLIC_COINGECKO_API_KEY || '').trim();
+const CG_PRO  = (process.env.EXPO_PUBLIC_COINGECKO_PRO_API_KEY || '').trim();
 
 const gwei = (n: number) => ethers.utils.parseUnits(String(n), 'gwei');
 
-const maskAddr = (a: string) => (a?.startsWith('0x') && a.length >= 10 ? `${a.slice(0,6)}…${a.slice(-4)}` : a);
-const fmt = (n: number, dp = 6) => Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/,'').replace(/\.$/,'') : '…';
+const maskAddr = (a: string) =>
+  a?.startsWith('0x') && a.length >= 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
+const fmt = (n: number, dp = 6) =>
+  Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/, '').replace(/\.$/, '') : '—';
 
 function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => T): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -85,24 +98,73 @@ function parseDeepError(e: any): string {
   return (e?.reason || e?.error?.message || e?.data?.message || e?.message || String(e));
 }
 
-// Build a human-friendly confirmation summary (shows entered unit + equivalents)
-function confirmSummary(
-  opts: {
-    enteredAmount: string;
-    unit: 'token' | 'usd' | 'local';
-    assetSymbol: string;
-    isNative: boolean;
-    valueBN: ethers.BigNumber;
-    nativePriceUSD: number;
-    usdToLocal: number;
-    localCode: string;
-    feeEstimate: string; // "~0.00042 ETH" etc.
-    chainLabel: string;
-    toMasked: string;
-    nativeSymbol: 'ETH' | 'BNB' | 'MATIC';
-    decimals?: number;
-  }
-) {
+/* ----------------------- Price helpers (robust) ----------------------- */
+async function getNativeUsdPrice(sym: 'ETH'|'BNB'|'MATIC'): Promise<number> {
+  const id = CG_IDS[sym];
+  try {
+    const base = CG_PRO ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3';
+    const url = `${base}/simple/price?ids=${encodeURIComponent(id)}&vs_currencies=usd${
+      CG_DEMO && !CG_PRO ? `&x_cg_demo_api_key=${encodeURIComponent(CG_DEMO)}` : ''
+    }`;
+    const headers: Record<string,string> = { Accept: 'application/json' };
+    if (CG_PRO) headers['x-cg-pro-api-key'] = CG_PRO;
+    else if (CG_DEMO) headers['x-cg-demo-api-key'] = CG_DEMO;
+
+    const r = await withTimeout(fetch(url, { headers }), 8500);
+    if (r.ok) {
+      const j = await r.json();
+      const v = Number(j?.[id]?.usd);
+      if (Number.isFinite(v) && v > 0) return v;
+    }
+  } catch {}
+  // Paprika fallback
+  try {
+    const pid = PAPRIKA_IDS[sym];
+    const r = await withTimeout(
+      fetch(`https://api.coinpaprika.com/v1/tickers/${encodeURIComponent(pid)}?quotes=USD`,
+        { headers: { Accept: 'application/json' } }),
+      8500
+    );
+    if (r.ok) {
+      const j = await r.json();
+      const v = Number(j?.quotes?.USD?.price);
+      if (Number.isFinite(v) && v > 0) return v;
+    }
+  } catch {}
+  return 0;
+}
+
+async function getUsdToLocal(localCode: string): Promise<number> {
+  const code = (localCode || 'USD').toUpperCase();
+  if (code === 'USD') return 1;
+  try {
+    const url = `https://api.coinpaprika.com/v1/tickers/usdt-tether?quotes=USD,${encodeURIComponent(code)}`;
+    const r = await withTimeout(fetch(url, { headers: { Accept: 'application/json' } }), 8500);
+    if (r.ok) {
+      const j = await r.json();
+      const v = Number(j?.quotes?.[code]?.price);
+      if (Number.isFinite(v) && v > 0) return v;
+    }
+  } catch {}
+  return 1;
+}
+
+/* ---------------- Confirmation text (ONLY entered unit + single equivalent) ---------------- */
+function confirmSummary(opts: {
+  enteredAmount: string;
+  unit: 'token' | 'usd' | 'local';
+  assetSymbol: string;
+  isNative: boolean;
+  valueBN: ethers.BigNumber;
+  nativePriceUSD: number;
+  usdToLocal: number;
+  localCode: string;
+  feeEstimate: string;
+  chainLabel: string;
+  toMasked: string;
+  nativeSymbol: 'ETH' | 'BNB' | 'MATIC';
+  decimals?: number;
+}) {
   const {
     enteredAmount, unit, assetSymbol, isNative, valueBN,
     nativePriceUSD, usdToLocal, localCode, feeEstimate,
@@ -113,7 +175,6 @@ function confirmSummary(
     ? parseFloat(ethers.utils.formatEther(valueBN))
     : parseFloat(ethers.utils.formatUnits(valueBN, decimals));
 
-  const tokenLine = `${fmt(tokenQty)} ${isNative ? nativeSymbol : assetSymbol}`;
   const enteredLine =
     unit === 'token'
       ? `${enteredAmount} ${isNative ? nativeSymbol : assetSymbol}`
@@ -121,15 +182,28 @@ function confirmSummary(
       ? `$${fmt(parseFloat(enteredAmount), 2)} USD`
       : `${fmt(parseFloat(enteredAmount), 2)} ${localCode}`;
 
-  const usdApprox = isNative ? ` • ≈ $${fmt(tokenQty * nativePriceUSD, 2)} USD` : '';
-  const locApprox = isNative ? ` • ≈ ${fmt(tokenQty * nativePriceUSD * usdToLocal, 2)} ${localCode}` : '';
+  let equivalentLine = '—';
+  if (isNative) {
+    if (unit === 'token') {
+      const usd = tokenQty * (nativePriceUSD || 0);
+      equivalentLine = `≈ $${fmt(usd, 2)} USD`;
+    } else {
+      let usdAmount = parseFloat(enteredAmount) || 0;
+      if (unit === 'local') usdAmount = usdAmount / (usdToLocal || 1);
+      const tokens = (nativePriceUSD > 0) ? (usdAmount / nativePriceUSD) : 0;
+      equivalentLine = `≈ ${fmt(tokens)} ${nativeSymbol}`;
+    }
+  } else {
+    equivalentLine = '—';
+  }
+
   const feeLine = isNative ? feeEstimate : `${feeEstimate} (paid in ${nativeSymbol})`;
 
   return [
     'Transactions are not reversible.',
     '',
     `You entered: ${enteredLine}`,
-    `Equivalent: ${tokenLine}${usdApprox}${locApprox}`,
+    `Equivalent: ${equivalentLine}`,
     `Network: ${chainLabel}`,
     `To: ${toMasked}`,
     `Estimated network fee: ${feeLine}`,
@@ -138,7 +212,7 @@ function confirmSummary(
 
 const SendTab = () => {
   const { address: fromAddress } = useWalletStore();
-  const { chain: defaultChain } = useChain(); // default selection
+  const { chain: defaultChain } = useChain();
 
   // QR
   const [permission, requestPermission] = useCameraPermissions();
@@ -156,8 +230,7 @@ const SendTab = () => {
   // Prices (native only)
   const deviceCurrencyCode = Localization.getLocales()?.[0]?.currencyCode || 'USD';
   const localCode = deviceCurrencyCode.toUpperCase();
-  const localVsParam = localCode.toLowerCase();
-  const [nativePriceUSD, setNativePriceUSD] = useState(2000);
+  const [nativePriceUSD, setNativePriceUSD] = useState(0);
   const [usdToLocal, setUsdToLocal] = useState(1);
 
   // Assets (owned across chains)
@@ -179,14 +252,17 @@ const SendTab = () => {
 
   const floors = useMemo(() => {
     const cid = activeChain.chainId;
-    return CHAIN_FEE_FLOORS[cid] || { minPriorityGwei: DEFAULT_MIN_PRIORITY_GWEI, minGasGwei: DEFAULT_MIN_GAS_GWEI };
+    return CHAIN_FEE_FLOORS[cid] || {
+      minPriorityGwei: DEFAULT_MIN_PRIORITY_GWEI,
+      minGasGwei: DEFAULT_MIN_GAS_GWEI, // ✅ correct key
+    };
   }, [activeChain.chainId]);
 
   const RPC_URL = activeChain.rpcUrls[0] || '';
   const EXPLORER_BASE = activeChain.explorerBase;
   const NATIVE_SYMBOL = activeChain.nativeSymbol as 'ETH'|'BNB'|'MATIC';
   const MIN_TIP = gwei(floors.minPriorityGwei);
-  const MIN_GAS = gwei(floors.minGasGwei);
+  const MIN_GAS = gwei(floors.minGasGwei || DEFAULT_MIN_GAS_GWEI); // ✅ correct key
 
   const makeProvider = () =>
     new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: activeChain.chainId, name: activeChain.name });
@@ -204,7 +280,7 @@ const SendTab = () => {
   };
   const isValidAddress = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a);
 
-  // ───────────── Asset Index (owned assets across chains) ─────────────
+  // ───────────── Asset Index ─────────────
   const loadAssetIndex = useCallback(async (owner: string): Promise<AssetChoice[]> => {
     try {
       const raw = await AsyncStorage.getItem(ASSET_INDEX_KEY(owner));
@@ -253,7 +329,7 @@ const SendTab = () => {
             chainId: c.chainId, chain: c, isNative: false, contract,
             symbol, name, decimals: Number.isFinite(decimals) ? decimals : 18,
             balanceWei: balStr,
-            balanceFormatted: ethers.utils.parseUnits('1', 0) ? ethers.utils.formatUnits(balStr, Number.isFinite(decimals) ? decimals : 18) : '0',
+            balanceFormatted: ethers.utils.formatUnits(balStr, Number.isFinite(decimals) ? decimals : 18),
           });
         }
       } catch {}
@@ -273,26 +349,20 @@ const SendTab = () => {
     })();
   }, [fromAddress, loadAssetIndex, defaultChain.chainId]);
 
-  // Rates for native
+  // Rates for native (robust)
   useEffect(() => {
     const fetchRates = async () => {
       try {
-        const id = CG_IDS[NATIVE_SYMBOL] || 'ethereum';
-        const p = await withTimeout(
-          fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`).then(r => r.json()),
-          3500, () => null
-        );
-        if (p) setNativePriceUSD(p?.[id]?.usd || 2000);
-        const local = await withTimeout(
-          fetch(`https://api.coingecko.com/api/v3/simple/price?ids=usdt&vs_currencies=${localVsParam}`).then(r => r.json()),
-          3500, () => null
-        );
-        const maybeLocal = Number(local?.usdt?.[localVsParam]);
-        setUsdToLocal(Number.isFinite(maybeLocal) && maybeLocal > 0 ? maybeLocal : 1);
+        const p = await getNativeUsdPrice(NATIVE_SYMBOL);
+        setNativePriceUSD(p || 0);
+      } catch { setNativePriceUSD(0); }
+      try {
+        const rate = await getUsdToLocal(localCode);
+        setUsdToLocal(rate || 1);
       } catch { setUsdToLocal(1); }
     };
     fetchRates();
-  }, [NATIVE_SYMBOL, localVsParam]);
+  }, [NATIVE_SYMBOL, localCode]);
 
   // Fee preview
   useEffect(() => {
@@ -362,8 +432,8 @@ const SendTab = () => {
     const num = parseFloat(input) || 0;
     let tokenAmount = 0;
     if (unit === 'token') tokenAmount = num;
-    if (unit === 'usd')   tokenAmount = num / priceUSD;
-    if (unit === 'local') tokenAmount = num / (priceUSD * usdToLocalRate);
+    if (unit === 'usd')   tokenAmount = priceUSD > 0 ? (num / priceUSD) : 0;
+    if (unit === 'local') tokenAmount = (priceUSD > 0 && usdToLocalRate > 0) ? (num / (priceUSD * usdToLocalRate)) : 0;
     return ethers.utils.parseEther(tokenAmount.toFixed(18));
   }
 
@@ -415,7 +485,6 @@ const SendTab = () => {
         const gasLim = await withTimeout(signer.estimateGas({ to: candidate, value: valueBN }), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_NATIVE);
         overrides.gasLimit = gasLim;
 
-        // ★ Accurate confirmation (entered unit + equivalents)
         const summary = confirmSummary({
           enteredAmount: amount,
           unit: amountUnit,
@@ -456,7 +525,7 @@ const SendTab = () => {
         return;
       }
 
-      // ERC-20 transfer — show confirm first (fee in native coin)
+      // ERC-20 transfer — confirmation
       const summaryErc20 = confirmSummary({
         enteredAmount: amount,
         unit: 'token',
@@ -512,12 +581,11 @@ const SendTab = () => {
   ) {
     setBusyStage(null);
 
-    // localTxs for History
     const localTx = {
       hash: txHash,
       from: owner,
       to,
-      value: isNative ? valueBN.toString() : "0",
+      value: isNative ? valueBN.toString() : '0',
       timestamp: new Date().toISOString(),
       isSend: true,
       feeNative,
@@ -527,10 +595,8 @@ const SendTab = () => {
     lst.push(localTx);
     await AsyncStorage.setItem('localTxs', JSON.stringify(lst));
 
-    // 🔔 invalidate Wallet balances for this chain (fast refresh)
     await AsyncStorage.setItem(INVALIDATE_KEY(owner, activeChain.chainId), String(Date.now()));
 
-    // ★ NEW: local delta so Wallet shows reduced native balance immediately
     try {
       if (isNative) {
         const prev = parseFloat((await AsyncStorage.getItem('localBalanceDelta')) || '0');
@@ -539,7 +605,6 @@ const SendTab = () => {
       }
     } catch {}
 
-    // Optimistically decrement AssetIndex cache (so picker shows updated balances)
     try {
       const key = ASSET_INDEX_KEY(owner);
       const raw = await AsyncStorage.getItem(key);
@@ -587,14 +652,12 @@ const SendTab = () => {
       ]
     );
 
-    // reset form
     setToAddress('');
     setAmount('');
     setAmountUnit('token');
     setFeeEstimate('Enter details');
 
-    // refresh asset index asynchronously
-    loadAssetIndex(owner).then(setAssetOptions).catch(()=>{});
+    loadAssetIndex(owner).then(setAssetOptions).catch(() => {});
   }
 
   function onSendError(e: any) {
@@ -607,7 +670,6 @@ const SendTab = () => {
     else Alert.alert('Error', parseDeepError(e));
   }
 
-  // UI helpers
   const amountPlaceholder =
     selectedAsset?.isNative
       ? (amountUnit === 'token' ? `Enter ${NATIVE_SYMBOL} Amount`
@@ -620,7 +682,7 @@ const SendTab = () => {
   const pickerOptions = useMemo(() => {
     return assetOptions.map(a => ({
       label: `${a.symbol} • ${(a.chain.shortName || a.chain.name)} • ${fmt(parseFloat(a.balanceFormatted), 6)}`,
-      value: a.key
+      value: a.key,
     }));
   }, [assetOptions]);
 
