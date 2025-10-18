@@ -7,7 +7,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { useWalletStore } from "../store/useWalletStore";
 import { useChain } from "../hooks/useChain";
-import { covalentGet } from "../lib/covalent"; // reads EXPO_PUBLIC_COVALENT_KEY internally
+import { covalentGet } from "../lib/covalent"; // uses EXPO_PUBLIC_COVALENT_KEY if present
 
 // ---------- Types ----------
 interface CovalentItem {
@@ -27,7 +27,6 @@ export type BalanceItem = {
   quoteLocal: number;
   quoteUsd: number;
   logo_url: string;
-  // token meta → helps UI format correctly
   contract_address?: string;
   contract_decimals?: number;
   contract_name?: string;
@@ -45,6 +44,112 @@ export type NFTItem = {
 const INVALIDATE_KEY = (addr: string, chainId: number) =>
   `assetsInvalidate:${addr.toLowerCase()}:${chainId}`;
 
+// ---------- Price helpers (CoinGecko with API key + CoinPaprika fallback) ----------
+type PriceEntry = { usd: number; local: number };
+
+// Symbol → CoinGecko ID
+const CG_IDS: Record<string, string> = {
+  ETH: "ethereum",
+  BNB: "binancecoin",
+  MATIC: "matic-network",
+  USDC: "usd-coin",
+  USDT: "tether",
+  DAI: "dai",
+};
+
+// Symbol → CoinPaprika ID
+const PAPRIKA_IDS: Record<string, string> = {
+  ETH: "eth-ethereum",
+  BNB: "bnb-binance-coin",
+  MATIC: "matic-polygon",
+  USDC: "usdc-usd-coin",
+  USDT: "usdt-tether",
+  DAI: "dai-dai",
+};
+
+const CG_DEMO = (process.env.EXPO_PUBLIC_COINGECKO_API_KEY || "").trim();
+const CG_PRO  = (process.env.EXPO_PUBLIC_COINGECKO_PRO_API_KEY || "").trim();
+
+function withTimeout<T>(p: Promise<T>, ms = 9000): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error("timeout")), ms);
+    p.then((v) => { clearTimeout(t); resolve(v); })
+     .catch((e) => { clearTimeout(t); reject(e); });
+  });
+}
+
+// CoinGecko price loader (demo/pro key supported)
+async function loadCgPrices(symbols: string[], localCurrency: string): Promise<Record<string, PriceEntry>> {
+  const ids = Array.from(
+    new Set(
+      symbols.map((s) => CG_IDS[(s || "").toUpperCase()] || "").filter(Boolean)
+    )
+  );
+  if (!ids.length) return {};
+
+  const vs = (localCurrency || "USD").toLowerCase();
+  const base = CG_PRO ? "https://pro-api.coingecko.com/api/v3" : "https://api.coingecko.com/api/v3";
+
+  const url = `${base}/simple/price?ids=${encodeURIComponent(ids.join(","))}&vs_currencies=usd,${encodeURIComponent(vs)}${
+    CG_DEMO && !CG_PRO ? `&x_cg_demo_api_key=${encodeURIComponent(CG_DEMO)}` : ""
+  }`;
+
+  const headers: Record<string, string> = { Accept: "application/json" };
+  if (CG_PRO) headers["x-cg-pro-api-key"] = CG_PRO;
+  else if (CG_DEMO) headers["x-cg-demo-api-key"] = CG_DEMO;
+
+  try {
+    const res = await withTimeout(fetch(url, { headers }), 8500);
+    if (!res.ok) throw new Error(`CG HTTP ${res.status}`);
+    const data: any = await res.json();
+    const out: Record<string, PriceEntry> = {};
+    Object.keys(CG_IDS).forEach((sym) => {
+      const id = CG_IDS[sym];
+      const d = data?.[id] || {};
+      out[sym] = { usd: Number(d?.usd || 0), local: Number(d?.[vs] || 0) };
+    });
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+// CoinPaprika fallback (no key required)
+async function loadPaprikaPrices(symbols: string[], localCurrency: string): Promise<Record<string, PriceEntry>> {
+  const out: Record<string, PriceEntry> = {};
+  const quotesParam = `quotes=USD,${encodeURIComponent(localCurrency.toUpperCase())}`;
+
+  await Promise.all(symbols.map(async (sym) => {
+    const id = PAPRIKA_IDS[(sym || "").toUpperCase()];
+    if (!id) return;
+    const url = `https://api.coinpaprika.com/v1/tickers/${encodeURIComponent(id)}?${quotesParam}`;
+    try {
+      const res = await withTimeout(fetch(url, { headers: { Accept: "application/json" } }), 8500);
+      if (!res.ok) return;
+      const json: any = await res.json();
+      const usd = Number(json?.quotes?.USD?.price || 0);
+      const loc = Number(json?.quotes?.[localCurrency.toUpperCase()]?.price || 0);
+      out[sym.toUpperCase()] = { usd, local: loc };
+    } catch { /* ignore */ }
+  }));
+
+  return out;
+}
+
+// Load prices with CG first, then Paprika fill-ins
+async function getPriceMap(symbols: string[], localCurrency: string): Promise<Record<string, PriceEntry>> {
+  const unique = Array.from(new Set(symbols.map((s) => (s || "").toUpperCase()).filter(Boolean)));
+  if (!unique.length) return {};
+  const cg = await loadCgPrices(unique, localCurrency);
+  // fill missing or zero via Paprika
+  const need = unique.filter((s) => !(cg[s]?.usd > 0));
+  if (need.length === 0) return cg;
+  const pk = await loadPaprikaPrices(need, localCurrency);
+  const merged: Record<string, PriceEntry> = { ...cg };
+  for (const s of need) merged[s] = merged[s] || pk[s] || { usd: 0, local: 0 };
+  return merged;
+}
+
 // ---------- small helpers ----------
 function abortableFetch(url: string, timeout = 10000, headers?: Record<string,string>) {
   const ctrl = new AbortController();
@@ -59,20 +164,11 @@ function extractItems(json: any): CovalentItem[] {
     json?.data?.balances ??
     json?.data?.Balances ??
     [];
-  if (!Array.isArray(itemsRaw)) throw new Error("Covalent payload missing items/balances");
+  if (!Array.isArray(itemsRaw)) return [];
   return itemsRaw as CovalentItem[];
 }
 
-// CG id map for symbols we support in v1
-const TICKER_TO_ID = {
-  ETH: "ethereum",
-  BNB: "binancecoin",
-  MATIC: "matic-network",
-  USDC: "usd-coin",
-  USDT: "tether",
-  DAI: "dai",
-} as const;
-
+// Logos (non-null)
 const SYMBOL_LOGO: Record<string, string> = {
   ETH: "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
   BNB: "https://assets.coingecko.com/coins/images/825/large/bnb-icon2_2x.png",
@@ -82,24 +178,7 @@ const SYMBOL_LOGO: Record<string, string> = {
   DAI: "https://assets.coingecko.com/coins/images/9956/large/4943.png",
 };
 
-// fetch CoinGecko prices for a set of symbols (USD + local)
-async function loadCgPrices(symbols: string[], localCurrency: string) {
-  const ids = Array.from(
-    new Set(
-      symbols
-        .map((s) => TICKER_TO_ID[(s || "").toUpperCase() as keyof typeof TICKER_TO_ID] || "")
-        .filter(Boolean)
-    )
-  );
-  if (!ids.length) return {} as Record<string, any>;
-
-  const vs = `usd,${(localCurrency || "usd").toLowerCase()}`;
-  const url = `https://api.coingecko.com/api/v3/simple/price?ids=${ids.join(",")}&vs_currencies=${vs}`;
-  const res = await abortableFetch(url, 8000);
-  if (!res.ok) return {};
-  return res.json();
-}
-
+// ---------- Hook ----------
 export const useAssets = () => {
   const address = useWalletStore((s) => s.address);
   const { chain } = useChain();
@@ -128,34 +207,34 @@ export const useAssets = () => {
       const provider = new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: chain.chainId, name: chain.name });
       const wei = await provider.getBalance(address);
       const symbol = (chain.nativeSymbol || "ETH").toUpperCase();
-      const prices = await loadCgPrices([symbol], localCurrency);
-      const id = TICKER_TO_ID[symbol as keyof typeof TICKER_TO_ID] || "";
-      const parsed = Number(ethers.utils.formatUnits(wei, 18)) || 0;
-      const quoteLocal = parsed * Number(prices?.[id]?.[localCurrency.toLowerCase()] || 0);
-      const quoteUsd = parsed * Number(prices?.[id]?.usd || 0);
+      const prices = await getPriceMap([symbol], localCurrency);
+
+      const units = Number(ethers.utils.formatUnits(wei, 18)) || 0;
+      const quoteUsd   = units * Number(prices?.[symbol]?.usd || 0);
+      const quoteLocal = units * Number(prices?.[symbol]?.local || 0);
 
       const nativeRow: BalanceItem = {
         contract_ticker_symbol: symbol,
         balance: wei.toString(),
         quoteLocal,
         quoteUsd,
-        logo_url: SYMBOL_LOGO[symbol] || "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
+        logo_url: SYMBOL_LOGO[symbol] || SYMBOL_LOGO.ETH,
         contract_decimals: 18,
         contract_address: undefined,
         contract_name: symbol,
       };
 
-      setBalances(parsed > 0 ? [nativeRow] : []);
-      setNfts([]); // NFTs via fallback not implemented (ok for MVP)
+      setBalances(units > 0 ? [nativeRow] : [nativeRow]); // show even if 0 units for clarity
+      setNfts([]);
       setError(null);
     } catch (e: any) {
-      setError(e?.message || "RPC error while loading balance.");
+      setError(e?.message || "RPC load error.");
     } finally {
       setLoading(false);
     }
   }, [address, RPC_URL, chain.chainId, chain.name, chain.nativeSymbol, localCurrency]);
 
-  // ---- Main path (Covalent) with safety nets + live native override ----
+  // ---- Main path (Covalent) + live native override ----
   const fetchAssetsInternal = useCallback(async () => {
     if (!isActiveRef.current) return;
 
@@ -175,16 +254,14 @@ export const useAssets = () => {
     setLoading(true);
 
     try {
-      // 1) Covalent balances_v2
+      // 1) Covalent balances
       const base = "https://api.covalenthq.com/v1";
-      const url = `${base}/${encodeURIComponent(chain.covalentChainId)}/address/${address}/balances_v2/?quote-currency=USD&format=JSON&nft=true&no-nft-fetch=false&no-spam=true`;
+      const url = `${base}/${encodeURIComponent(chain.covalentChainId as any)}/address/${address}/balances_v2/?quote-currency=USD&format=JSON&nft=true&no-nft-fetch=false&no-spam=true`;
 
-      let json: any;
-      try {
-        json = await covalentGet(url);
-      } catch (e: any) {
+      let json: any = null;
+      try { json = await covalentGet(url); }
+      catch (e: any) {
         const msg = String(e?.message || e);
-        // Chain not supported → fallback
         if (msg.includes("not supported") || msg.includes("501")) {
           await fetchAssetsFallback();
           return;
@@ -195,7 +272,7 @@ export const useAssets = () => {
       const items: CovalentItem[] = extractItems(json);
 
       // 2) Split tokens vs NFTs
-      const tokenItems = items.filter((i) => i.type !== "nft" && i.balance !== "0");
+      const tokenItems = items.filter((i) => i.type !== "nft");
       const nftItems: NFTItem[] =
         (items
           .filter((i) => i.type === "nft" && (i.nft_data?.length ?? 0) > 0)
@@ -205,45 +282,43 @@ export const useAssets = () => {
               token_balance: nft.token_balance,
               contract_name: i.contract_name || "Unknown",
               contract_address: i.contract_address || "",
-              logo_url: nft.token_url || i.logo_url || "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
+              logo_url: nft.token_url || i.logo_url || SYMBOL_LOGO.ETH,
             }))
           )) || [];
 
-      // 3) Price map
-      const symbols = tokenItems.map((i) => (i.contract_ticker_symbol || "").toUpperCase());
-      const prices = await loadCgPrices(symbols, localCurrency);
+      // 3) Build price map
+      const symbols = tokenItems.map((i) => (i.contract_ticker_symbol || "").toUpperCase()).filter(Boolean);
+      const prices = await getPriceMap(symbols, localCurrency);
 
-      // 4) Build balance rows with USD/local quotes
+      // 4) Balance rows
       const pricedBalances: BalanceItem[] = tokenItems.map((i) => {
         const sym = (i.contract_ticker_symbol || "TOKEN").toUpperCase();
-        const id = TICKER_TO_ID[sym as keyof typeof TICKER_TO_ID] || "";
         const decimals = i.contract_decimals ?? 18;
         const units = Number(ethers.utils.formatUnits(i.balance || "0", decimals)) || 0;
 
-        const usd = Number(prices?.[id]?.usd || 0);
-        const loc = Number(prices?.[id]?.[localCurrency.toLowerCase()] || 0);
+        const usd = Number(prices?.[sym]?.usd || 0);
+        const loc = Number(prices?.[sym]?.local || 0);
 
         return {
           contract_ticker_symbol: sym,
           balance: i.balance || "0",
           quoteLocal: units * loc,
           quoteUsd: units * usd,
-          logo_url: i.logo_url || SYMBOL_LOGO[sym] || "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
+          logo_url: (i.logo_url || SYMBOL_LOGO[sym] || SYMBOL_LOGO.ETH),
           contract_address: i.contract_address || undefined,
           contract_decimals: decimals,
           contract_name: i.contract_name || undefined,
         };
       });
 
-      // 5) Live native override (so sender/receiver both update instantly)
+      // 5) Live native override (fresh RPC)
       try {
         const providerLive = new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: chain.chainId, name: chain.name });
         const liveWei = await providerLive.getBalance(address);
         const nativeSym = (chain.nativeSymbol || "ETH").toUpperCase();
-        const id = TICKER_TO_ID[nativeSym as keyof typeof TICKER_TO_ID] || "";
         const units = Number(ethers.utils.formatEther(liveWei)) || 0;
-        const usd = Number(prices?.[id]?.usd || 0);
-        const loc = Number(prices?.[id]?.[localCurrency.toLowerCase()] || 0);
+        const usd = Number((await getPriceMap([nativeSym], localCurrency))?.[nativeSym]?.usd || 0);
+        const loc = Number((await getPriceMap([nativeSym], localCurrency))?.[nativeSym]?.local || 0);
 
         const idx = pricedBalances.findIndex((b) => b.contract_ticker_symbol.toUpperCase() === nativeSym);
         const nativeRow: BalanceItem = {
@@ -251,7 +326,7 @@ export const useAssets = () => {
           balance: liveWei.toString(),
           quoteLocal: units * loc,
           quoteUsd: units * usd,
-          logo_url: SYMBOL_LOGO[nativeSym] || "https://assets.coingecko.com/coins/images/279/large/ethereum.png",
+          logo_url: SYMBOL_LOGO[nativeSym] || SYMBOL_LOGO.ETH,
           contract_decimals: 18,
           contract_address: undefined,
           contract_name: nativeSym,
@@ -274,23 +349,19 @@ export const useAssets = () => {
     }
   }, [address, chain.covalentChainId, chain.covalentSupported, chain.chainId, chain.name, chain.nativeSymbol, RPC_URL, localCurrency, fetchAssetsFallback]);
 
-  // ---- refresh wiring: run once on focus, then every 60s, plus fast invalidation watcher ----
+  // ---- refresh controls (60s slow poll + fast “invalidation” ping) ----
   const refresh = useCallback(() => {
     if (!isActiveRef.current) return;
     fetchAssetsInternal();
   }, [fetchAssetsInternal]);
 
-  // mimic useFocusEffect without importing it here; parent will call refresh on tab focus anyway
-  // but we also keep a background 60s tick while the tab is open
   const startTimers = useCallback(() => {
     isActiveRef.current = true;
 
-    // slow periodic refresh (60s) to avoid flicker
     const slow = setInterval(() => {
       if (isActiveRef.current) fetchAssetsInternal();
     }, 60000);
 
-    // fast invalidation watcher (so Wallet refreshes right after send)
     const invKey = address ? INVALIDATE_KEY(address, chain.chainId) : null;
     const fast = setInterval(async () => {
       if (!invKey) return;
@@ -309,13 +380,6 @@ export const useAssets = () => {
       clearInterval(fast);
     };
   }, [address, chain.chainId, fetchAssetsInternal]);
-
-  // expose timers to parent (Wallet will mount/unmount this hook with tab)
-  // parent triggers initial refresh, then timers keep it warm
-  // We simply kick off fetch once now for safety:
-  if (isActiveRef.current && balances.length === 0 && !loading) {
-    // noop: avoids surprise calls during replacements; Wallet will call refresh()
-  }
 
   return { balances, nfts, loading, error, refresh, startTimers };
 };
