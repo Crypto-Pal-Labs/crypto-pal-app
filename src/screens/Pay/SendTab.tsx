@@ -13,21 +13,14 @@ import * as Localization from 'expo-localization';
 import * as Clipboard from 'expo-clipboard';
 
 import { useWalletStore } from '../../store/useWalletStore';
-import { useChain } from '../../hooks/useChain';           // only for default chain selection
+import { useChain } from '../../hooks/useChain';
 import { CHAINS, EvmChain } from '../../config/chainRegistry';
 import { covalentGet } from '../../lib/covalent';
 
 type AssetChoice = {
-  key: string;                 // `${chainId}:${isNative ? 'native' : contract}`
-  chainId: number;
-  chain: EvmChain;
-  isNative: boolean;
-  contract?: string;
-  symbol: string;
-  name: string;
-  decimals: number;
-  balanceWei: string;
-  balanceFormatted: string;
+  key: string; chainId: number; chain: EvmChain; isNative: boolean;
+  contract?: string; symbol: string; name: string; decimals: number;
+  balanceWei: string; balanceFormatted: string;
 };
 
 const ERC20_ABI = [
@@ -51,18 +44,19 @@ const FEE_TIMEOUT_MS = 1500;
 const MAX_FETCH_MS  = 6500;
 const SOFT_FETCH_MS = 3500;
 
-const ASSET_INDEX_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const ASSET_INDEX_TTL_MS = 10 * 60 * 1000;
 const ASSET_INDEX_KEY = (addr: string) => `assetIndex_v1:${addr.toLowerCase()}`;
 const INVALIDATE_KEY  = (addr: string, cid: number) => `assetsInvalidate:${addr.toLowerCase()}:${cid}`;
 
+// NEW: match History (and keep legacy too)
+const LOCAL_TXS_KEY = (addr: string, cid: number) => `localTxs:${addr.toLowerCase()}:${cid}`;
+const LEGACY_LOCAL_TXS_KEY = "localTxs";
+
 const CG_IDS: Record<'ETH' | 'BNB' | 'MATIC', string> = {
-  ETH: 'ethereum',
-  BNB: 'binancecoin',
-  MATIC: 'matic-network',
+  ETH: 'ethereum', BNB: 'binancecoin', MATIC: 'matic-network',
 };
 
 const gwei = (n: number) => ethers.utils.parseUnits(String(n), 'gwei');
-
 const maskAddr = (a: string) => (a?.startsWith('0x') && a.length >= 10 ? `${a.slice(0,6)}…${a.slice(-4)}` : a);
 const fmt = (n: number, dp = 6) => Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/,'').replace(/\.$/,'') : '…';
 
@@ -87,7 +81,7 @@ function parseDeepError(e: any): string {
 
 const SendTab = () => {
   const { address: fromAddress } = useWalletStore();
-  const { chain: defaultChain } = useChain(); // default selection
+  const { chain: defaultChain } = useChain();
 
   // QR
   const [permission, requestPermission] = useCameraPermissions();
@@ -120,7 +114,6 @@ const SendTab = () => {
   // Fee preview
   const [feeEstimate, setFeeEstimate] = useState('Enter details');
 
-  // Convenience derived values
   const activeChain: EvmChain = useMemo(
     () => selectedAsset?.chain || defaultChain,
     [selectedAsset, defaultChain]
@@ -153,7 +146,7 @@ const SendTab = () => {
   };
   const isValidAddress = (a: string) => /^0x[0-9a-fA-F]{40}$/.test(a);
 
-  // ───────────── Asset Index (owned assets across chains) ─────────────
+  // ───────── Asset Index (owned assets across chains) ─────────
   const loadAssetIndex = useCallback(async (owner: string): Promise<AssetChoice[]> => {
     try {
       const raw = await AsyncStorage.getItem(ASSET_INDEX_KEY(owner));
@@ -278,15 +271,11 @@ const SendTab = () => {
 
         let perGas: ethers.BigNumber;
         if (fd.maxFeePerGas && fd.maxPriorityFeePerGas) {
-          let tip = fd.maxPriorityFeePerGas;
-          if (tip.lt(MIN_TIP)) tip = MIN_TIP;
-          let maxFee = fd.maxFeePerGas;
-          const floorMax = tip.mul(2).add(ethers.utils.parseUnits('20', 'gwei'));
-          if (maxFee.lt(floorMax)) maxFee = floorMax;
+          let tip = fd.maxPriorityFeePerGas; if (tip.lt(MIN_TIP)) tip = MIN_TIP;
+          let maxFee = fd.maxFeePerGas; const floorMax = tip.mul(2).add(ethers.utils.parseUnits('20', 'gwei')); if (maxFee.lt(floorMax)) maxFee = floorMax;
           perGas = maxFee;
         } else {
-          let gp = fd.gasPrice ?? FALLBACK_GAS_PRICE;
-          if (gp.lt(MIN_GAS)) gp = MIN_GAS;
+          let gp = fd.gasPrice ?? FALLBACK_GAS_PRICE; if (gp.lt(MIN_GAS)) gp = MIN_GAS;
           perGas = gp;
         }
 
@@ -364,14 +353,12 @@ const SendTab = () => {
         const gasLim = await withTimeout(signer.estimateGas({ to: candidate, value: valueBN }), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_NATIVE);
         overrides.gasLimit = gasLim;
 
-        // Build detailed confirmation that mirrors the user’s input and correct equivalents
         const nativeAmtNum = parseFloat(ethers.utils.formatEther(valueBN));
+        // ✨ SHOW the user’s original entry in USD/Local if they used it (as requested)
         const enteredLine =
           amountUnit === 'usd'   ? `You entered: $${fmt(parseFloat(amount), 2)} USD`
         : amountUnit === 'local' ? `You entered: ${fmt(parseFloat(amount), 2)} ${localCode}`
                                  : `You entered: ${fmt(nativeAmtNum, 6)} ${NATIVE_SYMBOL}`;
-        const eqUsd   = nativeAmtNum * nativePriceUSD;
-        const eqLocal = eqUsd * usdToLocal;
 
         setBusyStage(null);
         Alert.alert(
@@ -379,8 +366,8 @@ const SendTab = () => {
           [
             'Transactions are not reversible.',
             '',
-            enteredLine,
-            `Equivalent: ${fmt(nativeAmtNum, 6)} ${NATIVE_SYMBOL} • ≈ $${fmt(eqUsd, 2)} USD • ≈ ${fmt(eqLocal, 2)} ${localCode}`,
+            enteredLine,              // show the unit the user chose
+            `On-chain amount: ${fmt(nativeAmtNum, 6)} ${NATIVE_SYMBOL}`, // and the on-chain that will be sent
             `Network: ${activeChain.shortName || activeChain.name}`,
             `To: ${maskAddr(candidate)}`,
             `Estimated fee: ${feeEstimate}`,
@@ -406,7 +393,7 @@ const SendTab = () => {
         return;
       }
 
-      // ERC-20 transfer (token units only)
+      // ERC-20
       const contract = new ethers.Contract(selectedAsset.contract!, ERC20_ABI, signer);
       const gasLim = await withTimeout(contract.estimateGas.transfer(candidate, valueBN, {}), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_ERC20);
       overrides.gasLimit = gasLim;
@@ -435,25 +422,38 @@ const SendTab = () => {
   ) {
     setBusyStage(null);
 
-    // localTxs for History
+    // Build local optimistic row (native only for now; tokens will be picked up by Covalent)
     const localTx = {
+      tx_hash: txHash,
       hash: txHash,
       from: owner,
       to,
-      value: isNative ? valueBN.toString() : "0",
-      timestamp: new Date().toISOString(),
-      isSend: true,
-      feeNative,
+      valueWei: isNative ? valueBN.toString() : "0",
+      isToken: !isNative,
+      tokenSymbol: asset.symbol,
+      tokenAmount: isNative ? undefined : ethers.utils.formatUnits(valueBN, asset.decimals || 18),
+      block_signed_at: new Date().toISOString(),
       chainId: activeChain.chainId,
+      source: 'local' as const,
     };
-    const lst = JSON.parse((await AsyncStorage.getItem('localTxs')) || '[]');
-    lst.push(localTx);
-    await AsyncStorage.setItem('localTxs', JSON.stringify(lst));
 
-    // 🔔 invalidate Wallet balances for this chain (fast refresh)
+    // NEW: write to per-address+chain (primary) AND legacy key (back-compat)
+    try {
+      const k = LOCAL_TXS_KEY(owner, activeChain.chainId);
+      const arr = JSON.parse((await AsyncStorage.getItem(k)) || '[]');
+      arr.push(localTx);
+      await AsyncStorage.setItem(k, JSON.stringify(arr));
+    } catch {}
+    try {
+      const arrLegacy = JSON.parse((await AsyncStorage.getItem(LEGACY_LOCAL_TXS_KEY)) || '[]');
+      arrLegacy.push(localTx);
+      await AsyncStorage.setItem(LEGACY_LOCAL_TXS_KEY, JSON.stringify(arrLegacy));
+    } catch {}
+
+    // 🔔 invalidate Wallet balances for this chain
     await AsyncStorage.setItem(INVALIDATE_KEY(owner, activeChain.chainId), String(Date.now()));
 
-    // Optimistically decrement AssetIndex cache (so picker shows updated balances)
+    // Optimistic decrement in asset index
     try {
       const key = ASSET_INDEX_KEY(owner);
       const raw = await AsyncStorage.getItem(key);
@@ -463,11 +463,8 @@ const SendTab = () => {
         const idx = list.findIndex(a => a.key === asset.key);
         if (idx >= 0) {
           let cur = ethers.BigNumber.from(list[idx].balanceWei || '0');
-          if (isNative) {
-            cur = cur.sub(valueBN).sub(ethers.utils.parseEther(String(feeNative)));
-          } else {
-            cur = cur.sub(valueBN);
-          }
+          if (isNative) cur = cur.sub(valueBN).sub(ethers.utils.parseEther(String(feeNative)));
+          else cur = cur.sub(valueBN);
           if (cur.lt(0)) cur = ethers.constants.Zero;
           list[idx].balanceWei = cur.toString();
           list[idx].balanceFormatted = asset.isNative
@@ -507,7 +504,7 @@ const SendTab = () => {
     setAmountUnit('token');
     setFeeEstimate('Enter details');
 
-    // refresh asset index asynchronously
+    // background refresh
     loadAssetIndex(owner).then(setAssetOptions).catch(()=>{});
   }
 
@@ -521,7 +518,7 @@ const SendTab = () => {
     else Alert.alert('Error', parseDeepError(e));
   }
 
-  // UI helpers
+  // UI
   const amountPlaceholder =
     selectedAsset?.isNative
       ? (amountUnit === 'token' ? `Enter ${NATIVE_SYMBOL} Amount`
@@ -563,7 +560,7 @@ const SendTab = () => {
       </View>
       <View style={styles.separator} />
 
-      {/* Asset picker (owned assets across all chains) */}
+      {/* Asset picker */}
       <View style={styles.section}>
         <Text style={styles.label}>What crypto currency would you like to send:</Text>
         <Picker
