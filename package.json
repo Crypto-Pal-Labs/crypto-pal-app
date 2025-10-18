@@ -21,7 +21,7 @@
     "clean": "rimraf node_modules .expo android/app/build",
     "doctor": "expo-doctor",
     "build:apk": "eas build -p android --profile preview",
-    "build:internal": "eas build -p android --profile internal",
+    "build:internal": "eas build -p android --profile preview",
     "submit:internal": "eas submit -p android --profile internal --latest",
     "build:aab": "eas build -p android --profile production",
     "submit:prod": "eas submit -p android --profile production --latest"
