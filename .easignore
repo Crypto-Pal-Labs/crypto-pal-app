@@ -1,0 +1,25 @@
+﻿# Ignore big / generated / irrelevant stuff in the cloud archive
+node_modules
+.git
+.gitignore
+.expo
+.expo-shared
+dist
+build
+web-build
+coverage
+android
+ios
+.gradle
+**/*.log
+
+# Large/binary assets that can corrupt or bloat the tar
+**/*.mp4
+**/*.mov
+**/*.zip
+**/*.tar
+**/*.tar.gz
+**/*.7z
+**/*.psd
+**/*.ai
+**/*.sketch
