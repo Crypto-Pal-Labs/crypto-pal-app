@@ -30,15 +30,31 @@ const pick = (publicKey, legacyKey, defaultValue) => {
 
 module.exports = ({ config }) => ({
   ...config,
+
   name: 'Crypto Pal',
   slug: 'crypto-pal',
+
+  // ✅ Added: Store identifiers + Face ID reason
+  android: {
+    package: 'com.cryptopal.app',
+    versionCode: 10009, // bump +1 for every Play upload
+  },
+
+  ios: {
+    bundleIdentifier: 'com.cryptopal.ios',
+    buildNumber: '1', // bump +1 (string) for each App Store upload
+    infoPlist: {
+      NSFaceIDUsageDescription: 'Crypto Pal uses Face ID to unlock your wallet securely.',
+    },
+  },
+
   extra: {
     ...config.extra,
     APP_ENV: envName,
 
     // Covalent
     EXPO_PUBLIC_COVALENT_KEY: covalentKey,
-    COVALENT_KEY: covalentKey,          // legacy alias for codepaths reading 'COVALENT_KEY'
+    COVALENT_KEY: covalentKey,            // legacy alias for codepaths reading 'COVALENT_KEY'
     COVALENT_BASIC_B64: covalentBasicB64, // <— satisfies b64Len>0 check
     COVALENT_X_API_KEY: covalentKey,      // handy if any client uses X-API-Key
 
