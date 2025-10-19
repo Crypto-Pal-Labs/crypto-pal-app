@@ -34,10 +34,10 @@ module.exports = ({ config }) => ({
   name: 'Crypto Pal',
   slug: 'crypto-pal',
 
-  // ✅ Store identifiers + Face ID reason
+  // Identifiers
   android: {
     package: 'com.cryptopal.app',
-    versionCode: 10009, // ignored when using remote versions, but fine to keep
+    versionCode: 10009, // ignored with remote versions, harmless to keep
   },
 
   ios: {
@@ -48,7 +48,7 @@ module.exports = ({ config }) => ({
     },
   },
 
-  // ✅ Ensure Gradle/SDK/autolinking are correctly configured during Managed builds
+  // Build properties (no Kotlin override)
   plugins: [
     [
       'expo-build-properties',
@@ -57,10 +57,9 @@ module.exports = ({ config }) => ({
           compileSdkVersion: 34,
           targetSdkVersion: 34,
           minSdkVersion: 24,
-          kotlinVersion: '1.9.24',
+          // kotlinVersion removed — let Expo/SDK choose the correct one
         },
         ios: {
-          // 🔧 raised from 13.4 → 15.1 to satisfy plugin validation
           deploymentTarget: '15.1',
         },
       },
@@ -70,7 +69,7 @@ module.exports = ({ config }) => ({
   extra: {
     ...config.extra,
 
-    // ✅ Required by EAS when using dynamic config (fixes "project not configured" loop)
+    // Required by EAS for dynamic config
     eas: { projectId: '09671262-f041-418c-83ab-19f5d8003242' },
 
     APP_ENV: envName,
