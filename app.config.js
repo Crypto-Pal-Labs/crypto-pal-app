@@ -34,7 +34,7 @@ module.exports = ({ config }) => ({
   name: 'Crypto Pal',
   slug: 'crypto-pal',
 
-  // ✅ Added: Store identifiers + Face ID reason
+  // ✅ Store identifiers + Face ID reason
   android: {
     package: 'com.cryptopal.app',
     versionCode: 10009, // bump +1 for every Play upload
@@ -50,6 +50,10 @@ module.exports = ({ config }) => ({
 
   extra: {
     ...config.extra,
+
+    // ✅ Required by EAS when using dynamic config (fixes "project not configured" loop)
+    eas: { projectId: '09671262-f041-418c-83ab-19f5d8003242' },
+
     APP_ENV: envName,
 
     // Covalent
