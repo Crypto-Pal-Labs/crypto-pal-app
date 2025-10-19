@@ -49,21 +49,17 @@ module.exports = ({ config }) => ({
   },
 
   // Build properties (no Kotlin override)
-  plugins: [
-    [
-      'expo-build-properties',
-      {
-        android: {
-          compileSdkVersion: 34,
-          targetSdkVersion: 34,
-          minSdkVersion: 24,
-          // kotlinVersion removed — let Expo/SDK choose the correct one
-        },
-        ios: {
-          deploymentTarget: '15.1',
-        },
+   plugins: [
+    ['expo-build-properties', {
+      android: {
+        compileSdkVersion: 34,
+        targetSdkVersion: 34,
+        minSdkVersion: 24,
+        buildToolsVersion: '35.0.0',
+        kotlinVersion: '2.0.21',  // <-- force 2.0.21
       },
-    ],
+      ios: { deploymentTarget: '15.1' },
+    }],
   ],
 
   extra: {
@@ -109,3 +105,4 @@ module.exports = ({ config }) => ({
     POLYGON_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
   },
 });
+
