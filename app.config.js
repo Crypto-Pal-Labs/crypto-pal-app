@@ -37,16 +37,35 @@ module.exports = ({ config }) => ({
   // ✅ Store identifiers + Face ID reason
   android: {
     package: 'com.cryptopal.app',
-    versionCode: 10009, // bump +1 for every Play upload
+    versionCode: 10009, // ignored when using remote versions, but fine to keep
   },
 
   ios: {
     bundleIdentifier: 'com.cryptopal.ios',
-    buildNumber: '1', // bump +1 (string) for each App Store upload
+    buildNumber: '1',
     infoPlist: {
       NSFaceIDUsageDescription: 'Crypto Pal uses Face ID to unlock your wallet securely.',
     },
   },
+
+  // ✅ Ensure Gradle/SDK/autolinking are correctly configured during Managed builds
+  plugins: [
+    [
+      'expo-build-properties',
+      {
+        android: {
+          compileSdkVersion: 34,
+          targetSdkVersion: 34,
+          minSdkVersion: 24,
+          kotlinVersion: '1.9.24',
+        },
+        ios: {
+          // 🔧 raised from 13.4 → 15.1 to satisfy plugin validation
+          deploymentTarget: '15.1',
+        },
+      },
+    ],
+  ],
 
   extra: {
     ...config.extra,
@@ -58,18 +77,18 @@ module.exports = ({ config }) => ({
 
     // Covalent
     EXPO_PUBLIC_COVALENT_KEY: covalentKey,
-    COVALENT_KEY: covalentKey,            // legacy alias for codepaths reading 'COVALENT_KEY'
-    COVALENT_BASIC_B64: covalentBasicB64, // <— satisfies b64Len>0 check
-    COVALENT_X_API_KEY: covalentKey,      // handy if any client uses X-API-Key
+    COVALENT_KEY: covalentKey,
+    COVALENT_BASIC_B64: covalentBasicB64,
+    COVALENT_X_API_KEY: covalentKey,
 
-    // Feature switch: network enabled in prod always, and in dev only if key looks valid
+    // Feature switch
     FEATURES: { NETWORK_ENABLED: isProdBuild ? true : looksValid },
 
-    // --- Expose RPC / explorer URLs under BOTH names the app might read, with Alchemy priority for ETH
+    // RPC / explorer URLs
     EXPO_PUBLIC_ETHERSCAN_BASE: pick('EXPO_PUBLIC_ETHERSCAN_BASE', 'ETHERSCAN_BASE', 'https://sepolia.etherscan.io'),
     ETHERSCAN_BASE:             pick('EXPO_PUBLIC_ETHERSCAN_BASE', 'ETHERSCAN_BASE', 'https://sepolia.etherscan.io'),
 
-    EXPO_PUBLIC_ETH_RPC_URL:    pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),  // Alchemy primary, public fallback
+    EXPO_PUBLIC_ETH_RPC_URL:    pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
     ETH_RPC_URL:                pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
 
     EXPO_PUBLIC_BSC_RPC_URL:    pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
@@ -81,7 +100,6 @@ module.exports = ({ config }) => ({
     EXPO_PUBLIC_POLYGON_RPC_URL: pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
     POLYGON_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
 
-    // (Optional but consistent) mainnets too, if your code reads them:
     EXPO_PUBLIC_ETH_MAINNET_RPC_URL: pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),
     ETH_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),
 
