@@ -1,4 +1,4 @@
-.env
+﻿.env
 node_modules
 node_modules
 node_modules
@@ -6,14 +6,12 @@ node_modules
 .expo/
 node_modules
 node_modules/
-android/
-ios/
+
 .expo/
 .env*
 !.env.example  # Optional if you have one
 # Secrets (do not commit)
 play-service-account.json
-
 
 # Local backups
 eas.backup.json

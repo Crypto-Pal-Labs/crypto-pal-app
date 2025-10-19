@@ -1,0 +1,11 @@
+﻿pluginManagement {
+  repositories { gradlePluginPortal(); google(); mavenCentral() }
+}
+dependencyResolutionManagement {
+  repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+  repositories { mavenCentral(); google() }
+}
+rootProject.name = "Crypto Pal"
+apply from: new File(["node","--print","require.resolve('expo/scripts/autolinking')"].execute(null, rootDir).text.trim(), "android.groovy")
+useExpoModules()
+include(":app")
