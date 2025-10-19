@@ -87,7 +87,7 @@
                   "production":  {
                                      "distribution":  "store",
                                      "android":  {
-                                                     "buildType":  "aab"
+                                                     "buildType":  "app-bundle"
                                                  },
                                      "env":  {
                                                  "EXPO_PUBLIC_COVALENT_KEY":  "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
