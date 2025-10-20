@@ -33,6 +33,7 @@ module.exports = ({ config }) => ({
 
   name: 'Crypto Pal',
   slug: 'crypto-pal',
+<<<<<<< Updated upstream
 
   // Identifiers
   android: {
@@ -49,12 +50,15 @@ module.exports = ({ config }) => ({
   },
 
   // Build properties (no Kotlin override)
+=======
+>>>>>>> Stashed changes
   plugins: [
   ['expo-build-properties', {
     android: {
       compileSdkVersion: 34,
       targetSdkVersion: 34,
       minSdkVersion: 24,
+<<<<<<< Updated upstream
       buildToolsVersion: '35.0.0',
       // Removed kotlinVersion - let Expo default to compatible version
     },
@@ -62,6 +66,18 @@ module.exports = ({ config }) => ({
   }],
 ],
 
+=======
+      buildToolsVersion: "35.0.0",
+      kotlinVersion: "1.9.25",
+    },
+  }],
+],
+  android: {
+    edgeToEdgeEnabled: true,
+    package: 'com.cryptopal.app',
+    versionCode: 10009,
+  },
+>>>>>>> Stashed changes
   extra: {
     ...config.extra,
 
@@ -70,6 +86,7 @@ module.exports = ({ config }) => ({
 
     APP_ENV: envName,
 
+<<<<<<< Updated upstream
     // Covalent and related
     EXPO_PUBLIC_COVALENT_KEY: pick('EXPO_PUBLIC_COVALENT_KEY', 'COVALENT_KEY', ''),
     COVALENT_KEY: pick('EXPO_PUBLIC_COVALENT_KEY', 'COVALENT_KEY', ''),
@@ -82,6 +99,23 @@ module.exports = ({ config }) => ({
 
     EXPO_PUBLIC_ETH_RPC_URL: pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
     ETH_RPC_URL: pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
+=======
+    eas: {
+      projectId: "09671262-f041-418c-83ab-19f5d8003242"
+    },
+
+    // Covalent
+    EXPO_PUBLIC_COVALENT_KEY: covalentKey,
+    COVALENT_KEY: covalentKey,          // legacy alias for codepaths reading 'COVALENT_KEY'
+    COVALENT_BASIC_B64: covalentBasicB64, // <— satisfies b64Len>0 check
+    COVALENT_X_API_KEY: covalentKey,      // handy if any client uses X-API-Key
+
+    // Feature switch: network enabled in prod always, and in dev only if key looks valid
+    FEATURES: { NETWORK_ENABLED: isProdBuild ? true : looksValid },
+    // --- RPCs with Alchemy/Infura priority, public fallback ---
+    EXPO_PUBLIC_ETH_RPC_URL:    pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),  // Alchemy primary, public fallback
+    ETH_RPC_URL:                pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
+>>>>>>> Stashed changes
 
     EXPO_PUBLIC_BSC_RPC_URL: pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
     BSC_RPC_URL: pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),

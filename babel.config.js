@@ -7,8 +7,8 @@ module.exports = function (api) {
         moduleName: '@env',
         path: '.env',
       }],
-      'react-native-worklets-core/plugin', // Updated path for Reanimated worklets
-    ['react-native-reanimated/plugin'],
+      'react-native-worklets-core',
+      ['react-native-reanimated/plugin'],
     ],
   };
 };
