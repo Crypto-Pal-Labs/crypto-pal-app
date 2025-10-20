@@ -50,17 +50,17 @@ module.exports = ({ config }) => ({
 
   // Build properties (no Kotlin override)
   plugins: [
-    ['expo-build-properties', {
-      android: {
-        compileSdkVersion: 34,
-        targetSdkVersion: 34,
-        minSdkVersion: 24,
-        buildToolsVersion: '35.0.0',
-        kotlinVersion: '1.8.22',  // Updated for map key compatibility
-      },
-      ios: { deploymentTarget: '15.1' },
-    }],
-  ],
+  ['expo-build-properties', {
+    android: {
+      compileSdkVersion: 34,
+      targetSdkVersion: 34,
+      minSdkVersion: 24,
+      buildToolsVersion: '35.0.0',
+      // Removed kotlinVersion - let Expo default to compatible version
+    },
+    ios: { deploymentTarget: '15.1' },
+  }],
+],
 
   extra: {
     ...config.extra,
