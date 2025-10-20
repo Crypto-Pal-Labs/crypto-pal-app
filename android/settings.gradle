@@ -37,3 +37,6 @@ expoAutolinking.useExpoVersionCatalog()
 
 include ':app'
 includeBuild(expoAutolinking.reactNativeGradlePlugin)
+
+// Explicit autolinking fix for EAS
+apply from: new File(["node", "--print", "require.resolve('expo-autolinking/package.json')"].execute(null, rootDir).text.trim(), "../scripts/autolinking.gradle")
