@@ -56,7 +56,7 @@ module.exports = ({ config }) => ({
         targetSdkVersion: 34,
         minSdkVersion: 24,
         buildToolsVersion: '35.0.0',
-        kotlinVersion: '2.0.21',  // <-- force 2.0.21
+        kotlinVersion: '1.9.10',  // <-- force 2.0.21
       },
       ios: { deploymentTarget: '15.1' },
     }],
