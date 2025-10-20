@@ -1,4 +1,4 @@
-﻿// app.config.js
+// app.config.js
 const envName = (process.env.APP_ENV || process.env.NODE_ENV || 'development').toLowerCase();
 require('dotenv').config({ path: envName === 'development' ? '.env.development' : '.env' });
 
