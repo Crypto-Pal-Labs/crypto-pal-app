@@ -49,14 +49,14 @@ module.exports = ({ config }) => ({
   },
 
   // Build properties (no Kotlin override)
-   plugins: [
+  plugins: [
     ['expo-build-properties', {
       android: {
         compileSdkVersion: 34,
         targetSdkVersion: 34,
         minSdkVersion: 24,
         buildToolsVersion: '35.0.0',
-        kotlinVersion: '1.9.24',  
+        kotlinVersion: '1.9.24',  // Updated for map key compatibility
       },
       ios: { deploymentTarget: '15.1' },
     }],
@@ -70,41 +70,35 @@ module.exports = ({ config }) => ({
 
     APP_ENV: envName,
 
-    // Covalent
-    EXPO_PUBLIC_COVALENT_KEY: covalentKey,
-    COVALENT_KEY: covalentKey,
+    // Covalent and related
+    EXPO_PUBLIC_COVALENT_KEY: pick('EXPO_PUBLIC_COVALENT_KEY', 'COVALENT_KEY', ''),
+    COVALENT_KEY: pick('EXPO_PUBLIC_COVALENT_KEY', 'COVALENT_KEY', ''),
     COVALENT_BASIC_B64: covalentBasicB64,
-    COVALENT_X_API_KEY: covalentKey,
+    COVALENT_X_API_KEY: pick('EXPO_PUBLIC_COVALENT_KEY', 'COVALENT_KEY', ''),
 
-    // Feature switch
-    FEATURES: { NETWORK_ENABLED: isProdBuild ? true : looksValid },
-
-    // RPC / explorer URLs
+    // Etherscan and RPCs
     EXPO_PUBLIC_ETHERSCAN_BASE: pick('EXPO_PUBLIC_ETHERSCAN_BASE', 'ETHERSCAN_BASE', 'https://sepolia.etherscan.io'),
-    ETHERSCAN_BASE:             pick('EXPO_PUBLIC_ETHERSCAN_BASE', 'ETHERSCAN_BASE', 'https://sepolia.etherscan.io'),
+    ETHERSCAN_BASE: pick('EXPO_PUBLIC_ETHERSCAN_BASE', 'ETHERSCAN_BASE', 'https://sepolia.etherscan.io'),
 
-    EXPO_PUBLIC_ETH_RPC_URL:    pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
-    ETH_RPC_URL:                pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
+    EXPO_PUBLIC_ETH_RPC_URL: pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
+    ETH_RPC_URL: pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
 
-    EXPO_PUBLIC_BSC_RPC_URL:    pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
-    BSC_RPC_URL:                pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
+    EXPO_PUBLIC_BSC_RPC_URL: pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
+    BSC_RPC_URL: pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
 
-    EXPO_PUBLIC_BSCSCAN_BASE:   pick('EXPO_PUBLIC_BSCSCAN_BASE', 'BSCSCAN_BASE', 'https://testnet.bscscan.com'),
-    BSCSCAN_BASE:               pick('EXPO_PUBLIC_BSCSCAN_BASE', 'BSCSCAN_BASE', 'https://testnet.bscscan.com'),
+    EXPO_PUBLIC_BSCSCAN_BASE: pick('EXPO_PUBLIC_BSCSCAN_BASE', 'BSCSCAN_BASE', 'https://testnet.bscscan.com'),
+    BSCSCAN_BASE: pick('EXPO_PUBLIC_BSCSCAN_BASE', 'BSCSCAN_BASE', 'https://testnet.bscscan.com'),
 
     EXPO_PUBLIC_POLYGON_RPC_URL: pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
-    POLYGON_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
+    POLYGON_RPC_URL: pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
 
     EXPO_PUBLIC_ETH_MAINNET_RPC_URL: pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),
-    ETH_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),
+    ETH_MAINNET_RPC_URL: pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),
 
     EXPO_PUBLIC_BSC_MAINNET_RPC_URL: pick('EXPO_PUBLIC_BSC_MAINNET_RPC_URL', 'BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org'),
-    BSC_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_BSC_MAINNET_RPC_URL', 'BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org'),
+    BSC_MAINNET_RPC_URL: pick('EXPO_PUBLIC_BSC_MAINNET_RPC_URL', 'BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org'),
 
     EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL: pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
-    POLYGON_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
+    POLYGON_MAINNET_RPC_URL: pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
   },
 });
-
-
-
