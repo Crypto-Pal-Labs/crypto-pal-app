@@ -46,6 +46,9 @@ module.exports = ({ config }) => ({
       },
     ],
   ],
+  android: {
+    package: 'com.crwmlw.cryptopal',
+  },
   extra: {
     ...config.extra,
     APP_ENV: envName,
