@@ -87,5 +87,10 @@ module.exports = ({ config }) => ({
 
     EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL: pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
     POLYGON_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
+
+    // EAS project linking
+    eas: {
+      projectId: "09671262-f041-418c-83ab-19f5d8003242"
+    }
   },
 });
