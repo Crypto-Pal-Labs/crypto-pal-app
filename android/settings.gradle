@@ -4,7 +4,7 @@ pluginManagement {
     google()
     mavenCentral()
   }
-  // RN Gradle plugin lives in node_modules; include its build
+  // React Native Gradle plugin lives inside node_modules; include its build so "plugins" {} can find it
   includeBuild("../node_modules/@react-native/gradle-plugin")
 }
 
@@ -15,15 +15,46 @@ plugins {
   id("org.jetbrains.kotlin.android") version "2.0.21" apply false
 }
 
-// --- Expo autolinking (SDK 53)
-apply from: new File(
-  ["node","--print","require.resolve('@expo/config-plugins/package.json')"]
-    .execute(null, rootDir)
-    .text
-    .trim(),
-  "../android/expoAutolinking.gradle"
-)
-useExpoModules()
-
 rootProject.name = "Crypto Pal"
 include(":app")
+
+// ---- Expo autolinking (robust: try multiple locations)
+// This covers both the current (@expo/config-plugins) and older (expo-modules-autolinking / expo) layouts.
+def applyExpoAutolinking = { ->
+  def tryFiles = []
+
+  try {
+    def p = ["node","--print","require.resolve('@expo/config-plugins/package.json')"].execute(null, rootDir)
+    p.waitFor()
+    def pkgPath = p.in.text.trim()
+    if (pkgPath) {
+      tryFiles << new File(pkgPath).toPath().resolve("../android/expoAutolinking.gradle").toFile()
+    }
+  } catch (ignored) { }
+
+  // Direct relative fallbacks (CI sometimes fails to spawn node)
+  tryFiles << new File(settingsDir, "../node_modules/@expo/config-plugins/android/expoAutolinking.gradle")
+  tryFiles << new File(settingsDir, "../node_modules/expo-modules-autolinking/scripts/autolinking.gradle")
+
+  // Old-school Expo fallback
+  try {
+    def q = ["node","--print","require.resolve('expo/scripts/autolinking')"].execute(null, rootDir)
+    q.waitFor()
+    def legacyDir = q.in.text.trim()
+    if (legacyDir) {
+      tryFiles << new File(legacyDir, "android.groovy")
+    }
+  } catch (ignored) { }
+
+  for (f in tryFiles) {
+    if (f != null && f.exists()) {
+      println("Applying Expo autolinking from: " + f)
+      apply from: f
+      return
+    }
+  }
+  throw new GradleException("Expo autolinking script not found in any known location. Checked: " + tryFiles)
+}
+
+applyExpoAutolinking()
+useExpoModules()
