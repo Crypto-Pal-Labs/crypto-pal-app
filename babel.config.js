@@ -1,14 +1,7 @@
-module.exports = function (api) {
+﻿module.exports = function (api) {
   api.cache(true);
-  return {
-    presets: ['babel-preset-expo'],
-    plugins: [
-      ['module:react-native-dotenv', {
-        moduleName: '@env',
-        path: '.env',
-      }],
-      'module:react-native-worklets-core',
-      ['react-native-reanimated/plugin'],
-    ],
-  };
+  const plugins = [];
+  // If you use Reanimated, load its plugin *only if installed* and keep it last
+  try { require.resolve('react-native-reanimated/plugin'); plugins.push('react-native-reanimated/plugin'); } catch (e) {}
+  return { presets: ['babel-preset-expo'], plugins };
 };
