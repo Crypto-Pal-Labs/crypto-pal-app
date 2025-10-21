@@ -32,6 +32,20 @@ module.exports = ({ config }) => ({
   ...config,
   name: 'Crypto Pal',
   slug: 'crypto-pal',
+  plugins: [
+    [
+      'expo-build-properties',
+      {
+        android: {
+          compileSdkVersion: 34,
+          targetSdkVersion: 34,
+          minSdkVersion: 21,
+          buildToolsVersion: '34.0.0',
+          kotlinVersion: '1.9.24',
+        },
+      },
+    ],
+  ],
   extra: {
     ...config.extra,
     APP_ENV: envName,
