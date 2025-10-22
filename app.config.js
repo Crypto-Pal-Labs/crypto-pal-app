@@ -39,7 +39,7 @@ module.exports = ({ config }) => ({
         android: {
           compileSdkVersion: 34,
           targetSdkVersion: 34,
-          minSdkVersion: 21,
+          minSdkVersion: 24,
           buildToolsVersion: '34.0.4',
         },
       },
