@@ -1,14 +1,8 @@
-﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+// src/screens/HistoryTab.tsx
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
-  View,
-  Text,
-  ActivityIndicator,
-  FlatList,
-  StyleSheet,
-  Linking,
-  TouchableOpacity,
-  RefreshControl,
-  Platform,
+  View, Text, ActivityIndicator, FlatList, StyleSheet, Linking,
+  TouchableOpacity, RefreshControl, Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -17,10 +11,9 @@ import * as Localization from "expo-localization";
 import * as ethers from "ethers";
 
 import { useWalletStore } from "../store/useWalletStore";
-import { EvmChain } from "../config/chainRegistry";
+import { CHAINS, EvmChain } from "../config/chainRegistry";
 import { covalentGet } from "../lib/covalent";
-import { isCovalentSupported } from "../config/capabilities";
-import { useChain } from "../hooks/useChain";
+
 // ===== Types =====
 type TxItem = {
   hash: string;
@@ -62,9 +55,9 @@ const PRICE_IDS: Record<string, string> = {
 };
 
 const maskAddr = (a: string) =>
-  a?.startsWith("0x") && a.length >= 10 ? `${a.slice(0, 6)}â€¦${a.slice(-4)}` : a;
+  a?.startsWith("0x") && a.length >= 10 ? `${a.slice(0, 6)}…${a.slice(-4)}` : a;
 const fmt = (n: number, dp = 6) =>
-  Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/, "").replace(/\.$/, "") : "â€”";
+  Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/, "").replace(/\.$/, "") : "—";
 
 // ---- tuning ----
 const COVALENT_PAGE_SIZE = 100;
@@ -89,8 +82,7 @@ export default function HistoryTab() {
   const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
   const localCurrency = (locale.currencyCode || "USD").toUpperCase();
 
-  const { chain } = useChain();
-  const chains: EvmChain[] = useMemo(() => (chain ? [chain] : []), [chain]);
+  const chains: EvmChain[] = useMemo(() => CHAINS, []);
   const [items, setItems] = useState<TxItem[]>([]);
   const [firstLoading, setFirstLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -214,7 +206,6 @@ export default function HistoryTab() {
 
   // covalent
   const fetchChainTx = async (c: EvmChain, owner: string, soft: boolean) => {
-    if (!isCovalentSupported("txs", c.covalentChainId)) return [];
     if (c.covalentSupported === false) return [];
     const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/transactions_v3/?no-logs=true&page-size=${COVALENT_PAGE_SIZE}`;
     try {
@@ -224,7 +215,6 @@ export default function HistoryTab() {
   };
 
   const fetchTokenTransfers = async (c: EvmChain, owner: string, soft: boolean): Promise<TxItem[]> => {
-    if (!isCovalentSupported("txs", c.covalentChainId)) return [];
     if (c.covalentSupported === false) return [];
     const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/transfers_v3/?contract-address=all&no-logs=false&page-size=${COVALENT_PAGE_SIZE}`;
     try {
@@ -283,7 +273,7 @@ export default function HistoryTab() {
     } catch { return []; }
   }
 
-  // rpc native OUTGOING lookback  âŸµ NEW so Sender sees their own Amoy txs
+  // rpc native OUTGOING lookback  ⟵ NEW so Sender sees their own Amoy txs
   async function rpcOutgoingLookback(c: EvmChain, owner: string, lookbackBlocks: number): Promise<TxItem[]> {
     try {
       const rpc = c.rpcUrls?.[0];
@@ -604,6 +594,3 @@ const styles = StyleSheet.create({
   statusConfirmed: { color: "#16A34A", fontWeight: "700" },
   statusFailed: { color: "#DC2626", fontWeight: "700" },
 });
-
-
-

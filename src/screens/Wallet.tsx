@@ -1,4 +1,4 @@
-// src/screens/Wallet.tsx
+﻿// src/screens/Wallet.tsx
 import React, { useState, useEffect, useRef } from "react";
 import {
   View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Image,
@@ -31,6 +31,9 @@ type CGMarket = {
 
 type PriceEntry = { usd: number; local: number };
 
+// Safe em-dash to avoid garbled “â€”” on Android
+const DASH = "\u2014";
+
 // ---------- Small helpers ----------
 const titleCase = (s: string) =>
   s.replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
@@ -59,7 +62,7 @@ function queuedJSON(url: string, retries = 2): Promise<any | null> {
   return q;
 }
 
-// ---------- Simple price cache (fallback for testnets) ----------
+// ---------- Simple price cache (CG first) ----------
 const PRICE_IDS: Record<string, string> = {
   ETH: "ethereum", WETH: "ethereum",
   BNB: "binancecoin", WBNB: "binancecoin",
@@ -93,6 +96,60 @@ async function loadSymbolPrices(symbols: string[], localCurrency: string) {
   return out;
 }
 
+// ---------- Binance helpers (for fallback) ----------
+const binancePair = (sym: string) =>
+  ({ ETH: "ETHUSDT", BNB: "BNBUSDT", MATIC: "MATICUSDT" } as Record<string, string>)[
+    (sym || "").toUpperCase()
+  ] || "";
+
+async function loadBinancePct(sym: string): Promise<number | null> {
+  const pair = binancePair(sym);
+  if (!pair) return null;
+  try {
+    const r = await queuedJSON(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`);
+    const p = Number(r?.priceChangePercent);
+    return Number.isFinite(p) ? p : null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadBinanceUsd(sym: string): Promise<number | null> {
+  const pair = binancePair(sym);
+  if (!pair) return null;
+  try {
+    const r = await queuedJSON(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`);
+    const px = Number(r?.price);
+    return Number.isFinite(px) ? px : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Strong price loader: CoinGecko first, then fill any zero/missing USD with Binance.
+ * For non-USD local currencies we leave `local` as-is (USD is default display).
+ */
+async function loadSymbolPricesStrong(symbols: string[], localCurrency: string) {
+  const cg = await loadSymbolPrices(symbols, localCurrency);
+  const map: Record<string, PriceEntry> = { ...cg };
+  for (const s of symbols) {
+    const key = (s || "").toUpperCase();
+    const hasUsd = map[key]?.usd && map[key].usd > 0;
+    if (!hasUsd) {
+      const usd = await loadBinanceUsd(key);
+      if (usd && usd > 0) {
+        console.log("[WALLET_PRICE] binance usd fallback:", key, usd);
+        map[key] = {
+          usd,
+          local: localCurrency === "USD" ? usd : (map[key]?.local || 0),
+        };
+      }
+    }
+  }
+  return map;
+}
+
 const Wallet: React.FC = () => {
   const navigation = useNavigation();
   const isMounted = useRef(true);
@@ -117,7 +174,9 @@ const Wallet: React.FC = () => {
 
   // 24h % map for each symbol (nice-to-have)
   const [cgMap, setCgMap] = useState<Record<string, CGMarket>>({});
+  const [pctMap, setPctMap] = useState<Record<string, number>>({});
   const resolving = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     (async () => {
       try {
@@ -173,6 +232,24 @@ const Wallet: React.FC = () => {
     }
   };
 
+  // ===== fill pctMap via Binance when CG percent missing =====
+  useEffect(() => {
+    (async () => {
+      for (const b of balances) {
+        const sym = (b.contract_ticker_symbol || "").toUpperCase();
+        if (!sym) continue;
+        const key = sym.toLowerCase();
+        const cg = cgMap[key] || cgMap[`${key}|${(b.contract_name || "").toLowerCase()}`];
+        const hasCgPct =
+          !!(cg && (cg.price_change_percentage_24h_in_currency != null || cg.price_change_percentage_24h != null));
+        if (!hasCgPct && pctMap[key] == null) {
+          const p = await loadBinancePct(sym);
+          if (p != null && isMounted.current) setPctMap(prev => ({ ...prev, [key]: p }));
+        }
+      }
+    })();
+  }, [balances, cgMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // keep address in store (existing flow)
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadAddress = async () => {
@@ -212,7 +289,7 @@ const Wallet: React.FC = () => {
     }
   };
 
-  // --- Fallback price cache inside the screen (guarantees non-zero fiat for Amoy) ---
+  // --- Price cache in the screen (CG + Binance fallback) ---
   const [priceCache, setPriceCache] = useState<Record<string, PriceEntry>>({});
   useEffect(() => {
     const syms: string[] = Array.from(
@@ -223,7 +300,7 @@ const Wallet: React.FC = () => {
       )
     );
     if (!syms.length) return;
-    loadSymbolPrices(syms, localCurrency)
+    loadSymbolPricesStrong(syms, localCurrency)
       .then((map) => isMounted.current && setPriceCache(map))
       .catch(() => {});
   }, [balances, localCurrency]);
@@ -294,34 +371,34 @@ const Wallet: React.FC = () => {
         ? Number(ethers.utils.formatUnits(item.balance, 18)) + localBalanceDelta
         : Number(ethers.utils.formatUnits(item.balance, dec));
 
-    const balanceLine = `${displayQty.toFixed(8)} ${item.contract_ticker_symbol}`;
+    const balanceLine = `${displayQty.toFixed(8)} ${item.contract_ticker_symbol || DASH}`;
 
-    const symbol = item.contract_ticker_symbol || "—";
+    const symbol = item.contract_ticker_symbol || DASH;
     const name = resolveName(symbol, item.contract_name);
     const title = `${symbol}  |  ${name}`;
 
     const logo = item.logo_url || "";
 
-    // 24h %
+    // 24h % (CoinGecko -> Binance fallback)
     const symKey = (symbol || "").toLowerCase();
     const cg = cgMap[symKey] || cgMap[`${symKey}|${(item.contract_name || "").toLowerCase()}`];
     if (!cg) ensurePctFor(symbol, item.contract_name);
     const pct24 =
-      cg?.price_change_percentage_24h_in_currency ??
-      cg?.price_change_percentage_24h ??
+      (cg?.price_change_percentage_24h_in_currency ?? cg?.price_change_percentage_24h) ??
+      pctMap[symKey] ??
       null;
     const pctStyle = pct24 == null ? styles.pctNeutral : pct24 >= 0 ? styles.up : styles.down;
 
-    // fiat with fallback (never shows $0 on Amoy)
+    // fiat with fallback (CG -> Binance USD)
     const fallbackUsd = (priceCache[symU]?.usd || 0) * displayQty;
     const fallbackLoc = (priceCache[symU]?.local || 0) * displayQty;
-    let fiatText = "—";
+    let fiatText = DASH;
     if (currency === "USD") {
       const val = item.quoteUsd && item.quoteUsd > 0 ? item.quoteUsd : fallbackUsd;
-      fiatText = Number.isFinite(val) ? `$${val.toFixed(2)}` : "—";
+      fiatText = Number.isFinite(val) ? `$${val.toFixed(2)}` : DASH;
     } else {
       const val = item.quoteLocal && item.quoteLocal > 0 ? item.quoteLocal : fallbackLoc;
-      fiatText = Number.isFinite(val) ? `${val.toFixed(2)} ${currency}` : `— ${currency}`;
+      fiatText = Number.isFinite(val) ? `${val.toFixed(2)} ${currency}` : `${DASH} ${currency}`;
     }
 
     return (
@@ -345,7 +422,7 @@ const Wallet: React.FC = () => {
           <Text style={styles.cardPriceRight} numberOfLines={1}>{fiatText}</Text>
           <Text style={[styles.cardPctRight, pctStyle]} numberOfLines={1}>
             {pct24 == null || Number.isNaN(pct24)
-              ? "—"
+              ? DASH
               : `${pct24 >= 0 ? "+" : ""}${pct24.toFixed(2)}%`}
           </Text>
         </View>
@@ -374,8 +451,8 @@ const Wallet: React.FC = () => {
         </View>
 
         <View style={styles.cardRight}>
-          <Text style={styles.cardPriceRight}>—</Text>
-          <Text style={[styles.cardPctRight, styles.pctNeutral]}>—</Text>
+          <Text style={styles.cardPriceRight}>{DASH}</Text>
+          <Text style={[styles.cardPctRight, styles.pctNeutral]}>{DASH}</Text>
         </View>
       </View>
     );

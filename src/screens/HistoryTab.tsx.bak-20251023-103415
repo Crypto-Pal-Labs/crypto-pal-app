@@ -1,26 +1,22 @@
-﻿import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+﻿// src/screens/HistoryTab.tsx
+import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
-  View,
-  Text,
-  ActivityIndicator,
-  FlatList,
-  StyleSheet,
-  Linking,
-  TouchableOpacity,
-  RefreshControl,
-  Platform,
+import { isCovalentSupported } from "../config/capabilities";
+  View, Text, ActivityIndicator, FlatList, StyleSheet, Linking,
+  TouchableOpacity, RefreshControl, Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useFocusEffect } from "@react-navigation/native";
 import * as Localization from "expo-localization";
 import * as ethers from "ethers";
+import { isCovalentSupported } from "../config/capabilities";
 
 import { useWalletStore } from "../store/useWalletStore";
-import { EvmChain } from "../config/chainRegistry";
+import { CHAINS, EvmChain } from "../config/chainRegistry";
 import { covalentGet } from "../lib/covalent";
 import { isCovalentSupported } from "../config/capabilities";
-import { useChain } from "../hooks/useChain";
+
 // ===== Types =====
 type TxItem = {
   hash: string;
@@ -89,8 +85,7 @@ export default function HistoryTab() {
   const locale = Localization.getLocales()[0] || { currencyCode: "USD" };
   const localCurrency = (locale.currencyCode || "USD").toUpperCase();
 
-  const { chain } = useChain();
-  const chains: EvmChain[] = useMemo(() => (chain ? [chain] : []), [chain]);
+  const chains: EvmChain[] = useMemo(() => CHAINS, []);
   const [items, setItems] = useState<TxItem[]>([]);
   const [firstLoading, setFirstLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -604,6 +599,4 @@ const styles = StyleSheet.create({
   statusConfirmed: { color: "#16A34A", fontWeight: "700" },
   statusFailed: { color: "#DC2626", fontWeight: "700" },
 });
-
-
 

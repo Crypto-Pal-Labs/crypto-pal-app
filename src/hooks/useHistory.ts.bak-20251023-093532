@@ -58,7 +58,8 @@ export const useHistory = () => {
     try {
       const owner = address.toLowerCase();
 
-      // If this chain is marked unsupported by Covalent, return empty (wallet covers balances via RPC fallback)
+      // If this chain is marked unsupported by Covalent, short-circuit with empty for now.
+      // (Wallet balances already have an RPC fallback; history can be enhanced later if needed.)
       if (chain?.covalentSupported === false) {
         setTransactions([]);
         setLoading(false);
@@ -73,10 +74,10 @@ export const useHistory = () => {
       try {
         json = await covalentGet(url);
       } catch (e: any) {
-        // Quietly skip on unsupported or rate-limited; keep last-known list
+        // Skip showing hard errors for unsupported / rate / transient — leave last known list
         if (e instanceof CovalentError) {
           if (e.status === 501) { setLoading(false); return; }
-          if (e.status === 429) { setLoading(false); return; }
+          if (e.status === 429)  { setLoading(false); return; }
         }
         const msg = String(e?.message || e);
         setError(msg);
@@ -85,7 +86,7 @@ export const useHistory = () => {
       }
 
       const items = json?.data?.items ?? [];
-      const list = toTxItems(items, chain as EvmChain);
+      const list = toTxItems(items, chain);
       setTransactions(list);
     } catch (e: any) {
       const msg = String(e?.message || e);

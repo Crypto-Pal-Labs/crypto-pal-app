@@ -1,4 +1,4 @@
-﻿// src/hooks/useAssets.ts
+// src/hooks/useAssets.ts
 import { useState, useRef, useCallback } from "react";
 import * as ethers from "ethers";
 import * as Localization from "expo-localization";
@@ -8,7 +8,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useWalletStore } from "../store/useWalletStore";
 import { useChain } from "../hooks/useChain";
 import { covalentGet } from "../lib/covalent"; // uses EXPO_PUBLIC_COVALENT_KEY if present
-import { isCovalentSupported } from "../config/capabilities";
 
 // ---------- Types ----------
 interface CovalentItem {
@@ -48,7 +47,7 @@ const INVALIDATE_KEY = (addr: string, chainId: number) =>
 // ---------- Price helpers (CoinGecko with API key + CoinPaprika fallback) ----------
 type PriceEntry = { usd: number; local: number };
 
-// Symbol â†’ CoinGecko ID
+// Symbol → CoinGecko ID
 const CG_IDS: Record<string, string> = {
   ETH: "ethereum",
   BNB: "binancecoin",
@@ -58,7 +57,7 @@ const CG_IDS: Record<string, string> = {
   DAI: "dai",
 };
 
-// Symbol â†’ CoinPaprika ID
+// Symbol → CoinPaprika ID
 const PAPRIKA_IDS: Record<string, string> = {
   ETH: "eth-ethereum",
   BNB: "bnb-binance-coin",
@@ -181,8 +180,6 @@ const SYMBOL_LOGO: Record<string, string> = {
 
 // ---------- Hook ----------
 export const useAssets = () => {
-  // DEBUG: print chain details when hook mounts
-  console.log("[ASSETS_DEBUG] hook mount");
   const address = useWalletStore((s) => s.address);
   const { chain } = useChain();
 
@@ -198,7 +195,6 @@ export const useAssets = () => {
   const localCurrency = (locale.currencyCode || "USD").toUpperCase();
 
   const RPC_URL = chain.rpcUrls?.[0] || "";
-  console.log("[ASSETS_DEBUG] chain=", { id: chain.chainId, name: chain.name, covalentId: chain.covalentChainId, rpc: RPC_URL });
 
   // ---- Fallback path for chains not supported by Covalent (e.g., Polygon Amoy) ----
   const fetchAssetsFallback = useCallback(async () => {
@@ -210,7 +206,6 @@ export const useAssets = () => {
     try {
       const provider = new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: chain.chainId, name: chain.name });
       const wei = await provider.getBalance(address);
-      console.log("[ASSETS_DEBUG] RPC wei=", String(wei).slice(0, 20), "…");
       const symbol = (chain.nativeSymbol || "ETH").toUpperCase();
       const prices = await getPriceMap([symbol], localCurrency);
 
@@ -250,15 +245,15 @@ export const useAssets = () => {
     }
 
     // If this chain is not supported by Covalent, jump straight to fallback
-    if (!isCovalentSupported("balances", chain.covalentChainId)) {
-      console.log("[ASSETS_DEBUG] using RPC fallback for balances (Covalent unsupported)");
+    if (chain.covalentSupported === false) {
       await fetchAssetsFallback();
       return;
     }
 
     setError(null);
     setLoading(true);
-      console.log("[ASSETS_DEBUG] using Covalent balances");try {
+
+    try {
       // 1) Covalent balances
       const base = "https://api.covalenthq.com/v1";
       const url = `${base}/${encodeURIComponent(chain.covalentChainId as any)}/address/${address}/balances_v2/?quote-currency=USD&format=JSON&nft=true&no-nft-fetch=false&no-spam=true`;
@@ -354,7 +349,7 @@ export const useAssets = () => {
     }
   }, [address, chain.covalentChainId, chain.covalentSupported, chain.chainId, chain.name, chain.nativeSymbol, RPC_URL, localCurrency, fetchAssetsFallback]);
 
-  // ---- refresh controls (60s slow poll + fast â€œinvalidationâ€ ping) ----
+  // ---- refresh controls (60s slow poll + fast “invalidation” ping) ----
   const refresh = useCallback(() => {
     if (!isActiveRef.current) return;
     fetchAssetsInternal();
@@ -363,7 +358,9 @@ export const useAssets = () => {
   const startTimers = useCallback(() => {
     isActiveRef.current = true;
 
-    const slow = setInterval(() => { if (isActiveRef.current) fetchAssetsInternal(); }, 120000);
+    const slow = setInterval(() => {
+      if (isActiveRef.current) fetchAssetsInternal();
+    }, 60000);
 
     const invKey = address ? INVALIDATE_KEY(address, chain.chainId) : null;
     const fast = setInterval(async () => {
@@ -375,7 +372,7 @@ export const useAssets = () => {
           fetchAssetsInternal();
         }
       } catch {}
-    }, 5000);
+    }, 2000);
 
     return () => {
       isActiveRef.current = false;
@@ -386,10 +383,3 @@ export const useAssets = () => {
 
   return { balances, nfts, loading, error, refresh, startTimers };
 };
-
-
-
-
-
-
-

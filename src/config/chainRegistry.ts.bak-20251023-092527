@@ -1,4 +1,4 @@
-﻿// src/config/chainRegistry.ts
+// src/config/chainRegistry.ts
 export type EvmChain = {
   chainId: number;
   name: string;
@@ -19,7 +19,7 @@ export const CHAINS: EvmChain[] = [
   {
     chainId: 11155111,
     name: "Sepolia",
-    shortName: "ETH Â· Sepolia",
+    shortName: "ETH · Sepolia",
     covalentChainId: "eth-sepolia",
     rpcUrls: [process.env.EXPO_PUBLIC_ETH_RPC_URL ?? ""],
     explorerBase: process.env.EXPO_PUBLIC_ETHERSCAN_BASE ?? "https://sepolia.etherscan.io",
@@ -31,7 +31,7 @@ export const CHAINS: EvmChain[] = [
   {
     chainId: 1,
     name: "Ethereum",
-    shortName: "ETH Â· Mainnet",
+    shortName: "ETH · Mainnet",
     covalentChainId: "eth-mainnet",
     rpcUrls: [process.env.EXPO_PUBLIC_ETH_MAINNET_RPC_URL ?? ""],
     explorerBase: "https://etherscan.io",
@@ -44,7 +44,7 @@ export const CHAINS: EvmChain[] = [
   {
     chainId: 97,
     name: "BSC Testnet",
-    shortName: "BSC Â· Testnet",
+    shortName: "BSC · Testnet",
     covalentChainId: "bsc-testnet",
     rpcUrls: [process.env.EXPO_PUBLIC_BSC_RPC_URL ?? ""],
     explorerBase: process.env.EXPO_PUBLIC_BSCSCAN_BASE ?? "https://testnet.bscscan.com",
@@ -56,7 +56,7 @@ export const CHAINS: EvmChain[] = [
   {
     chainId: 56,
     name: "BSC",
-    shortName: "BSC Â· Mainnet",
+    shortName: "BSC · Mainnet",
     covalentChainId: "bsc-mainnet",
     rpcUrls: [process.env.EXPO_PUBLIC_BSC_MAINNET_RPC_URL ?? ""],
     explorerBase: "https://bscscan.com",
@@ -69,19 +69,19 @@ export const CHAINS: EvmChain[] = [
   {
     chainId: 80002,
     name: "Polygon Amoy",
-    shortName: "Polygon Â· Amoy",
+    shortName: "Polygon · Amoy",
     covalentChainId: "matic-amoy",            // Covalent returns 501 today
     rpcUrls: [process.env.EXPO_PUBLIC_POLYGON_RPC_URL ?? ""],
     explorerBase: "https://amoy.polygonscan.com", // Explorer per Polygon docs
     nativeSymbol: "MATIC",
     decimals: 18,
     testnet: true,
-    covalentSupported: true,                 // trigger fallbacks
+    covalentSupported: false,                 // trigger fallbacks
   },
   {
     chainId: 137,
     name: "Polygon",
-    shortName: "Polygon Â· Mainnet",
+    shortName: "Polygon · Mainnet",
     covalentChainId: "matic-mainnet",
     rpcUrls: [process.env.EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL ?? ""],
     explorerBase: "https://polygonscan.com",
@@ -93,4 +93,3 @@ export const CHAINS: EvmChain[] = [
 
 export const getChainById = (id: number) => CHAINS.find((c) => c.chainId === id);
 export const getDefaultChain = () => getChainById(11155111)!; // Sepolia default
-
