@@ -18,4 +18,9 @@ play-service-account.json
 # Local backups
 eas.backup.json
 
-package-lock.json
+package-lock.jsonnode_modules/
+android/
+ios/
+.expo/
+dist/
+build/
