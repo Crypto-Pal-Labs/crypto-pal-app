@@ -16,10 +16,10 @@ if (isProdBuild && !looksValid) {
   throw new Error('[BUILD] Invalid EXPO_PUBLIC_COVALENT_KEY. It must start with "cqt_".');
 }
 
-// --- Compute the Basic auth string Covalent clients often expect
+// Compute the Basic auth string Covalent clients often expect
 const covalentBasicB64 = looksValid ? Buffer.from(`${covalentKey}:`).toString('base64') : '';
 
-// --- Small helper to expose both EXPO_PUBLIC_* and legacy names in extra, with fallbacks
+// helper to expose both EXPO_PUBLIC_* and legacy names in extra, with fallbacks
 const pick = (publicKey, legacyKey, defaultValue) => {
   for (const k of [publicKey, legacyKey]) {
     const v = process.env[k];
@@ -30,6 +30,10 @@ const pick = (publicKey, legacyKey, defaultValue) => {
 
 module.exports = ({ config }) => ({
   ...config,
+
+  // ✨ Add the owner so EAS is happy
+  owner: 'crwmlw',
+
   name: 'Crypto Pal',
   slug: 'crypto-pal',
   plugins: [
@@ -54,32 +58,40 @@ module.exports = ({ config }) => ({
 
     // Covalent
     EXPO_PUBLIC_COVALENT_KEY: covalentKey,
-    COVALENT_KEY: covalentKey,          // legacy alias for codepaths reading 'COVALENT_KEY'
-    COVALENT_BASIC_B64: covalentBasicB64, // <— satisfies b64Len>0 check
-    COVALENT_X_API_KEY: covalentKey,      // handy if any client uses X-API-Key
+    COVALENT_KEY: covalentKey,              // legacy alias
+    COVALENT_BASIC_B64: covalentBasicB64,   // satisfies b64Len>0 check
+    COVALENT_X_API_KEY: covalentKey,
 
     // Feature switch: network enabled in prod always, and in dev only if key looks valid
     FEATURES: { NETWORK_ENABLED: isProdBuild ? true : looksValid },
 
-    // --- Expose RPC / explorer URLs under BOTH names the app might read, with Alchemy priority for ETH
+    // RPC / explorer (both EXPO_PUBLIC_* and legacy names)
     EXPO_PUBLIC_ETHERSCAN_BASE: pick('EXPO_PUBLIC_ETHERSCAN_BASE', 'ETHERSCAN_BASE', 'https://sepolia.etherscan.io'),
     ETHERSCAN_BASE:             pick('EXPO_PUBLIC_ETHERSCAN_BASE', 'ETHERSCAN_BASE', 'https://sepolia.etherscan.io'),
 
-    EXPO_PUBLIC_ETH_RPC_URL:    pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),  // Alchemy primary, public fallback
-    ETH_RPC_URL:                pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL', 'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'),
+    EXPO_PUBLIC_ETH_RPC_URL:    pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL',
+      'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'
+    ),
+    ETH_RPC_URL:                pick('EXPO_PUBLIC_ETH_RPC_URL', 'ETH_RPC_URL',
+      'https://eth-sepolia.g.alchemy.com/v2/' + (process.env.EXPO_PUBLIC_ALCHEMY_KEY || process.env.ALCHEMY_KEY || '') || 'https://rpc.sepolia.org'
+    ),
 
-    EXPO_PUBLIC_BSC_RPC_URL:    pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
-    BSC_RPC_URL:                pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
+    EXPO_PUBLIC_BSC_RPC_URL: pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
+    BSC_RPC_URL:             pick('EXPO_PUBLIC_BSC_RPC_URL', 'BSC_RPC_URL', 'https://bsc-testnet.publicnode.com'),
 
-    EXPO_PUBLIC_BSCSCAN_BASE:   pick('EXPO_PUBLIC_BSCSCAN_BASE', 'BSCSCAN_BASE', 'https://testnet.bscscan.com'),
-    BSCSCAN_BASE:               pick('EXPO_PUBLIC_BSCSCAN_BASE', 'BSCSCAN_BASE', 'https://testnet.bscscan.com'),
+    EXPO_PUBLIC_BSCSCAN_BASE: pick('EXPO_PUBLIC_BSCSCAN_BASE', 'BSCSCAN_BASE', 'https://testnet.bscscan.com'),
+    BSCSCAN_BASE:             pick('EXPO_PUBLIC_BSCSCAN_BASE', 'BSCSCAN_BASE', 'https://testnet.bscscan.com'),
 
     EXPO_PUBLIC_POLYGON_RPC_URL: pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
     POLYGON_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
 
-    // (Optional but consistent) mainnets too, if your code reads them:
-    EXPO_PUBLIC_ETH_MAINNET_RPC_URL: pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),
-    ETH_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),
+    // optional mainnets
+    EXPO_PUBLIC_ETH_MAINNET_RPC_URL: pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL',
+      'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'
+    ),
+    ETH_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL',
+      'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'
+    ),
 
     EXPO_PUBLIC_BSC_MAINNET_RPC_URL: pick('EXPO_PUBLIC_BSC_MAINNET_RPC_URL', 'BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org'),
     BSC_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_BSC_MAINNET_RPC_URL', 'BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org'),
@@ -87,9 +99,9 @@ module.exports = ({ config }) => ({
     EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL: pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
     POLYGON_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
 
-    // EAS project linking
+    // EAS project linking (already correct)
     eas: {
-      projectId: "09671262-f041-418c-83ab-19f5d8003242"
-    }
+      projectId: '09671262-f041-418c-83ab-19f5d8003242',
+    },
   },
 });
