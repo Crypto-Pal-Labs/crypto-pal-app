@@ -1,5 +1,5 @@
 ﻿// src/screens/Wallet.tsx
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Image,
   RefreshControl, TouchableOpacity, Alert,
@@ -12,11 +12,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Localization from "expo-localization";
 import { Picker } from "@react-native-picker/picker";
 
-// ✅ Correct relative paths from src/screens/*
+// hooks + utils
 import { useAssets, type BalanceItem } from "../hooks/useAssets";
 import { useChain } from "../hooks/useChain";
 import { useWalletStore } from "../store/useWalletStore";
 import { getWalletAddress, clearWallet } from "../utils/wallet";
+
+// multi-chain helpers
+import { CHAINS, EvmChain } from "../config/chainRegistry";
+import { isCovalentSupported } from "../config/capabilities";
+import { covalentGet } from "../lib/covalent";
 
 // ---------- Types used locally ----------
 type CGMarket = {
@@ -31,7 +36,7 @@ type CGMarket = {
 
 type PriceEntry = { usd: number; local: number };
 
-// Safe em-dash to avoid garbled “â€”” on Android
+// Safe em-dash to avoid garbled Android glyph
 const DASH = "\u2014";
 
 // ---------- Small helpers ----------
@@ -71,11 +76,7 @@ const PRICE_IDS: Record<string, string> = {
 };
 
 async function loadSymbolPrices(symbols: string[], localCurrency: string) {
-  const ids = Array.from(
-    new Set(
-      symbols.map((s) => PRICE_IDS[(s || "").toUpperCase()] || "").filter(Boolean)
-    )
-  );
+  const ids = Array.from(new Set(symbols.map((s) => PRICE_IDS[(s || "").toUpperCase()] || "").filter(Boolean)));
   if (!ids.length) return {} as Record<string, PriceEntry>;
 
   const vs = (localCurrency || "USD").toLowerCase();
@@ -289,7 +290,7 @@ const Wallet: React.FC = () => {
     }
   };
 
-  // --- Price cache in the screen (CG + Binance fallback) ---
+  // --- Price cache in the screen (CG + Binance fallback) for ACTIVE CHAIN display rows ---
   const [priceCache, setPriceCache] = useState<Record<string, PriceEntry>>({});
   useEffect(() => {
     const syms: string[] = Array.from(
@@ -305,38 +306,92 @@ const Wallet: React.FC = () => {
       .catch(() => {});
   }, [balances, localCurrency]);
 
-  // compute header total with fallback
-  const totalValue = balances
-    .reduce((sum: number, item: BalanceItem) => {
-      const sym = (item.contract_ticker_symbol || "").toUpperCase();
-      const dec = item.contract_decimals ?? 18;
-      let qty = Number(ethers.utils.formatUnits(item.balance, dec));
-      if (sym === "ETH") {
-        const originalEth = Number(ethers.utils.formatUnits(item.balance, 18));
-        qty = originalEth + localBalanceDelta;
-      }
-      let quote = currency === "USD" ? (item.quoteUsd ?? 0) : (item.quoteLocal ?? 0);
-      if (!quote || !Number.isFinite(quote)) {
-        const fallback = currency === "USD" ? (priceCache[sym]?.usd || 0) : (priceCache[sym]?.local || 0);
-        quote = qty * fallback;
-      }
-      return sum + (Number.isFinite(quote) ? quote : 0);
-    }, 0)
-    .toFixed(2);
+  // ===== NEW: Global (all-chains) total in header =====
+  type MiniBal = { symbol: string; decimals: number; balance: string };
+
+  const [globalTotals, setGlobalTotals] = useState<{ usd: number; local: number }>({ usd: 0, local: 0 });
+
+  const fetchAllChainBalances = useCallback(async () => {
+    const owner = await getWalletAddress();
+    if (!owner) return;
+
+    const mini: MiniBal[] = [];
+
+    // Fetch per-chain balances
+    await Promise.allSettled(
+      CHAINS.map(async (c: EvmChain) => {
+        try {
+          if (c.covalentSupported !== false && isCovalentSupported("balances", c.covalentChainId)) {
+            // Covalent balances_v2
+            const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/balances_v2/?quote-currency=USD&format=JSON&nft=false&no-nft-fetch=true&no-spam=true`;
+            const json = await covalentGet(url);
+            const items = (json?.data?.items || []) as any[];
+            for (const it of items) {
+              const sym = String(it.contract_ticker_symbol || "").toUpperCase();
+              const dec = Number(it.contract_decimals ?? 18);
+              const bal = String(it.balance || "0");
+              if (!sym) continue;
+              if (bal === "0" || bal === "0x0") continue;
+              mini.push({ symbol: sym, decimals: Number.isFinite(dec) ? dec : 18, balance: bal });
+            }
+          } else {
+            // RPC fallback — native only
+            const rpc = c.rpcUrls?.[0];
+            if (!rpc) return;
+            const provider = new ethers.providers.StaticJsonRpcProvider(rpc, { chainId: c.chainId, name: c.name });
+            const wei = await provider.getBalance(owner);
+            if (wei && !wei.isZero()) {
+              mini.push({ symbol: c.nativeSymbol, decimals: 18, balance: wei.toString() });
+            }
+          }
+        } catch {}
+      })
+    );
+
+    // Load prices for ALL discovered symbols (CG first, Binance USD fallback)
+    const symbols = Array.from(new Set(mini.map((m) => m.symbol)));
+    const pxMap = await loadSymbolPricesStrong(symbols, localCurrency);
+
+    // Sum totals
+    let totalUsd = 0;
+    let totalLoc = 0;
+    for (const m of mini) {
+      const qty = Number(ethers.utils.formatUnits(m.balance, m.decimals));
+      const pxU = pxMap[m.symbol]?.usd || 0;
+      const pxL = pxMap[m.symbol]?.local || 0;
+      totalUsd += qty * pxU;
+      totalLoc += qty * pxL;
+    }
+
+    if (isMounted.current) {
+      setGlobalTotals({
+        usd: Number.isFinite(totalUsd) ? totalUsd : 0,
+        local: Number.isFinite(totalLoc) ? totalLoc : 0,
+      });
+    }
+  }, [localCurrency]);
+
+  useEffect(() => {
+    fetchAllChainBalances();
+  }, [fetchAllChainBalances]);
+
+  // compute header total with fallback: now use GLOBAL totals
+  const totalValue = (currency === "USD" ? globalTotals.usd : globalTotals.local).toFixed(2);
 
   const onRefresh = async () => {
     if (!isMounted.current) return;
     setRefreshing(true);
-    refresh();
+    refresh();               // active chain hook
+    await fetchAllChainBalances(); // all-chains header
     await AsyncStorage.removeItem("localBalanceDelta");
     await loadLocalDelta();
     setRefreshing(false);
   };
 
-  // on tab focus: refresh once; start 60s timer from the hook
+  // on tab focus: refresh once; start 60s timer from the hook (kept)
   useFocusEffect(
     React.useCallback(() => {
-      const stop = startTimers?.(); // set up 60s + invalidate watcher
+      const stop = startTimers?.(); // set up 60s + invalidate watcher for active chain UI
       onRefresh();
       return () => { if (typeof stop === "function") stop(); };
     }, [activeChainId, startTimers])
