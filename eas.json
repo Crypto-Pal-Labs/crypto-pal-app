@@ -12,7 +12,7 @@
       },
       "node": "20.19.4",
       "env": {
-        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
+        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQhXcTB97PBwq7HC3GgcWfR8XYHv",
         "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
         "EXPO_PUBLIC_ETHERSCAN_BASE": "https://sepolia.etherscan.io",
         "EXPO_PUBLIC_ETH_RPC_URL": "https://sepolia.infura.io/v3/6dc32f7117154a7fb029a788eccc60ca",
@@ -38,7 +38,7 @@
       "distribution": "internal",
       "android": { "buildType": "apk" },
       "env": {
-        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
+        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQhXcTB97PBwq7HC3GgcWfR8XYHv",
         "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
         "EXPO_PUBLIC_ETHERSCAN_BASE": "https://sepolia.etherscan.io",
         "EXPO_PUBLIC_ETH_RPC_URL": "https://sepolia.infura.io/v3/6dc32f7117154a7fb029a788eccc60ca",
@@ -64,7 +64,7 @@
       "distribution": "internal",
       "android": { "buildType": "app-bundle" },
       "env": {
-        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
+        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQhXcTB97PBwq7HC3GgcWfR8XYHv",
         "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
         "EXPO_PUBLIC_ETHERSCAN_BASE": "https://sepolia.etherscan.io",
         "EXPO_PUBLIC_ETH_RPC_URL": "https://sepolia.infura.io/v3/6dc32f7117154a7fb029a788eccc60ca",
@@ -90,7 +90,7 @@
       "distribution": "store",
       "android": { "buildType": "app-bundle" },
       "env": {
-        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQdBj43F6bb4wyKMFJPy9vpX8mkw",
+        "EXPO_PUBLIC_COVALENT_KEY": "cqt_rQhXcTB97PBwq7HC3GgcWfR8XYHv",
         "EXPO_PUBLIC_TRANSAK_API_KEY": "49362815-1fc8-4dde-ab46-72b51a21aeb3",
         "EXPO_PUBLIC_ETHERSCAN_BASE": "https://sepolia.etherscan.io",
         "EXPO_PUBLIC_ETH_RPC_URL": "https://sepolia.infura.io/v3/6dc32f7117154a7fb029a788eccc60ca",

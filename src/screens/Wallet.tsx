@@ -1,29 +1,31 @@
 ﻿// src/screens/Wallet.tsx
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
-  View, Text, FlatList, ActivityIndicator, TextInput, StyleSheet, Image,
-  RefreshControl, TouchableOpacity, Alert,
+  View,
+  Text,
+  FlatList,
+  ActivityIndicator,
+  TextInput,
+  StyleSheet,
+  Image,
+  RefreshControl,
+  TouchableOpacity,
+  Alert,
 } from "react-native";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
-import { StackActions } from "@react-navigation/native";
+import { useNavigation, useFocusEffect, StackActions } from "@react-navigation/native";
 import * as ethers from "ethers";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Localization from "expo-localization";
 import { Picker } from "@react-native-picker/picker";
 
-// hooks + utils
+// hooks / stores
 import { useAssets, type BalanceItem } from "../hooks/useAssets";
 import { useChain } from "../hooks/useChain";
 import { useWalletStore } from "../store/useWalletStore";
 import { getWalletAddress, clearWallet } from "../utils/wallet";
 
-// multi-chain helpers
-import { CHAINS, EvmChain } from "../config/chainRegistry";
-import { isCovalentSupported } from "../config/capabilities";
-import { covalentGet } from "../lib/covalent";
-
-// ---------- Types used locally ----------
+// ---------- Types ----------
 type CGMarket = {
   id: string;
   symbol: string;
@@ -36,18 +38,36 @@ type CGMarket = {
 
 type PriceEntry = { usd: number; local: number };
 
-// Safe em-dash to avoid garbled Android glyph
-const DASH = "\u2014";
-
-// ---------- Small helpers ----------
+// ---------- Helpers ----------
 const titleCase = (s: string) =>
-  s.replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
+  String(s || "").replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
 
-// polite queued fetcher to avoid CG rate limits
+const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
+const stripCombining = (s: string) =>
+  String(s || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7E]/g, "")
+    .trim();
+
+// Deterministic label (prevents odd glyphs regardless of registry content)
+const labelForChain = (chainId: number, fallback?: string) => {
+  switch (Number(chainId)) {
+    case 1: return "Ethereum Mainnet";
+    case 56: return "BNB Chain";
+    case 97: return "BSC Testnet";
+    case 137: return "Polygon Mainnet";
+    case 80002: return "Polygon Amoy";
+    case 11155111: return "Sepolia";
+    default: return stripCombining(fallback || String(chainId));
+  }
+};
+
+// polite queue (avoid API rate limits)
 let q = Promise.resolve();
 let last = 0;
 const GAP = 250;
-const delay = (ms: number) => new Promise((res) => setTimeout(res, ms));
 function queuedJSON(url: string, retries = 2): Promise<any | null> {
   q = q.then(async () => {
     const wait = Math.max(0, last + GAP - Date.now());
@@ -67,14 +87,29 @@ function queuedJSON(url: string, retries = 2): Promise<any | null> {
   return q;
 }
 
-// ---------- Simple price cache (CG first) ----------
+// ---------- Price IDs / Binance symbols ----------
 const PRICE_IDS: Record<string, string> = {
-  ETH: "ethereum", WETH: "ethereum",
-  BNB: "binancecoin", WBNB: "binancecoin",
-  MATIC: "matic-network", WMATIC: "matic-network",
-  USDT: "tether", USDC: "usd-coin", DAI: "dai",
+  ETH: "ethereum",
+  WETH: "ethereum",
+  BNB: "binancecoin",
+  WBNB: "binancecoin",
+  MATIC: "matic-network",
+  WMATIC: "matic-network",
+  USDT: "tether",
+  USDC: "usd-coin",
+  DAI: "dai",
 };
 
+const BINANCE_USDT_SYMBOL: Record<string, string> = {
+  ETH: "ETHUSDT",
+  WETH: "ETHUSDT",
+  BNB: "BNBUSDT",
+  WBNB: "BNBUSDT",
+  MATIC: "MATICUSDT",
+  WMATIC: "MATICUSDT",
+};
+
+// ---------- Primary price loader (Coingecko) ----------
 async function loadSymbolPrices(symbols: string[], localCurrency: string) {
   const ids = Array.from(new Set(symbols.map((s) => PRICE_IDS[(s || "").toUpperCase()] || "").filter(Boolean)));
   if (!ids.length) return {} as Record<string, PriceEntry>;
@@ -97,58 +132,64 @@ async function loadSymbolPrices(symbols: string[], localCurrency: string) {
   return out;
 }
 
-// ---------- Binance helpers (for fallback) ----------
-const binancePair = (sym: string) =>
-  ({ ETH: "ETHUSDT", BNB: "BNBUSDT", MATIC: "MATICUSDT" } as Record<string, string>)[
-    (sym || "").toUpperCase()
-  ] || "";
-
-async function loadBinancePct(sym: string): Promise<number | null> {
-  const pair = binancePair(sym);
-  if (!pair) return null;
+// ---------- FX fallback (for Local currency from USD) ----------
+async function loadUsdFx(localCurrency: string): Promise<number> {
   try {
-    const r = await queuedJSON(`https://api.binance.com/api/v3/ticker/24hr?symbol=${pair}`);
-    const p = Number(r?.priceChangePercent);
-    return Number.isFinite(p) ? p : null;
+    const vs = (localCurrency || "USD").toUpperCase();
+    if (vs === "USD") return 1;
+    const url = `https://api.exchangerate.host/latest?base=USD&symbols=${encodeURIComponent(vs)}`;
+    const data = await queuedJSON(url, 2);
+    const fx = Number(data?.rates?.[vs] || 0);
+    return Number.isFinite(fx) && fx > 0 ? fx : 0;
   } catch {
-    return null;
+    return 0;
   }
 }
 
-async function loadBinanceUsd(sym: string): Promise<number | null> {
-  const pair = binancePair(sym);
-  if (!pair) return null;
-  try {
-    const r = await queuedJSON(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`);
-    const px = Number(r?.price);
-    return Number.isFinite(px) ? px : null;
-  } catch {
-    return null;
-  }
-}
+// ---------- Binance USD fallback for a set of symbols ----------
+async function loadBinanceUsd(symbols: string[]): Promise<Record<string, number>> {
+  const out: Record<string, number> = {};
+  const unique = Array.from(new Set(symbols.map((s) => BINANCE_USDT_SYMBOL[(s || "").toUpperCase()]).filter(Boolean)));
 
-/**
- * Strong price loader: CoinGecko first, then fill any zero/missing USD with Binance.
- * For non-USD local currencies we leave `local` as-is (USD is default display).
- */
-async function loadSymbolPricesStrong(symbols: string[], localCurrency: string) {
-  const cg = await loadSymbolPrices(symbols, localCurrency);
-  const map: Record<string, PriceEntry> = { ...cg };
-  for (const s of symbols) {
-    const key = (s || "").toUpperCase();
-    const hasUsd = map[key]?.usd && map[key].usd > 0;
-    if (!hasUsd) {
-      const usd = await loadBinanceUsd(key);
-      if (usd && usd > 0) {
-        console.log("[WALLET_PRICE] binance usd fallback:", key, usd);
-        map[key] = {
-          usd,
-          local: localCurrency === "USD" ? usd : (map[key]?.local || 0),
-        };
+  await Promise.all(
+    unique.map(async (binanceCode) => {
+      const url = `https://api.binance.com/api/v3/ticker/price?symbol=${encodeURIComponent(binanceCode)}`;
+      const data = await queuedJSON(url, 2);
+      const price = Number(data?.price || 0);
+      if (Number.isFinite(price) && price > 0) {
+        Object.keys(BINANCE_USDT_SYMBOL).forEach((sym) => {
+          if (BINANCE_USDT_SYMBOL[sym] === binanceCode) out[sym] = price;
+        });
+        console.log("[WALLET_PRICE] binance usd fallback:", binanceCode.replace("USDT", ""), price);
       }
+    })
+  );
+
+  return out;
+}
+
+// ---------- "Strong" price cache with fallbacks ----------
+async function loadSymbolPricesStrong(symbols: string[], localCurrency: string): Promise<Record<string, PriceEntry>> {
+  const upper = symbols.map((s) => (s || "").toUpperCase()).filter(Boolean);
+  const cg = await loadSymbolPrices(upper, localCurrency);
+
+  const needHelp = upper.filter((sym) => {
+    const p = cg[sym];
+    return !p || p.usd <= 0;
+  });
+  if (needHelp.length === 0) return cg;
+
+  const [binUsd, fx] = await Promise.all([loadBinanceUsd(needHelp), loadUsdFx(localCurrency)]);
+  needHelp.forEach((sym) => {
+    const usd = Number(binUsd[sym] || 0);
+    if (usd > 0) {
+      const local = fx > 0 ? usd * fx : 0;
+      cg[sym] = { usd, local };
+    } else if (!cg[sym]) {
+      cg[sym] = { usd: 0, local: 0 };
     }
-  }
-  return map;
+  });
+  return cg;
 }
 
 const Wallet: React.FC = () => {
@@ -170,14 +211,12 @@ const Wallet: React.FC = () => {
   const currencyOptions: string[] = Array.from(new Set(["USD", localCurrency]));
   const [currency, setCurrency] = useState<string>("USD");
 
-  // for ETH pending-delta visual (existing pattern)
+  // ETH pending-delta visual
   const [localBalanceDelta, setLocalBalanceDelta] = useState(0);
 
-  // 24h % map for each symbol (nice-to-have)
+  // 24h % map
   const [cgMap, setCgMap] = useState<Record<string, CGMarket>>({});
-  const [pctMap, setPctMap] = useState<Record<string, number>>({});
   const resolving = useRef<Set<string>>(new Set());
-
   useEffect(() => {
     (async () => {
       try {
@@ -189,10 +228,13 @@ const Wallet: React.FC = () => {
         rows.forEach((r: any) => {
           const sym = String(r.symbol || "").toLowerCase();
           next[sym] = {
-            id: r.id, symbol: r.symbol, name: r.name,
+            id: r.id,
+            symbol: r.symbol,
+            name: r.name,
             image: r.image ?? null,
             current_price: r.current_price ?? null,
-            price_change_percentage_24h_in_currency: r.price_change_percentage_24h_in_currency ?? r.price_change_percentage_24h ?? null,
+            price_change_percentage_24h_in_currency:
+              r.price_change_percentage_24h_in_currency ?? r.price_change_percentage_24h ?? null,
             price_change_percentage_24h: r.price_change_percentage_24h ?? null,
           };
           next[`${sym}|${(r.name || "").toLowerCase()}`] = next[sym];
@@ -207,25 +249,36 @@ const Wallet: React.FC = () => {
     if (!key || resolving.current.has(key) || cgMap[key]) return;
     resolving.current.add(key);
     try {
-      const search = await queuedJSON(`https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`);
+      const search = await queuedJSON(
+        `https://api.coingecko.com/api/v3/search?query=${encodeURIComponent(symbol)}`
+      );
       const match =
-        search?.coins?.find((c: any) => c.symbol?.toLowerCase() === key) ||
-        search?.coins?.[0];
+        search?.coins?.find((c: any) => c.symbol?.toLowerCase() === key) || search?.coins?.[0];
       if (!match?.id) return;
 
       const rows = await queuedJSON(
-        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${encodeURIComponent(match.id)}&sparkline=false&price_change_percentage=24h`
+        `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${encodeURIComponent(
+          match.id
+        )}&sparkline=false&price_change_percentage=24h`
       );
       if (Array.isArray(rows) && rows[0]) {
         const r = rows[0];
         const entry: CGMarket = {
-          id: r.id, symbol: r.symbol, name: r.name, image: r.image ?? null,
+          id: r.id,
+          symbol: r.symbol,
+          name: r.name,
+          image: r.image ?? null,
           current_price: r.current_price ?? null,
-          price_change_percentage_24h_in_currency: r.price_change_percentage_24h_in_currency ?? r.price_change_percentage_24h ?? null,
+          price_change_percentage_24h_in_currency:
+            r.price_change_percentage_24h_in_currency ?? r.price_change_percentage_24h ?? null,
           price_change_percentage_24h: r.price_change_percentage_24h ?? null,
         };
         if (isMounted.current) {
-          setCgMap((prev) => ({ ...prev, [key]: entry, [`${key}|${(name || r.name || "").toLowerCase()}`]: entry }));
+          setCgMap((prev) => ({
+            ...prev,
+            [key]: entry,
+            [`${key}|${(name || r.name || "").toLowerCase()}`]: entry,
+          }));
         }
       }
     } finally {
@@ -233,25 +286,7 @@ const Wallet: React.FC = () => {
     }
   };
 
-  // ===== fill pctMap via Binance when CG percent missing =====
-  useEffect(() => {
-    (async () => {
-      for (const b of balances) {
-        const sym = (b.contract_ticker_symbol || "").toUpperCase();
-        if (!sym) continue;
-        const key = sym.toLowerCase();
-        const cg = cgMap[key] || cgMap[`${key}|${(b.contract_name || "").toLowerCase()}`];
-        const hasCgPct =
-          !!(cg && (cg.price_change_percentage_24h_in_currency != null || cg.price_change_percentage_24h != null));
-        if (!hasCgPct && pctMap[key] == null) {
-          const p = await loadBinancePct(sym);
-          if (p != null && isMounted.current) setPctMap(prev => ({ ...prev, [key]: p }));
-        }
-      }
-    })();
-  }, [balances, cgMap]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // keep address in store (existing flow)
+  // load wallet address to store
   const [loadError, setLoadError] = useState<string | null>(null);
   const loadAddress = async () => {
     if (!isMounted.current) return;
@@ -290,8 +325,11 @@ const Wallet: React.FC = () => {
     }
   };
 
-  // --- Price cache in the screen (CG + Binance fallback) for ACTIVE CHAIN display rows ---
+  // ---------- Fallback price caches ----------
   const [priceCache, setPriceCache] = useState<Record<string, PriceEntry>>({});
+  const [priceCacheStrong, setPriceCacheStrong] = useState<Record<string, PriceEntry>>({});
+
+  // build symbol universe from balances when they change
   useEffect(() => {
     const syms: string[] = Array.from(
       new Set(
@@ -301,103 +339,51 @@ const Wallet: React.FC = () => {
       )
     );
     if (!syms.length) return;
-    loadSymbolPricesStrong(syms, localCurrency)
-      .then((map) => isMounted.current && setPriceCache(map))
-      .catch(() => {});
+
+    loadSymbolPrices(syms, localCurrency).then((m) => isMounted.current && setPriceCache(m)).catch(() => {});
+    loadSymbolPricesStrong(syms, localCurrency).then((m) => isMounted.current && setPriceCacheStrong(m)).catch(() => {});
   }, [balances, localCurrency]);
 
-  // ===== NEW: Global (all-chains) total in header =====
-  type MiniBal = { symbol: string; decimals: number; balance: string };
+  // compute header total with robust fallback (ALL assets across ALL chains)
+  const totalValue = balances
+    .reduce((sum: number, item: BalanceItem) => {
+      const sym = (item.contract_ticker_symbol || "").toUpperCase();
+      const dec = item.contract_decimals ?? 18;
+      let qty = Number(ethers.utils.formatUnits(item.balance, dec));
+      if (sym === "ETH") {
+        const originalEth = Number(ethers.utils.formatUnits(item.balance, 18));
+        qty = originalEth + localBalanceDelta;
+      }
 
-  const [globalTotals, setGlobalTotals] = useState<{ usd: number; local: number }>({ usd: 0, local: 0 });
+      let quote = currency === "USD" ? item.quoteUsd ?? 0 : item.quoteLocal ?? 0;
 
-  const fetchAllChainBalances = useCallback(async () => {
-    const owner = await getWalletAddress();
-    if (!owner) return;
+      if (!quote || !Number.isFinite(quote)) {
+        const strong = priceCacheStrong[sym];
+        const basic = priceCache[sym];
+        quote = currency === "USD" ? (strong?.usd || basic?.usd || 0) * qty : (strong?.local || basic?.local || 0) * qty;
+      }
 
-    const mini: MiniBal[] = [];
-
-    // Fetch per-chain balances
-    await Promise.allSettled(
-      CHAINS.map(async (c: EvmChain) => {
-        try {
-          if (c.covalentSupported !== false && isCovalentSupported("balances", c.covalentChainId)) {
-            // Covalent balances_v2
-            const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/balances_v2/?quote-currency=USD&format=JSON&nft=false&no-nft-fetch=true&no-spam=true`;
-            const json = await covalentGet(url);
-            const items = (json?.data?.items || []) as any[];
-            for (const it of items) {
-              const sym = String(it.contract_ticker_symbol || "").toUpperCase();
-              const dec = Number(it.contract_decimals ?? 18);
-              const bal = String(it.balance || "0");
-              if (!sym) continue;
-              if (bal === "0" || bal === "0x0") continue;
-              mini.push({ symbol: sym, decimals: Number.isFinite(dec) ? dec : 18, balance: bal });
-            }
-          } else {
-            // RPC fallback — native only
-            const rpc = c.rpcUrls?.[0];
-            if (!rpc) return;
-            const provider = new ethers.providers.StaticJsonRpcProvider(rpc, { chainId: c.chainId, name: c.name });
-            const wei = await provider.getBalance(owner);
-            if (wei && !wei.isZero()) {
-              mini.push({ symbol: c.nativeSymbol, decimals: 18, balance: wei.toString() });
-            }
-          }
-        } catch {}
-      })
-    );
-
-    // Load prices for ALL discovered symbols (CG first, Binance USD fallback)
-    const symbols = Array.from(new Set(mini.map((m) => m.symbol)));
-    const pxMap = await loadSymbolPricesStrong(symbols, localCurrency);
-
-    // Sum totals
-    let totalUsd = 0;
-    let totalLoc = 0;
-    for (const m of mini) {
-      const qty = Number(ethers.utils.formatUnits(m.balance, m.decimals));
-      const pxU = pxMap[m.symbol]?.usd || 0;
-      const pxL = pxMap[m.symbol]?.local || 0;
-      totalUsd += qty * pxU;
-      totalLoc += qty * pxL;
-    }
-
-    if (isMounted.current) {
-      setGlobalTotals({
-        usd: Number.isFinite(totalUsd) ? totalUsd : 0,
-        local: Number.isFinite(totalLoc) ? totalLoc : 0,
-      });
-    }
-  }, [localCurrency]);
-
-  useEffect(() => {
-    fetchAllChainBalances();
-  }, [fetchAllChainBalances]);
-
-  // compute header total with fallback: now use GLOBAL totals
-  const totalValue = (currency === "USD" ? globalTotals.usd : globalTotals.local).toFixed(2);
+      return sum + (Number.isFinite(quote) ? quote : 0);
+    }, 0)
+    .toFixed(2);
 
   const onRefresh = async () => {
     if (!isMounted.current) return;
     setRefreshing(true);
-    refresh();               // active chain hook
-    await fetchAllChainBalances(); // all-chains header
+    refresh();
     await AsyncStorage.removeItem("localBalanceDelta");
     await loadLocalDelta();
     setRefreshing(false);
   };
 
-  // on tab focus: refresh once; start 60s timer from the hook (kept)
   useFocusEffect(
     React.useCallback(() => {
-      const stop = startTimers?.(); // set up 60s + invalidate watcher for active chain UI
+      const stop = startTimers?.();
       onRefresh();
       return () => { if (typeof stop === "function") stop(); };
     }, [activeChainId, startTimers])
   );
 
-  // filter
   const filteredBalances: BalanceItem[] = balances.filter(
     (item: BalanceItem) =>
       Number(ethers.utils.formatUnits(item.balance, item.contract_decimals ?? 18)) > 0 &&
@@ -413,47 +399,48 @@ const Wallet: React.FC = () => {
   const resolveName = (symbol: string, raw?: string) => {
     if (raw && raw.trim().length) return titleCase(raw.trim());
     if (symbol?.toUpperCase() === "ETH") return "Ethereum";
+    if (symbol?.toUpperCase() === "MATIC") return "Polygon";
+    if (symbol?.toUpperCase() === "BNB") return "BNB Chain";
     return symbol;
   };
 
   const renderBalanceItem = ({ item }: { item: BalanceItem }) => {
     const dec = item.contract_decimals ?? 18;
 
-    // amount (ETH row keeps local delta)
     const symU = (item.contract_ticker_symbol || "").toUpperCase();
     let displayQty =
       symU === "ETH"
         ? Number(ethers.utils.formatUnits(item.balance, 18)) + localBalanceDelta
         : Number(ethers.utils.formatUnits(item.balance, dec));
 
-    const balanceLine = `${displayQty.toFixed(8)} ${item.contract_ticker_symbol || DASH}`;
+    const balanceLine = `${displayQty.toFixed(8)} ${item.contract_ticker_symbol}`;
 
-    const symbol = item.contract_ticker_symbol || DASH;
+    const symbol = item.contract_ticker_symbol || "—";
     const name = resolveName(symbol, item.contract_name);
     const title = `${symbol}  |  ${name}`;
 
     const logo = item.logo_url || "";
 
-    // 24h % (CoinGecko -> Binance fallback)
     const symKey = (symbol || "").toLowerCase();
-    const cg = cgMap[symKey] || cgMap[`${symKey}|${(item.contract_name || "").toLowerCase()}`];
+    const cg =
+      cgMap[symKey] || cgMap[`${symKey}|${(item.contract_name || "").toLowerCase()}`];
     if (!cg) ensurePctFor(symbol, item.contract_name);
     const pct24 =
-      (cg?.price_change_percentage_24h_in_currency ?? cg?.price_change_percentage_24h) ??
-      pctMap[symKey] ??
-      null;
+      cg?.price_change_percentage_24h_in_currency ?? cg?.price_change_percentage_24h ?? null;
     const pctStyle = pct24 == null ? styles.pctNeutral : pct24 >= 0 ? styles.up : styles.down;
 
-    // fiat with fallback (CG -> Binance USD)
-    const fallbackUsd = (priceCache[symU]?.usd || 0) * displayQty;
-    const fallbackLoc = (priceCache[symU]?.local || 0) * displayQty;
-    let fiatText = DASH;
+    const strong = priceCacheStrong[symU];
+    const basic = priceCache[symU];
+    const fallbackUsd = (strong?.usd || basic?.usd || 0) * displayQty;
+    const fallbackLoc = (strong?.local || basic?.local || 0) * displayQty;
+
+    let fiatText = "—";
     if (currency === "USD") {
       const val = item.quoteUsd && item.quoteUsd > 0 ? item.quoteUsd : fallbackUsd;
-      fiatText = Number.isFinite(val) ? `$${val.toFixed(2)}` : DASH;
+      fiatText = Number.isFinite(val) ? `$${val.toFixed(2)}` : "—";
     } else {
       const val = item.quoteLocal && item.quoteLocal > 0 ? item.quoteLocal : fallbackLoc;
-      fiatText = Number.isFinite(val) ? `${val.toFixed(2)} ${currency}` : `${DASH} ${currency}`;
+      fiatText = Number.isFinite(val) ? `${val.toFixed(2)} ${currency}` : `— ${currency}`;
     }
 
     return (
@@ -469,15 +456,21 @@ const Wallet: React.FC = () => {
         </View>
 
         <View style={styles.cardLeft}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
-          <Text style={styles.cardSub} numberOfLines={1}>{balanceLine}</Text>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.cardSub} numberOfLines={1}>
+            {balanceLine}
+          </Text>
         </View>
 
         <View style={styles.cardRight}>
-          <Text style={styles.cardPriceRight} numberOfLines={1}>{fiatText}</Text>
+          <Text style={styles.cardPriceRight} numberOfLines={1}>
+            {fiatText}
+          </Text>
           <Text style={[styles.cardPctRight, pctStyle]} numberOfLines={1}>
             {pct24 == null || Number.isNaN(pct24)
-              ? DASH
+              ? "—"
               : `${pct24 >= 0 ? "+" : ""}${pct24.toFixed(2)}%`}
           </Text>
         </View>
@@ -501,13 +494,17 @@ const Wallet: React.FC = () => {
         </View>
 
         <View style={styles.cardLeft}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{title}</Text>
-          <Text style={styles.cardSub} numberOfLines={1}>Token ID: {item.token_id}</Text>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          <Text style={styles.cardSub} numberOfLines={1}>
+            Token ID: {item.token_id}
+          </Text>
         </View>
 
         <View style={styles.cardRight}>
-          <Text style={styles.cardPriceRight}>{DASH}</Text>
-          <Text style={[styles.cardPctRight, styles.pctNeutral]}>{DASH}</Text>
+          <Text style={styles.cardPriceRight}>—</Text>
+          <Text style={[styles.cardPctRight, styles.pctNeutral]}>—</Text>
         </View>
       </View>
     );
@@ -517,19 +514,23 @@ const Wallet: React.FC = () => {
     return (
       <View style={styles.center}>
         <Text style={styles.errorText}>{loadError}</Text>
-        <TouchableOpacity onPress={loadAddress}><Text style={styles.retry}>Retry</Text></TouchableOpacity>
+        <TouchableOpacity onPress={loadAddress}>
+          <Text style={styles.retry}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  const networkLabel = chain?.shortName || chain?.name || String(activeChainId);
+  const networkLabel = labelForChain(chain?.chainId ?? 0, chain?.shortName || chain?.name);
   const currencyLabel = currency;
 
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Wallet Home</Text>
       <Text style={styles.totalLabel}>Total Balance:</Text>
-      <Text style={styles.totalValue}>${totalValue} {currency}</Text>
+      <Text style={styles.totalValue}>
+        ${totalValue} {currency}
+      </Text>
 
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
@@ -547,13 +548,17 @@ const Wallet: React.FC = () => {
             style={viewMode === "crypto" ? styles.segChipActive : styles.segChip}
             onPress={() => setViewMode("crypto")}
           >
-            <Text style={viewMode === "crypto" ? styles.segChipTxtActive : styles.segChipTxt}>CRYPTOS</Text>
+            <Text style={viewMode === "crypto" ? styles.segChipTxtActive : styles.segChipTxt}>
+              CRYPTOS
+            </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={viewMode === "nfts" ? styles.segChipActive : styles.segChip}
             onPress={() => setViewMode("nfts")}
           >
-            <Text style={viewMode === "nfts" ? styles.segChipTxtActive : styles.segChipTxt}>NFTs</Text>
+            <Text style={viewMode === "nfts" ? styles.segChipTxtActive : styles.segChipTxt}>
+              NFTs
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -563,7 +568,9 @@ const Wallet: React.FC = () => {
           <Text style={styles.pickerLabel}>Network</Text>
           <View style={styles.pickerBox}>
             <View style={styles.pickerDisplayRow}>
-              <Text style={styles.pickerValue} numberOfLines={1}>{networkLabel}</Text>
+              <Text style={styles.pickerValue} numberOfLines={1}>
+                {networkLabel}
+              </Text>
               <Ionicons name="chevron-down" size={16} color="#0A84FF" />
             </View>
             <Picker
@@ -572,9 +579,10 @@ const Wallet: React.FC = () => {
               style={styles.pickerOverlay}
               mode="dropdown"
             >
-              {chains.map((c: any) => (
-                <Picker.Item key={c.chainId} label={c.shortName || c.name} value={c.chainId} />
-              ))}
+              {chains.map((c: any) => {
+                const lbl = labelForChain(c.chainId, c.shortName || c.name || `${c.chainId}`);
+                return <Picker.Item key={c.chainId} label={lbl} value={c.chainId} />;
+              })}
             </Picker>
           </View>
         </View>
@@ -583,7 +591,9 @@ const Wallet: React.FC = () => {
           <Text style={styles.pickerLabel}>Currency</Text>
           <View style={styles.pickerBox}>
             <View style={styles.pickerDisplayRow}>
-              <Text style={styles.pickerValue} numberOfLines={1}>{currencyLabel}</Text>
+              <Text style={styles.pickerValue} numberOfLines={1}>
+                {currencyLabel}
+              </Text>
               <Ionicons name="chevron-down" size={16} color="#0A84FF" />
             </View>
             <Picker
@@ -603,7 +613,9 @@ const Wallet: React.FC = () => {
       {error && (
         <Text style={styles.errorText}>
           {error}{" "}
-          <TouchableOpacity onPress={onRefresh}><Text style={styles.retry}>Retry</Text></TouchableOpacity>
+          <TouchableOpacity onPress={onRefresh}>
+            <Text style={styles.retry}>Retry</Text>
+          </TouchableOpacity>
         </Text>
       )}
 
@@ -635,7 +647,9 @@ const Wallet: React.FC = () => {
               style={styles.assetList}
               data={filteredNfts}
               renderItem={renderNFTItem}
-              keyExtractor={(it: any, idx: number) => `${it.contract_address || "nft"}:${it.token_id || idx}`}
+              keyExtractor={(it: any, idx: number) =>
+                `${it.contract_address || "nft"}:${it.token_id || idx}`
+              }
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
               ListEmptyComponent={<Text style={styles.empty}>No NFTs yet</Text>}
               contentContainerStyle={{ padding: 12, paddingBottom: 100 }}
@@ -657,14 +671,32 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fff", paddingTop: 20 },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
 
-  heading: { fontSize: 36, fontWeight: "bold", color: "#0A84FF", textAlign: "center", marginTop: 20 },
+  heading: {
+    fontSize: 36,
+    fontWeight: "bold",
+    color: "#0A84FF",
+    textAlign: "center",
+    marginTop: 20,
+  },
   totalLabel: { fontSize: 20, color: "#000", textAlign: "center", marginBottom: 5 },
-  totalValue: { fontSize: 27, fontWeight: "bold", color: "#0A84FF", textAlign: "center", marginBottom: 5 },
+  totalValue: {
+    fontSize: 27,
+    fontWeight: "bold",
+    color: "#0A84FF",
+    textAlign: "center",
+    marginBottom: 5,
+  },
 
   searchContainer: {
-    flexDirection: "row", alignItems: "center",
-    borderWidth: 1, borderColor: "#ddd", borderRadius: 20,
-    paddingHorizontal: 8, marginHorizontal: 12, marginBottom: 8, backgroundColor: "#fff"
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 20,
+    paddingHorizontal: 8,
+    marginHorizontal: 12,
+    marginBottom: 8,
+    backgroundColor: "#fff",
   },
   searchIcon: { marginRight: 6 },
   searchInput: { flex: 1, paddingVertical: 8 },
@@ -672,35 +704,90 @@ const styles = StyleSheet.create({
   segWrap: { paddingHorizontal: 12, marginBottom: 8 },
   segRow: { flexDirection: "row", alignItems: "center", justifyContent: "center" },
   segChip: {
-    paddingVertical: 10, paddingHorizontal: 20, marginHorizontal: 6,
-    borderRadius: 999, minWidth: 110, alignItems: "center", backgroundColor: "#e6ecff"
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginHorizontal: 6,
+    borderRadius: 999,
+    minWidth: 110,
+    alignItems: "center",
+    backgroundColor: "#e6ecff",
   },
   segChipActive: {
-    paddingVertical: 10, paddingHorizontal: 20, marginHorizontal: 6,
-    borderRadius: 999, minWidth: 110, alignItems: "center", backgroundColor: "#0A84FF"
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginHorizontal: 6,
+    borderRadius: 999,
+    minWidth: 110,
+    alignItems: "center",
+    backgroundColor: "#0A84FF",
   },
   segChipTxt: { color: "#0A84FF", fontWeight: "800", fontSize: 15 },
   segChipTxtActive: { color: "#fff", fontWeight: "900", fontSize: 15 },
 
-  pickerRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 12, marginBottom: 8, gap: 12 },
+  pickerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    gap: 12,
+  },
   pickerCol: { flex: 1 },
   pickerLabel: { fontSize: 12, fontWeight: "700", color: "#333", marginBottom: 6 },
-  pickerBox: { borderWidth: 1, borderColor: "#cfe0ff", borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: "#f7faff" },
-  pickerDisplayRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  pickerBox: {
+    borderWidth: 1,
+    borderColor: "#cfe0ff",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#f7faff",
+  },
+  pickerDisplayRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   pickerValue: { color: "#0A84FF", fontWeight: "800" },
-  pickerOverlay: { position: "absolute", opacity: 0, top: 0, right: 0, left: 0, bottom: 0 },
+  pickerOverlay: {
+    position: "absolute",
+    opacity: 0,
+    top: 0,
+    right: 0,
+    left: 0,
+    bottom: 0,
+  },
 
   assetList: { flex: 1 },
 
   card: {
-    flexDirection: "row", alignItems: "center",
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#F5F9FF",
-    borderRadius: 12, padding: 12, marginHorizontal: 12, marginBottom: 12,
-    borderWidth: 1, borderColor: "#E6F0FF",
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E6F0FF",
   },
-  logoWrap: { width: 46, height: 46, borderRadius: 10, overflow: "hidden", marginRight: 10, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
+  logoWrap: {
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    overflow: "hidden",
+    marginRight: 10,
+    backgroundColor: "#fff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   logoImgReal: { width: 44, height: 44 },
-  logoBox: { width: 46, height: 46, borderRadius: 10, backgroundColor: "#E6EAF2", alignItems: "center", justifyContent: "center" },
+  logoBox: {
+    width: 46,
+    height: 46,
+    borderRadius: 10,
+    backgroundColor: "#E6EAF2",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   logoLetter: { fontSize: 16, fontWeight: "900", color: "#4B5B76" },
 
   cardLeft: { flex: 1, paddingRight: 10 },
@@ -710,7 +797,9 @@ const styles = StyleSheet.create({
   cardRight: { alignItems: "flex-end" },
   cardPriceRight: { fontWeight: "800", color: "#0A84FF" },
   cardPctRight: { fontWeight: "900", marginTop: 3 },
-  up: { color: "#16A34A" }, down: { color: "#DC2626" }, pctNeutral: { color: "#6B7280" },
+  up: { color: "#16A34A" },
+  down: { color: "#DC2626" },
+  pctNeutral: { color: "#6B7280" },
 
   empty: { color: "#888" },
 
@@ -718,7 +807,12 @@ const styles = StyleSheet.create({
   retry: { color: "#0A84FF", fontWeight: "800" },
 
   logoutContainer: { padding: 16, alignItems: "center" },
-  btnLogout: { backgroundColor: "#0A84FF", paddingVertical: 12, paddingHorizontal: 24, borderRadius: 999 },
+  btnLogout: {
+    backgroundColor: "#0A84FF",
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 999,
+  },
   btnLogoutTxt: { color: "#fff", fontSize: 16, fontWeight: "900" },
 });
 
