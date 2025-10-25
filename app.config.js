@@ -77,6 +77,17 @@ module.exports = ({ config }) => ({
     EXPO_PUBLIC_POLYGON_RPC_URL: pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
     POLYGON_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_RPC_URL', 'POLYGON_RPC_URL', 'https://rpc-amoy.polygon.technology'),
 
+    // Etherscan API keys for better balance detection
+    EXPO_PUBLIC_POLYGONSCAN_API_KEY: pick('EXPO_PUBLIC_POLYGONSCAN_API_KEY', 'POLYGONSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
+    POLYGONSCAN_API_KEY:         pick('EXPO_PUBLIC_POLYGONSCAN_API_KEY', 'POLYGONSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
+    
+    // Additional API keys for transaction history
+    EXPO_PUBLIC_ETHERSCAN_API_KEY: pick('EXPO_PUBLIC_ETHERSCAN_API_KEY', 'ETHERSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
+    ETHERSCAN_API_KEY:             pick('EXPO_PUBLIC_ETHERSCAN_API_KEY', 'ETHERSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
+    
+    EXPO_PUBLIC_BSCSCAN_API_KEY: pick('EXPO_PUBLIC_BSCSCAN_API_KEY', 'BSCSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
+    BSCSCAN_API_KEY:             pick('EXPO_PUBLIC_BSCSCAN_API_KEY', 'BSCSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
+
     // (Optional but consistent) mainnets too, if your code reads them:
     EXPO_PUBLIC_ETH_MAINNET_RPC_URL: pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),
     ETH_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_ETH_MAINNET_RPC_URL', 'ETH_MAINNET_RPC_URL', 'https://mainnet.infura.io/v3/' + (process.env.EXPO_PUBLIC_INFURA_KEY || process.env.INFURA_KEY || '') || 'https://rpc.ankr.com/eth'),

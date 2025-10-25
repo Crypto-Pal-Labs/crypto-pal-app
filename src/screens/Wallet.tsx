@@ -100,7 +100,23 @@ const Wallet: React.FC = () => {
   const setAddress = useWalletStore((state: any) => state.setAddress);
 
   const { chain, chains, activeChainId, setActiveChainId } = useChain();
-  const { balances, nfts, loading, error, refresh, startTimers } = useAssets();
+  const { balances, nfts, loading, error, refresh } = useAssets();
+
+  // Set default to All Networks on first load only
+  useEffect(() => {
+    const initializeChain = async () => {
+      try {
+        // Clear storage once to force default value
+        await AsyncStorage.removeItem('cp-active-chain');
+        console.log('Wallet: Cleared storage, setting default to All Networks (0)');
+        setActiveChainId(0);
+      } catch (error) {
+        console.log('Wallet: Error clearing storage:', error);
+        setActiveChainId(0);
+      }
+    };
+    initializeChain();
+  }, []); // Only run once on mount
 
   const [searchQuery, setSearchQuery] = useState("");
   const [viewMode, setViewMode] = useState<"crypto" | "nfts">("crypto");
@@ -249,28 +265,39 @@ const Wallet: React.FC = () => {
 
   const onRefresh = async () => {
     if (!isMounted.current) return;
+    console.log('Wallet: onRefresh called');
     setRefreshing(true);
     refresh();
     await AsyncStorage.removeItem("localBalanceDelta");
     await loadLocalDelta();
     setRefreshing(false);
+    console.log('Wallet: onRefresh completed');
   };
 
-  // on tab focus: refresh once; start 60s timer from the hook
+  // on tab focus: refresh once only (no automatic timers)
   useFocusEffect(
     React.useCallback(() => {
-      const stop = startTimers?.(); // set up 60s + invalidate watcher
+      console.log('Wallet: Focus effect triggered - refreshing once');
       onRefresh();
-      return () => { if (typeof stop === "function") stop(); };
-    }, [activeChainId, startTimers])
+    }, []) // Remove activeChainId dependency to prevent re-triggering
   );
 
   // filter
   const filteredBalances: BalanceItem[] = balances.filter(
-    (item: BalanceItem) =>
-      Number(ethers.utils.formatUnits(item.balance, item.contract_decimals ?? 18)) > 0 &&
-      (item.contract_ticker_symbol || "").toLowerCase().includes(searchQuery.toLowerCase())
+    (item: BalanceItem) => {
+      const hasBalance = Number(ethers.utils.formatUnits(item.balance, item.contract_decimals ?? 18)) > 0;
+      const matchesSearch = (item.contract_ticker_symbol || "").toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesChain = activeChainId === 0 || item.chainId === activeChainId; // 0 = All networks
+      
+      return hasBalance && matchesSearch && matchesChain;
+    }
   );
+  
+  console.log(`Filtered balances: ${filteredBalances.length} out of ${balances.length} total balances`);
+  console.log(`Active chain ID: ${activeChainId}, Total balances: ${balances.length}`);
+  
+  // Debug: Log all balances with their chain IDs
+  console.log('All balances with chain IDs:', balances.map(b => ({ symbol: b.contract_ticker_symbol, chainId: b.chainId })));
 
   const filteredNfts = nfts.filter(
     (item: any) =>
@@ -390,7 +417,7 @@ const Wallet: React.FC = () => {
     );
   }
 
-  const networkLabel = chain?.shortName || chain?.name || String(activeChainId);
+  const networkLabel = activeChainId === 0 ? "All Networks" : (chain?.shortName || chain?.name || String(activeChainId));
   const currencyLabel = currency;
 
   return (
@@ -440,6 +467,7 @@ const Wallet: React.FC = () => {
               style={styles.pickerOverlay}
               mode="dropdown"
             >
+              <Picker.Item key="all" label="All Networks" value={0} />
               {chains.map((c: any) => (
                 <Picker.Item key={c.chainId} label={c.shortName || c.name} value={c.chainId} />
               ))}

@@ -30,6 +30,7 @@ export type BalanceItem = {
   contract_address?: string;
   contract_decimals?: number;
   contract_name?: string;
+  chainId?: number;          // Added for multi-chain support
 };
 
 export type NFTItem = {
@@ -52,10 +53,29 @@ const CG_IDS: Record<string, string> = {
   ETH: "ethereum",
   BNB: "binancecoin",
   MATIC: "matic-network",
+  AVAX: "avalanche-2",
+  ARB: "arbitrum",
+  OP: "optimism",
+  BASE: "base",
   USDC: "usd-coin",
   USDT: "tether",
   DAI: "dai",
 };
+
+// Fallback prices for when API fails - using more realistic current prices
+const FALLBACK_PRICES: Record<string, { usd: number; local: number }> = {
+  MATIC: { usd: 0.65, local: 0.65 }, // More realistic MATIC price
+  ETH: { usd: 2500, local: 2500 },
+  BNB: { usd: 350, local: 350 },
+  AVAX: { usd: 25, local: 25 },
+  ARB: { usd: 1.2, local: 1.2 },
+  OP: { usd: 2.5, local: 2.5 },
+  BASE: { usd: 0.0001, local: 0.0001 },
+};
+
+// Price cache to prevent rapid changes
+const PRICE_CACHE = new Map<string, { usd: number; local: number; timestamp: number }>();
+const PRICE_CACHE_DURATION = 30000; // 30 seconds cache
 
 // Symbol → CoinPaprika ID
 const PAPRIKA_IDS: Record<string, string> = {
@@ -78,7 +98,7 @@ function withTimeout<T>(p: Promise<T>, ms = 9000): Promise<T> {
   });
 }
 
-// CoinGecko price loader (demo/pro key supported)
+// CoinGecko price loader with caching and stability
 async function loadCgPrices(symbols: string[], localCurrency: string): Promise<Record<string, PriceEntry>> {
   const ids = Array.from(
     new Set(
@@ -103,14 +123,48 @@ async function loadCgPrices(symbols: string[], localCurrency: string): Promise<R
     if (!res.ok) throw new Error(`CG HTTP ${res.status}`);
     const data: any = await res.json();
     const out: Record<string, PriceEntry> = {};
+    const now = Date.now();
+    
     Object.keys(CG_IDS).forEach((sym) => {
       const id = CG_IDS[sym];
       const d = data?.[id] || {};
-      out[sym] = { usd: Number(d?.usd || 0), local: Number(d?.[vs] || 0) };
+      const usd = Number(d?.usd || 0);
+      const local = Number(d?.[vs] || 0);
+      
+      // Only use API prices if they're reasonable (not 0 or extremely high)
+      if (usd > 0 && usd < 100000 && local > 0 && local < 100000) {
+        out[sym] = { usd, local };
+        // Cache the price
+        PRICE_CACHE.set(sym, { usd, local, timestamp: now });
+      } else {
+        // Use cached price if available, otherwise fallback
+        const cached = PRICE_CACHE.get(sym);
+        if (cached && (now - cached.timestamp) < PRICE_CACHE_DURATION) {
+          out[sym] = { usd: cached.usd, local: cached.local };
+        } else if (FALLBACK_PRICES[sym]) {
+          out[sym] = FALLBACK_PRICES[sym];
+        }
+      }
     });
+    
+    console.log('CoinGecko prices loaded:', out);
     return out;
-  } catch {
-    return {};
+  } catch (e) {
+    console.log('CoinGecko API failed, using cache/fallback:', e);
+    // Return cached prices or fallbacks
+    const out: Record<string, PriceEntry> = {};
+    const now = Date.now();
+    
+    symbols.forEach(sym => {
+      const cached = PRICE_CACHE.get(sym);
+      if (cached && (now - cached.timestamp) < PRICE_CACHE_DURATION) {
+        out[sym] = { usd: cached.usd, local: cached.local };
+      } else if (FALLBACK_PRICES[sym]) {
+        out[sym] = FALLBACK_PRICES[sym];
+      }
+    });
+    
+    return out;
   }
 }
 
@@ -181,7 +235,7 @@ const SYMBOL_LOGO: Record<string, string> = {
 // ---------- Hook ----------
 export const useAssets = () => {
   const address = useWalletStore((s) => s.address);
-  const { chain } = useChain();
+  const { chain, chains } = useChain();
 
   const [balances, setBalances] = useState<BalanceItem[]>([]);
   const [nfts, setNfts] = useState<NFTItem[]>([]);
@@ -234,47 +288,94 @@ export const useAssets = () => {
     }
   }, [address, RPC_URL, chain.chainId, chain.name, chain.nativeSymbol, localCurrency]);
 
-  // ---- Main path (Covalent) + live native override ----
-  const fetchAssetsInternal = useCallback(async () => {
-    if (!isActiveRef.current) return;
+  // ---- Multi-chain balance fetcher ----
+  const fetchAllChainBalances = useCallback(async () => {
+    if (!isActiveRef.current || !address) return { balances: [], nfts: [] };
 
-    if (!address) {
-      setError("No wallet address found.");
-      setLoading(false);
-      return;
-    }
+    console.log(`useAssets: Fetching from ${chains.length} chains:`, chains.map(c => c.name));
+    
+    const allBalances: BalanceItem[] = [];
+    const allNfts: NFTItem[] = [];
+    const allSymbols = new Set<string>();
 
-    // If this chain is not supported by Covalent, jump straight to fallback
-    if (chain.covalentSupported === false) {
-      await fetchAssetsFallback();
-      return;
-    }
+    // Fetch from all chains in parallel
+    const chainPromises = chains.map(async (currentChain) => {
+      try {
+        const rpcUrl = currentChain.rpcUrls?.[0];
+        if (!rpcUrl) return { balances: [], nfts: [] };
 
-    setError(null);
-    setLoading(true);
-
-    try {
-      // 1) Covalent balances
-      const base = "https://api.covalenthq.com/v1";
-      const url = `${base}/${encodeURIComponent(chain.covalentChainId as any)}/address/${address}/balances_v2/?quote-currency=USD&format=JSON&nft=true&no-nft-fetch=false&no-spam=true`;
-
-      let json: any = null;
-      try { json = await covalentGet(url); }
-      catch (e: any) {
-        const msg = String(e?.message || e);
-        if (msg.includes("not supported") || msg.includes("501")) {
-          await fetchAssetsFallback();
-          return;
+        // If chain is not supported by Covalent OR is Polygon Amoy, use fallback
+        if (currentChain.covalentSupported === false || currentChain.chainId === 80002) {
+          const provider = new ethers.providers.StaticJsonRpcProvider(rpcUrl, { 
+            chainId: currentChain.chainId, 
+            name: currentChain.name 
+          });
+          const wei = await provider.getBalance(address);
+          const symbol = (currentChain.nativeSymbol || "ETH").toUpperCase();
+          const units = Number(ethers.utils.formatUnits(wei, 18)) || 0;
+          
+          // Always include the native token, even if balance is 0, for consistency
+          allSymbols.add(symbol);
+          return {
+            balances: [{
+              contract_ticker_symbol: symbol,
+              balance: wei.toString(),
+              quoteLocal: 0, // Will be filled later
+              quoteUsd: 0,   // Will be filled later
+              logo_url: SYMBOL_LOGO[symbol] || SYMBOL_LOGO.ETH,
+              contract_decimals: 18,
+              contract_address: undefined,
+              contract_name: symbol,
+              chainId: currentChain.chainId,
+            }],
+            nfts: []
+          };
         }
-        throw e;
-      }
 
-      const items: CovalentItem[] = extractItems(json);
+        // Use Covalent for supported chains
+        const base = "https://api.covalenthq.com/v1";
+        const url = `${base}/${encodeURIComponent(currentChain.covalentChainId as any)}/address/${address}/balances_v2/?quote-currency=USD&format=JSON&nft=true&no-nft-fetch=false&no-spam=true`;
 
-      // 2) Split tokens vs NFTs
-      const tokenItems = items.filter((i) => i.type !== "nft");
-      const nftItems: NFTItem[] =
-        (items
+        let json: any = null;
+        try { 
+          json = await covalentGet(url); 
+        } catch (e: any) {
+          const msg = String(e?.message || e);
+          if (msg.includes("not supported") || msg.includes("501")) {
+            // Fallback to RPC for this chain
+            const provider = new ethers.providers.StaticJsonRpcProvider(rpcUrl, { 
+              chainId: currentChain.chainId, 
+              name: currentChain.name 
+            });
+            const wei = await provider.getBalance(address);
+            const symbol = (currentChain.nativeSymbol || "ETH").toUpperCase();
+            const units = Number(ethers.utils.formatUnits(wei, 18)) || 0;
+            
+            if (units > 0) {
+              allSymbols.add(symbol);
+              return {
+                balances: [{
+                  contract_ticker_symbol: symbol,
+                  balance: wei.toString(),
+                  quoteLocal: 0,
+                  quoteUsd: 0,
+                  logo_url: SYMBOL_LOGO[symbol] || SYMBOL_LOGO.ETH,
+                  contract_decimals: 18,
+                  contract_address: undefined,
+                  contract_name: symbol,
+                  chainId: currentChain.chainId,
+                }],
+                nfts: []
+              };
+            }
+            return { balances: [], nfts: [] };
+          }
+          throw e;
+        }
+
+        const items: CovalentItem[] = extractItems(json);
+        const tokenItems = items.filter((i) => i.type !== "nft");
+        const nftItems: NFTItem[] = items
           .filter((i) => i.type === "nft" && (i.nft_data?.length ?? 0) > 0)
           .flatMap((i) =>
             (i.nft_data || []).map((nft) => ({
@@ -284,61 +385,105 @@ export const useAssets = () => {
               contract_address: i.contract_address || "",
               logo_url: nft.token_url || i.logo_url || SYMBOL_LOGO.ETH,
             }))
-          )) || [];
+          );
 
-      // 3) Build price map
-      const symbols = tokenItems.map((i) => (i.contract_ticker_symbol || "").toUpperCase()).filter(Boolean);
-      const prices = await getPriceMap(symbols, localCurrency);
+        // Collect symbols for price lookup
+        tokenItems.forEach((i) => {
+          const sym = (i.contract_ticker_symbol || "").toUpperCase();
+          if (sym) allSymbols.add(sym);
+        });
 
-      // 4) Balance rows
-      const pricedBalances: BalanceItem[] = tokenItems.map((i) => {
-        const sym = (i.contract_ticker_symbol || "TOKEN").toUpperCase();
-        const decimals = i.contract_decimals ?? 18;
-        const units = Number(ethers.utils.formatUnits(i.balance || "0", decimals)) || 0;
+        const balances: BalanceItem[] = tokenItems.map((i) => {
+          const sym = (i.contract_ticker_symbol || "TOKEN").toUpperCase();
+          const decimals = i.contract_decimals ?? 18;
+          return {
+            contract_ticker_symbol: sym,
+            balance: i.balance || "0",
+            quoteLocal: 0, // Will be filled later
+            quoteUsd: 0,   // Will be filled later
+            logo_url: (i.logo_url || SYMBOL_LOGO[sym] || SYMBOL_LOGO.ETH),
+            contract_address: i.contract_address || undefined,
+            contract_decimals: decimals,
+            contract_name: i.contract_name || undefined,
+            chainId: currentChain.chainId,
+          };
+        });
 
-        const usd = Number(prices?.[sym]?.usd || 0);
-        const loc = Number(prices?.[sym]?.local || 0);
+        return { balances, nfts: nftItems };
+      } catch (error) {
+        console.warn(`Failed to fetch assets for chain ${currentChain.name}:`, error);
+        return { balances: [], nfts: [] };
+      }
+    });
 
-        return {
-          contract_ticker_symbol: sym,
-          balance: i.balance || "0",
-          quoteLocal: units * loc,
-          quoteUsd: units * usd,
-          logo_url: (i.logo_url || SYMBOL_LOGO[sym] || SYMBOL_LOGO.ETH),
-          contract_address: i.contract_address || undefined,
-          contract_decimals: decimals,
-          contract_name: i.contract_name || undefined,
-        };
-      });
+    const results = await Promise.all(chainPromises);
+    
+    // Combine all results
+    results.forEach(({ balances, nfts }) => {
+      allBalances.push(...balances);
+      allNfts.push(...nfts);
+    });
 
-      // 5) Live native override (fresh RPC)
-      try {
-        const providerLive = new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: chain.chainId, name: chain.name });
-        const liveWei = await providerLive.getBalance(address);
-        const nativeSym = (chain.nativeSymbol || "ETH").toUpperCase();
-        const units = Number(ethers.utils.formatEther(liveWei)) || 0;
-        const usd = Number((await getPriceMap([nativeSym], localCurrency))?.[nativeSym]?.usd || 0);
-        const loc = Number((await getPriceMap([nativeSym], localCurrency))?.[nativeSym]?.local || 0);
+    // Get prices for all symbols
+    const prices = await getPriceMap(Array.from(allSymbols), localCurrency);
+    console.log('Price map fetched:', prices);
 
-        const idx = pricedBalances.findIndex((b) => b.contract_ticker_symbol.toUpperCase() === nativeSym);
-        const nativeRow: BalanceItem = {
-          contract_ticker_symbol: nativeSym,
-          balance: liveWei.toString(),
-          quoteLocal: units * loc,
-          quoteUsd: units * usd,
-          logo_url: SYMBOL_LOGO[nativeSym] || SYMBOL_LOGO.ETH,
-          contract_decimals: 18,
-          contract_address: undefined,
-          contract_name: nativeSym,
-        };
-        if (idx >= 0) pricedBalances[idx] = nativeRow;
-        else pricedBalances.unshift(nativeRow);
-      } catch {
-        // non-fatal
+    // Apply prices to all balances with stability checks
+    const pricedBalances = allBalances.map((balance) => {
+      const sym = balance.contract_ticker_symbol.toUpperCase();
+      const decimals = balance.contract_decimals ?? 18;
+      const units = Number(ethers.utils.formatUnits(balance.balance, decimals)) || 0;
+      
+      // Get prices with stability checks
+      let usd = Number(prices?.[sym]?.usd || 0);
+      let loc = Number(prices?.[sym]?.local || 0);
+      
+      // Stability check: if prices are unreasonable, use cached or fallback
+      if (usd === 0 || usd > 100000 || loc === 0 || loc > 100000) {
+        const cached = PRICE_CACHE.get(sym);
+        const now = Date.now();
+        
+        if (cached && (now - cached.timestamp) < PRICE_CACHE_DURATION) {
+          usd = cached.usd;
+          loc = cached.local;
+          console.log(`Using cached price for ${sym}: usd=${usd}, loc=${loc}`);
+        } else if (FALLBACK_PRICES[sym]) {
+          usd = FALLBACK_PRICES[sym].usd;
+          loc = FALLBACK_PRICES[sym].local;
+          console.log(`Using fallback price for ${sym}: usd=${usd}, loc=${loc}`);
+        }
       }
 
-      setNfts(nftItems);
-      setBalances(pricedBalances);
+      console.log(`Balance pricing for ${sym}: units=${units}, usd=${usd}, loc=${loc}`);
+
+      return {
+        ...balance,
+        quoteLocal: units * loc,
+        quoteUsd: units * usd,
+      };
+    });
+
+    console.log(`useAssets: Returning ${pricedBalances.length} balances from all chains:`, pricedBalances.map(b => ({ symbol: b.contract_ticker_symbol, chainId: b.chainId })));
+    return { balances: pricedBalances, nfts: allNfts };
+  }, [address, chains, localCurrency]);
+
+  // ---- Main path (Multi-chain) ----
+  const fetchAssetsInternal = useCallback(async () => {
+    if (!isActiveRef.current) return;
+
+    if (!address) {
+      setError("No wallet address found.");
+      setLoading(false);
+      return;
+    }
+
+    setError(null);
+    setLoading(true);
+
+    try {
+      const { balances, nfts } = await fetchAllChainBalances();
+      setBalances(balances);
+      setNfts(nfts);
       setError(null);
     } catch (err: any) {
       const msg = String(err?.message || err);
@@ -347,11 +492,12 @@ export const useAssets = () => {
     } finally {
       setLoading(false);
     }
-  }, [address, chain.covalentChainId, chain.covalentSupported, chain.chainId, chain.name, chain.nativeSymbol, RPC_URL, localCurrency, fetchAssetsFallback]);
+  }, [address, fetchAllChainBalances]);
 
-  // ---- refresh controls (60s slow poll + fast “invalidation” ping) ----
+  // ---- refresh controls (60s slow poll + fast "invalidation" ping) ----
   const refresh = useCallback(() => {
     if (!isActiveRef.current) return;
+    console.log('Assets refresh triggered');
     fetchAssetsInternal();
   }, [fetchAssetsInternal]);
 
@@ -362,14 +508,18 @@ export const useAssets = () => {
       if (isActiveRef.current) fetchAssetsInternal();
     }, 60000);
 
-    const invKey = address ? INVALIDATE_KEY(address, chain.chainId) : null;
+    // Check for invalidation on any chain
+    const invKeys = address ? chains.map(c => INVALIDATE_KEY(address, c.chainId)) : [];
     const fast = setInterval(async () => {
-      if (!invKey) return;
+      if (!invKeys.length) return;
       try {
-        const bump = await AsyncStorage.getItem(invKey);
-        if (bump && bump !== lastInvalidateRef.current) {
-          lastInvalidateRef.current = bump;
-          fetchAssetsInternal();
+        for (const invKey of invKeys) {
+          const bump = await AsyncStorage.getItem(invKey);
+          if (bump && bump !== lastInvalidateRef.current) {
+            lastInvalidateRef.current = bump;
+            fetchAssetsInternal();
+            break; // Only refresh once per cycle
+          }
         }
       } catch {}
     }, 2000);
@@ -379,7 +529,14 @@ export const useAssets = () => {
       clearInterval(slow);
       clearInterval(fast);
     };
-  }, [address, chain.chainId, fetchAssetsInternal]);
+  }, [address, chains, fetchAssetsInternal]);
 
-  return { balances, nfts, loading, error, refresh, startTimers };
+  // Manual refresh for external triggers (like Transak purchases)
+  const forceRefresh = useCallback(() => {
+    console.log('Force refresh triggered');
+    if (!isActiveRef.current) return;
+    fetchAssetsInternal();
+  }, [fetchAssetsInternal]);
+
+  return { balances, nfts, loading, error, refresh, startTimers, forceRefresh };
 };

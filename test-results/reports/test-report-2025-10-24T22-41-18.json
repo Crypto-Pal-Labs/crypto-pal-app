@@ -1,0 +1,48 @@
+{
+  "timestamp": "2025-10-24T22-41-18",
+  "environment": "development",
+  "summary": {
+    "total": 6,
+    "passed": 0,
+    "failed": 6,
+    "successRate": "0.0"
+  },
+  "results": [
+    {
+      "name": "Unit Tests",
+      "status": "FAILED",
+      "duration": "N/A",
+      "error": "Command failed: jest --config=test-config/jest.config.js --testPathPatterns=unit"
+    },
+    {
+      "name": "Integration Tests",
+      "status": "FAILED",
+      "duration": "N/A",
+      "error": "Command failed: jest --config=test-config/jest.config.js --testPathPatterns=integration"
+    },
+    {
+      "name": "Visual Tests",
+      "status": "FAILED",
+      "duration": "N/A",
+      "error": "Command failed: jest --config=test-config/jest.config.js --testPathPatterns=visual"
+    },
+    {
+      "name": "API Tests",
+      "status": "FAILED",
+      "duration": "N/A",
+      "error": "Command failed: jest --config=test-config/jest.config.js --testPathPatterns=api"
+    },
+    {
+      "name": "Performance Tests",
+      "status": "FAILED",
+      "duration": "N/A",
+      "error": "Command failed: npx playwright test --config=test-config/playwright.config.ts --grep=\"Performance\""
+    },
+    {
+      "name": "E2E Tests",
+      "status": "FAILED",
+      "duration": "N/A",
+      "error": "Command failed: npx playwright test --config=test-config/playwright.config.ts --grep=\"E2E\""
+    }
+  ]
+}

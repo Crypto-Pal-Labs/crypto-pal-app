@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { Alert } from "react-native";
 import { useWalletStore } from "../store/useWalletStore";
-import { covalentGet, CovalentError } from "../lib/covalent";
+import { covalentGet } from "../lib/covalent";
 import { CHAINS, EvmChain } from "../config/chainRegistry";
-import { useActiveChain } from '@thirdweb-dev/react-native';  // Correct RN path
-import { getProvider } from '../utils/eth';  // Assume from eth.ts
+import { useChain } from "./useChain";
 
 /**
  * Minimal normalized transaction item for UI consumption.
@@ -18,7 +17,7 @@ export type TxItem = {
   valueWei: string;
   chainId: number;
   explorerBase: string;
-  nativeSymbol: "ETH" | "BNB" | "MATIC";
+  nativeSymbol: "ETH" | "BNB" | "MATIC" | "AVAX" | "ARB" | "OP" | "BASE";
   successful: boolean;
   raw: any;
 };
@@ -32,7 +31,7 @@ const toTxItems = (items: any[], c: EvmChain): TxItem[] =>
     valueWei: String(t.value || t.value_wei || "0"),
     chainId: c.chainId,
     explorerBase: c.explorerBase || '',  // Use from custom EvmChain
-    nativeSymbol: c.nativeSymbol as "ETH" | "BNB" | "MATIC" || 'ETH',
+    nativeSymbol: c.nativeSymbol as "ETH" | "BNB" | "MATIC" | "AVAX" | "ARB" | "OP" | "BASE" || 'ETH',
     successful: t.successful === false ? false : true,
     raw: t,
   }));
@@ -52,7 +51,7 @@ const mergeAndSort = (lists: TxItem[][]): TxItem[] => {
 
 export const useHistory = () => {
   const address = useWalletStore((s) => s.address);
-  const activeChain = useActiveChain();  // New: Dynamic chain from thirdweb
+  const { chain } = useChain();
   const [transactions, setTransactions] = useState<TxItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -81,10 +80,9 @@ export const useHistory = () => {
           } catch (e: any) {
             const msg = String(e?.message || e);
             // Skip unsupported chains (501) silently
-            if (e instanceof CovalentError && e.status === 501) return [];
             if (msg.includes("not supported") || msg.includes("501")) return [];
             // Rate-limited or transient → skip this round
-            if (e instanceof CovalentError && e.status === 429) return [];
+            if (msg.includes("rate limit") || msg.includes("429")) return [];
             return [];
           }
         })
@@ -94,31 +92,36 @@ export const useHistory = () => {
         r.status === "fulfilled" ? (r.value as TxItem[]) : []
       );
 
-      // New: RPC fallback for receiver txs (poll logs for incoming on active chain)
-      if (activeChain) {
-        const provider = await getProvider(activeChain.chainId as any);  // Adjust type if needed
-        const currentBlock = await provider.getBlockNumber();  // Fixed: Get numeric block, subtract
-        const logs = await provider.getLogs({
-          fromBlock: currentBlock - 100,  // Last 100 blocks
-          toBlock: 'latest',
-          address: owner,
-        });
-        const rpcTxs = logs.map(log => {
-          // Parse log to TxItem (simplified - expand for full)
-          return {
+      // RPC fallback for current chain
+      if (chain && chain.rpcUrls?.[0]) {
+        try {
+          const { ethers } = await import('ethers');
+          const provider = new ethers.providers.StaticJsonRpcProvider(chain.rpcUrls[0], { 
+            chainId: chain.chainId, 
+            name: chain.name 
+          });
+          const currentBlock = await provider.getBlockNumber();
+          const logs = await provider.getLogs({
+            fromBlock: currentBlock - 100,  // Last 100 blocks
+            toBlock: 'latest',
+            address: owner,
+          });
+          const rpcTxs = logs.map(log => ({
             hash: log.transactionHash || '',
             timestamp: new Date().toISOString(),
-            from: '',  // Parse from data if needed
+            from: '',
             to: owner,
-            valueWei: '0',  // Parse value
-            chainId: activeChain.chainId,
-            explorerBase: activeChain.explorers?.[0]?.url || '',  // Fixed: Use explorers from thirdweb Chain
-            nativeSymbol: activeChain.nativeCurrency?.symbol as "ETH" | "BNB" | "MATIC" || 'ETH',  // Fixed: Use nativeCurrency.symbol
+            valueWei: '0',
+            chainId: chain.chainId,
+            explorerBase: chain.explorerBase,
+            nativeSymbol: chain.nativeSymbol,
             successful: true,
             raw: log,
-          };
-        });
-        lists.push(rpcTxs);
+          }));
+          lists.push(rpcTxs);
+        } catch (e) {
+          console.warn('RPC fallback failed:', e);
+        }
       }
 
       const merged = mergeAndSort(lists);
@@ -130,7 +133,7 @@ export const useHistory = () => {
     } finally {
       setLoading(false);
     }
-  }, [address, activeChain]);
+  }, [address, chain]);
 
   useEffect(() => {
     fetchHistory();

@@ -1,0 +1,182 @@
+#!/usr/bin/env node
+
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+// Get timestamp for report naming
+const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+
+console.log('🚀 Starting Comprehensive Test Suite for Crypto Pal App');
+console.log(`📅 Test Run: ${timestamp}`);
+console.log('=' .repeat(60));
+
+// Create test results directory
+const resultsDir = path.join(__dirname, '..', 'test-results');
+if (!fs.existsSync(resultsDir)) {
+  fs.mkdirSync(resultsDir, { recursive: true });
+}
+
+// Test configuration
+const testSuites = [
+  {
+    name: 'Unit Tests',
+    command: 'jest --config=test-config/jest.config.js --testPathPatterns=unit',
+    description: 'Testing individual functions and utilities'
+  },
+  {
+    name: 'Integration Tests',
+    command: 'jest --config=test-config/jest.config.js --testPathPatterns=integration',
+    description: 'Testing component interactions and hooks'
+  },
+  {
+    name: 'Visual Tests',
+    command: 'jest --config=test-config/jest.config.js --testPathPatterns=visual',
+    description: 'Testing UI components and visual regression'
+  },
+  {
+    name: 'API Tests',
+    command: 'jest --config=test-config/jest.config.js --testPathPatterns=api',
+    description: 'Testing external API integrations'
+  },
+  {
+    name: 'Performance Tests',
+    command: 'npx playwright test --config=test-config/playwright.config.ts --grep="Performance"',
+    description: 'Testing performance and load times'
+  },
+  {
+    name: 'E2E Tests',
+    command: 'npx playwright test --config=test-config/playwright.config.ts --grep="E2E"',
+    description: 'Testing end-to-end user workflows'
+  }
+];
+
+// Run each test suite
+const results = [];
+
+for (const suite of testSuites) {
+  console.log(`\n🧪 Running ${suite.name}...`);
+  console.log(`📝 ${suite.description}`);
+  console.log('-'.repeat(40));
+  
+  try {
+    const startTime = Date.now();
+    execSync(suite.command, { stdio: 'inherit', cwd: process.cwd() });
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+    
+    results.push({
+      name: suite.name,
+      status: 'PASSED',
+      duration: `${(duration / 1000).toFixed(2)}s`
+    });
+    
+    console.log(`✅ ${suite.name} completed successfully in ${(duration / 1000).toFixed(2)}s`);
+  } catch (error) {
+    results.push({
+      name: suite.name,
+      status: 'FAILED',
+      duration: 'N/A',
+      error: error.message
+    });
+    
+    console.log(`❌ ${suite.name} failed: ${error.message}`);
+  }
+}
+
+// Generate comprehensive report
+console.log('\n📊 Test Results Summary');
+console.log('=' .repeat(60));
+
+const passedTests = results.filter(r => r.status === 'PASSED').length;
+const failedTests = results.filter(r => r.status === 'FAILED').length;
+const totalTests = results.length;
+
+console.log(`Total Test Suites: ${totalTests}`);
+console.log(`✅ Passed: ${passedTests}`);
+console.log(`❌ Failed: ${failedTests}`);
+console.log(`📈 Success Rate: ${((passedTests / totalTests) * 100).toFixed(1)}%`);
+
+// Generate HTML report
+const htmlReport = `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Crypto Pal Test Report - ${timestamp}</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .header { background: #f0f0f0; padding: 20px; border-radius: 5px; }
+        .summary { background: #e8f5e8; padding: 15px; border-radius: 5px; margin: 20px 0; }
+        .test-suite { border: 1px solid #ddd; margin: 10px 0; padding: 15px; border-radius: 5px; }
+        .passed { background: #d4edda; border-color: #c3e6cb; }
+        .failed { background: #f8d7da; border-color: #f5c6cb; }
+        .status { font-weight: bold; }
+        .passed .status { color: #155724; }
+        .failed .status { color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚀 Crypto Pal Test Report</h1>
+        <p><strong>Test Run:</strong> ${timestamp}</p>
+        <p><strong>Environment:</strong> ${process.env.NODE_ENV || 'development'}</p>
+    </div>
+    
+    <div class="summary">
+        <h2>📊 Summary</h2>
+        <p><strong>Total Test Suites:</strong> ${totalTests}</p>
+        <p><strong>✅ Passed:</strong> ${passedTests}</p>
+        <p><strong>❌ Failed:</strong> ${failedTests}</p>
+        <p><strong>📈 Success Rate:</strong> ${((passedTests / totalTests) * 100).toFixed(1)}%</p>
+    </div>
+    
+    <h2>🧪 Test Suite Results</h2>
+    ${results.map(result => `
+        <div class="test-suite ${result.status.toLowerCase()}">
+            <h3>${result.name}</h3>
+            <p><span class="status">${result.status}</span> - Duration: ${result.duration}</p>
+            ${result.error ? `<p><strong>Error:</strong> ${result.error}</p>` : ''}
+        </div>
+    `).join('')}
+    
+    <footer style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd;">
+        <p>Generated by Crypto Pal Test Suite</p>
+        <p>Report generated at: ${new Date().toLocaleString()}</p>
+    </footer>
+</body>
+</html>
+`;
+
+// Save HTML report
+const reportPath = path.join(resultsDir, 'reports', `test-report-${timestamp}.html`);
+fs.mkdirSync(path.dirname(reportPath), { recursive: true });
+fs.writeFileSync(reportPath, htmlReport);
+
+// Save JSON report
+const jsonReport = {
+  timestamp,
+  environment: process.env.NODE_ENV || 'development',
+  summary: {
+    total: totalTests,
+    passed: passedTests,
+    failed: failedTests,
+    successRate: ((passedTests / totalTests) * 100).toFixed(1)
+  },
+  results
+};
+
+const jsonPath = path.join(resultsDir, 'reports', `test-report-${timestamp}.json`);
+fs.writeFileSync(jsonPath, JSON.stringify(jsonReport, null, 2));
+
+console.log(`\n📄 Reports generated:`);
+console.log(`   HTML: ${reportPath}`);
+console.log(`   JSON: ${jsonPath}`);
+
+// Exit with appropriate code
+if (failedTests > 0) {
+  console.log('\n❌ Some tests failed. Please check the reports for details.');
+  process.exit(1);
+} else {
+  console.log('\n🎉 All tests passed successfully!');
+  process.exit(0);
+}

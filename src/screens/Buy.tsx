@@ -484,6 +484,13 @@ function makeTransakUrl(params: {
   contractAddress?: string; product?: 'BUY' | 'SELL';
 }) {
   const { address = '', fiatCurrency = 'USD', symbol, network = 'mainnet', contractAddress, product = 'BUY' } = params;
+  
+  // Validate address format
+  if (address && !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+    console.error('Invalid address format for Transak:', address);
+    throw new Error('Invalid wallet address format');
+  }
+  
   const p = new URLSearchParams();
   p.set('apiKey', TRANSAK_API_KEY);
   p.set('walletAddress', address);
@@ -496,7 +503,10 @@ function makeTransakUrl(params: {
   p.set('disableWalletAddressForm', 'true');
   if (symbol) p.set('cryptoCurrencyCode', symbol);
   if (contractAddress) p.set('contractAddress', contractAddress);
-  return `${TRANSAK_BASE}?${p.toString()}`;
+  
+  const url = `${TRANSAK_BASE}?${p.toString()}`;
+  console.log('Generated Transak URL:', url);
+  return url;
 }
 
 // ──────────────────────────────────────────────────────────
@@ -506,7 +516,7 @@ const BuyRoute: React.FC<{ defaultFiat?: string }> = ({ defaultFiat }) => {
   const [loading, setLoading] = useState(true);
   const [uri, setUri] = useState('');
   const [isRestricted, setIsRestricted] = useState(false);
-  const { refresh } = useAssets();
+  const { refresh, forceRefresh } = useAssets();
 
   useFocusEffect(
     useCallback(() => {
@@ -516,28 +526,70 @@ const BuyRoute: React.FC<{ defaultFiat?: string }> = ({ defaultFiat }) => {
       setIsRestricted(restricted);
 
       getWalletAddress().then((addr) => {
+        console.log('Buy tab - wallet address:', addr);
+        
+        if (!addr) {
+          console.error('No wallet address found for Buy tab');
+          Alert.alert('Error', 'No wallet address found. Please ensure your wallet is properly set up.');
+          setLoading(false);
+          return;
+        }
+
+        // Validate address format
+        if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
+          console.error('Invalid wallet address format:', addr);
+          Alert.alert('Error', 'Invalid wallet address format. Please check your wallet setup.');
+          setLoading(false);
+          return;
+        }
+
         const fiat = defaultFiat || locale.currencyCode || 'USD';
-        if (!restricted) setUri(makeTransakUrl({ address: addr || '', fiatCurrency: fiat, product: 'BUY', network: 'mainnet' }));
+        if (!restricted) {
+          try {
+            const url = makeTransakUrl({ address: addr, fiatCurrency: fiat, product: 'BUY', network: 'mainnet' });
+            console.log('Buy tab - Transak URL:', url);
+            setUri(url);
+          } catch (error: any) {
+            console.error('Buy tab - Error creating Transak URL:', error);
+            Alert.alert('Error', 'Failed to create buy URL: ' + (error?.message || 'Unknown error'));
+            setLoading(false);
+            return;
+          }
+        }
         setLoading(false);
 
         const intent = popBuyIntent();
         if (!restricted && intent?.symbol) {
-          const u = makeTransakUrl({
-            address: addr || '',
-            fiatCurrency: fiat,
-            symbol: intent.symbol,
-            network: intent.network || 'mainnet',
-            contractAddress: intent.contractAddress,
-            product: 'BUY',
-          });
-          setUri(u);
+          try {
+            const u = makeTransakUrl({
+              address: addr,
+              fiatCurrency: fiat,
+              symbol: intent.symbol,
+              network: intent.network || 'mainnet',
+              contractAddress: intent.contractAddress,
+              product: 'BUY',
+            });
+            console.log('Buy tab - Intent URL:', u);
+            setUri(u);
+          } catch (error: any) {
+            console.error('Buy tab - Error creating intent URL:', error);
+            Alert.alert('Error', 'Failed to create buy URL for selected asset: ' + (error?.message || 'Unknown error'));
+          }
         }
+      }).catch((error: any) => {
+        console.error('Buy tab - Error getting wallet address:', error);
+        Alert.alert('Error', 'Failed to get wallet address: ' + (error?.message || 'Unknown error'));
+        setLoading(false);
       });
     }, [defaultFiat])
   );
 
   const handleNavigationChange = (event: { url: string }) => {
-    if (event.url.includes('transak.com') && event.url.includes('success')) refresh();
+    console.log('Buy tab - Navigation change:', event.url);
+    if (event.url.includes('transak.com') && event.url.includes('success')) {
+      console.log('Buy tab - Purchase successful, force refreshing assets');
+      forceRefresh();
+    }
   };
 
   if (loading) return <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />;
@@ -569,7 +621,7 @@ const SellRoute: React.FC<{ defaultFiat?: string }> = ({ defaultFiat }) => {
   const [loading, setLoading] = useState(true);
   const [uri, setUri] = useState('');
   const [isRestricted, setIsRestricted] = useState(false);
-  const { refresh } = useAssets();
+  const { refresh, forceRefresh } = useAssets();
 
   useFocusEffect(
     useCallback(() => {
@@ -590,7 +642,11 @@ const SellRoute: React.FC<{ defaultFiat?: string }> = ({ defaultFiat }) => {
   );
 
   const handleNavigationChange = (event: { url: string }) => {
-    if (event.url.includes('transak.com') && event.url.includes('success')) refresh();
+    console.log('Sell tab - Navigation change:', event.url);
+    if (event.url.includes('transak.com') && event.url.includes('success')) {
+      console.log('Sell tab - Transaction successful, force refreshing assets');
+      forceRefresh();
+    }
   };
 
   if (loading) return <ActivityIndicator size="large" color="#0A84FF" style={styles.center} />;

@@ -56,16 +56,24 @@ const ASSET_INDEX_KEY = (addr: string) => `assetIndex_v1:${addr.toLowerCase()}`;
 const INVALIDATE_KEY  = (addr: string, cid: number) => `assetsInvalidate:${addr.toLowerCase()}:${cid}`;
 
 // Native symbol → CoinGecko id
-const CG_IDS: Record<'ETH' | 'BNB' | 'MATIC', string> = {
+const CG_IDS: Record<'ETH' | 'BNB' | 'MATIC' | 'AVAX' | 'ARB' | 'OP' | 'BASE', string> = {
   ETH: 'ethereum',
   BNB: 'binancecoin',
   MATIC: 'matic-network',
+  AVAX: 'avalanche-2',
+  ARB: 'arbitrum',
+  OP: 'optimism',
+  BASE: 'base',
 };
 // Native symbol → CoinPaprika id
-const PAPRIKA_IDS: Record<'ETH' | 'BNB' | 'MATIC', string> = {
+const PAPRIKA_IDS: Record<'ETH' | 'BNB' | 'MATIC' | 'AVAX' | 'ARB' | 'OP' | 'BASE', string> = {
   ETH: 'eth-ethereum',
   BNB: 'bnb-binance-coin',
   MATIC: 'matic-polygon',
+  AVAX: 'avax-avalanche',
+  ARB: 'arb-arbitrum',
+  OP: 'op-optimism',
+  BASE: 'base-base',
 };
 
 // Optional CG API keys (demo or pro)
@@ -99,7 +107,7 @@ function parseDeepError(e: any): string {
 }
 
 /* ----------------------- Price helpers (robust) ----------------------- */
-async function getNativeUsdPrice(sym: 'ETH'|'BNB'|'MATIC'): Promise<number> {
+async function getNativeUsdPrice(sym: 'ETH'|'BNB'|'MATIC'|'AVAX'|'ARB'|'OP'|'BASE'): Promise<number> {
   const id = CG_IDS[sym];
   try {
     const base = CG_PRO ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3';
@@ -162,7 +170,7 @@ function confirmSummary(opts: {
   feeEstimate: string;
   chainLabel: string;
   toMasked: string;
-  nativeSymbol: 'ETH' | 'BNB' | 'MATIC';
+  nativeSymbol: 'ETH' | 'BNB' | 'MATIC' | 'AVAX' | 'ARB' | 'OP' | 'BASE';
   decimals?: number;
 }) {
   const {
@@ -260,7 +268,7 @@ const SendTab = () => {
 
   const RPC_URL = activeChain.rpcUrls[0] || '';
   const EXPLORER_BASE = activeChain.explorerBase;
-  const NATIVE_SYMBOL = activeChain.nativeSymbol as 'ETH'|'BNB'|'MATIC';
+  const NATIVE_SYMBOL = activeChain.nativeSymbol as 'ETH'|'BNB'|'MATIC'|'AVAX'|'ARB'|'OP'|'BASE';
   const MIN_TIP = gwei(floors.minPriorityGwei);
   const MIN_GAS = gwei(floors.minGasGwei || DEFAULT_MIN_GAS_GWEI); // ✅ correct key
 
@@ -577,7 +585,7 @@ const SendTab = () => {
     isNative: boolean,
     activeChain: EvmChain,
     EXPLORER_BASE: string,
-    NATIVE_SYMBOL: 'ETH'|'BNB'|'MATIC'
+    NATIVE_SYMBOL: 'ETH'|'BNB'|'MATIC'|'AVAX'|'ARB'|'OP'|'BASE'
   ) {
     setBusyStage(null);
 
