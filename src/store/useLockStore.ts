@@ -23,5 +23,5 @@ export const useLockStore = create<LockState>((set, get) => ({
   touch: () => set({ lastInteractionAt: Date.now() }),
   wentBackground: () => set({ lastBackgroundAt: Date.now() }),
   lockNow: () => set({ isLocked: true }),
-  unlock: () => set({ isLocked: false }),
+  unlock: () => set({ isLocked: false, lastInteractionAt: Date.now() }),
 }));

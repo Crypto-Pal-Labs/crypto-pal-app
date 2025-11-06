@@ -3,10 +3,12 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'reac
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { ethers } from 'ethers';
+import * as bip39 from 'bip39';
 import { Ionicons } from '@expo/vector-icons';
 import { saveMnemonic } from '../utils/wallet';
 import { useWalletStore } from '../store/useWalletStore';
 import { useAuthStore } from '../store/useAuthStore';
+import { clearAllCachedData } from '../utils/cacheUtils';
 import { RootStackParamList } from '../types/navigation';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -19,9 +21,24 @@ export default function RestoreWalletScreen() {
 
   const handleRestore = async () => {
     try {
-      console.log('Restoring phrase:', phrase); // Debug
-      const wallet = ethers.Wallet.fromMnemonic(phrase);
-      await saveMnemonic(phrase);
+      // CRITICAL: When restoring wallet, PRESERVE transactions (user's purchase history)
+      // Only clear cache (balances, prices) which can be refetched
+      // This ensures BUY transaction history is NOT lost on wallet restore
+      await clearAllCachedData(true); // true = preserve transactions
+      
+      // Normalize the mnemonic: trim, lowercase, normalize whitespace
+      const normalizedPhrase = phrase.trim().toLowerCase().replace(/\s+/g, ' ');
+      
+      console.log('Restoring phrase:', normalizedPhrase); // Debug
+      
+      // Validate with bip39 first for better error messages
+      if (!bip39.validateMnemonic(normalizedPhrase)) {
+        throw new Error('Invalid mnemonic phrase. Please check that all words are from the BIP39 word list and in the correct order.');
+      }
+      
+      // Now use ethers to create the wallet
+      const wallet = ethers.Wallet.fromMnemonic(normalizedPhrase);
+      await saveMnemonic(normalizedPhrase);
       console.log('Mnemonic saved successfully'); // Debug
       setAddress(wallet.address);
       setHasMnemonic(true); // Set true on success
@@ -36,7 +53,7 @@ export default function RestoreWalletScreen() {
     <View style={styles.container}>
       <Ionicons name="refresh-circle-outline" size={64} color="#0A84FF" style={styles.icon} />
       <Text style={styles.title}>Restore Wallet</Text>
-      <Text style={styles.subtitle}>Enter your 12-word recovery phrase to restore your wallet. Words are case-sensitive and space-separated.</Text>
+      <Text style={styles.subtitle}>Enter your 12-word recovery phrase to restore your wallet. Words can be in any case and should be space-separated.</Text>
       <TextInput
         style={styles.input}
         multiline

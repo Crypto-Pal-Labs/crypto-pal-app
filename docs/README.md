@@ -1,3 +1,29 @@
+## Transak Session Integration (Local Dev)
+
+1. Install Netlify CLI:
+
+```
+npm i -g netlify-cli
+```
+
+2. Create a `.env` file at project root with:
+
+```
+TRANSAK_ACCESS_TOKEN=your_transak_partner_access_token
+TRANSAK_API_KEY=your_transak_widget_api_key
+TRANSAK_ENV=staging
+REFERRER_DOMAIN=cryptopal.app
+REDIRECT_URL=https://cryptopal.app/transak/return
+```
+
+3. Run functions locally:
+
+```
+npm run dev:functions
+```
+
+4. Start the app and open the Buy tab.
+
 # Crypto Pal – Release Pack
 
 **Date:** 2025-10-14

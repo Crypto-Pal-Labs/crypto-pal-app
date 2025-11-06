@@ -5,6 +5,12 @@ import { useChain } from "./useChain";
 
 export const useProvider = () => {
   const { chain } = useChain();
+  
+  // Handle All Networks case (chain is null)
+  if (!chain) {
+    return null;
+  }
+  
   const url = chain.rpcUrls[0] || "";
   return useMemo(() => {
     // StaticJsonRpcProvider avoids network polling churn

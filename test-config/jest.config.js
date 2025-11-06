@@ -2,7 +2,7 @@ module.exports = {
   preset: 'react-native',
   setupFilesAfterEnv: ['<rootDir>/../src/__tests__/helpers/setupTests.ts'],
   testEnvironment: 'jsdom',
-  moduleNameMapping: {
+  moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/../src/$1',
     '^@tests/(.*)$': '<rootDir>/../src/__tests__/$1',
     '^@stories/(.*)$': '<rootDir>/../src/stories/$1',

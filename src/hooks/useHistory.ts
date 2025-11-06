@@ -17,7 +17,7 @@ export type TxItem = {
   valueWei: string;
   chainId: number;
   explorerBase: string;
-  nativeSymbol: "ETH" | "BNB" | "MATIC" | "AVAX" | "ARB" | "OP" | "BASE";
+  nativeSymbol: EvmChain['nativeSymbol'];
   successful: boolean;
   raw: any;
 };
@@ -31,7 +31,7 @@ const toTxItems = (items: any[], c: EvmChain): TxItem[] =>
     valueWei: String(t.value || t.value_wei || "0"),
     chainId: c.chainId,
     explorerBase: c.explorerBase || '',  // Use from custom EvmChain
-    nativeSymbol: c.nativeSymbol as "ETH" | "BNB" | "MATIC" | "AVAX" | "ARB" | "OP" | "BASE" || 'ETH',
+    nativeSymbol: c.nativeSymbol,
     successful: t.successful === false ? false : true,
     raw: t,
   }));

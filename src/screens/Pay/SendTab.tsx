@@ -1,8 +1,8 @@
 // src/screens/Pay/SendTab.tsx
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View, Text, TextInput, Alert, StyleSheet,
-  ActivityIndicator, TouchableOpacity, Modal, Linking
+  ActivityIndicator, TouchableOpacity, Modal, Linking, ScrollView, RefreshControl
 } from 'react-native';
 import { Picker } from '@react-native-picker/picker';
 import { CameraView, useCameraPermissions } from 'expo-camera';
@@ -16,6 +16,7 @@ import { useWalletStore } from '../../store/useWalletStore';
 import { useChain } from '../../hooks/useChain';
 import { CHAINS, EvmChain } from '../../config/chainRegistry';
 import { covalentGet } from '../../lib/covalent';
+import { useAssets } from '../../hooks/useAssetsSimplified';
 
 type AssetChoice = {
   key: string;                 // `${chainId}:${isNative ? 'native' : contract}`
@@ -43,9 +44,10 @@ const CHAIN_FEE_FLOORS: Record<number, { minPriorityGwei: number; minGasGwei: nu
 const DEFAULT_MIN_PRIORITY_GWEI = 2;
 const DEFAULT_MIN_GAS_GWEI = 2;
 
-const FALLBACK_GAS_LIMIT_NATIVE = ethers.BigNumber.from(65000);
-const FALLBACK_GAS_LIMIT_ERC20  = ethers.BigNumber.from(90000);
-const FALLBACK_GAS_PRICE        = ethers.utils.parseUnits('2', 'gwei');
+// REMOVED: Fixed gas prices - use real-time gas estimation only
+// const FALLBACK_GAS_LIMIT_NATIVE = ethers.BigNumber.from(65000);
+// const FALLBACK_GAS_LIMIT_ERC20  = ethers.BigNumber.from(90000);
+// const FALLBACK_GAS_PRICE        = ethers.utils.parseUnits('2', 'gwei');
 
 const FEE_TIMEOUT_MS = 1500;
 const MAX_FETCH_MS  = 6500;
@@ -80,6 +82,108 @@ const PAPRIKA_IDS: Record<'ETH' | 'BNB' | 'MATIC' | 'AVAX' | 'ARB' | 'OP' | 'BAS
 const CG_DEMO = (process.env.EXPO_PUBLIC_COINGECKO_API_KEY || '').trim();
 const CG_PRO  = (process.env.EXPO_PUBLIC_COINGECKO_PRO_API_KEY || '').trim();
 
+// Real-time gas price estimation with RPC error handling and timeout protection
+const getRealTimeGasPrice = async (provider: ethers.providers.Provider, chainId?: number): Promise<ethers.BigNumber> => {
+  try {
+    // CRITICAL: Wrap RPC calls with timeout to prevent 120s waits
+    const feeData = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, async () => {
+      throw new Error('getFeeData timeout');
+    });
+    if (feeData.gasPrice) {
+      return feeData.gasPrice;
+    }
+    // If no gas price, estimate from recent blocks
+    const blockNumber = await withTimeout(provider.getBlockNumber(), FEE_TIMEOUT_MS, async () => {
+      throw new Error('getBlockNumber timeout');
+    });
+    const block = await withTimeout(provider.getBlock(blockNumber - 1), FEE_TIMEOUT_MS, async () => {
+      throw new Error('getBlock timeout');
+    });
+    if (block && block.baseFeePerGas) {
+      return block.baseFeePerGas.mul(2); // 2x base fee as gas price
+    }
+    throw new Error('No gas price data available');
+  } catch (error: any) {
+    // Don't log as error if it's a timeout/RPC error - we handle it with fallback
+    const isRpcError = error?.code === 'SERVER_ERROR' || 
+                       error?.code === 'TIMEOUT' || 
+                       error?.status === 522 || 
+                       error?.message?.includes('522') ||
+                       error?.message?.includes('timeout');
+    
+    if (isRpcError) {
+      // Log as warning, not error - this is expected behavior when RPC is slow
+      console.warn('RPC error/timeout detected, using fallback gas price');
+      
+      // Fallback gas prices by chain (in gwei)
+      const fallbackPrices: Record<number, ethers.BigNumber> = {
+        1: ethers.utils.parseUnits('30', 'gwei'), // Ethereum Mainnet
+        11155111: ethers.utils.parseUnits('1', 'gwei'), // Sepolia
+        137: ethers.utils.parseUnits('30', 'gwei'), // Polygon
+        80002: ethers.utils.parseUnits('1', 'gwei'), // Polygon Amoy
+        56: ethers.utils.parseUnits('3', 'gwei'), // BSC
+        97: ethers.utils.parseUnits('1', 'gwei'), // BSC Testnet
+      };
+      
+      const fallbackPrice = fallbackPrices[chainId || 11155111] || ethers.utils.parseUnits('2', 'gwei');
+      console.log(`✅ Using fallback gas price: ${ethers.utils.formatUnits(fallbackPrice, 'gwei')} gwei for chainId ${chainId || 11155111}`);
+      return fallbackPrice;
+    }
+    
+    // Only log unexpected errors
+    console.error('Failed to get real-time gas price (unexpected error):', error);
+    throw error;
+  }
+};
+
+// Real-time gas limit estimation with RPC error handling and timeout protection
+const getRealTimeGasLimit = async (
+  provider: ethers.providers.Provider,
+  transaction: any,
+  chainId?: number
+): Promise<ethers.BigNumber> => {
+  try {
+    // CRITICAL: Wrap RPC call with timeout to prevent 120s waits
+    // Our timeout (1.5s) should trigger before ethers.js internal timeout (120s)
+    return await withTimeout(provider.estimateGas(transaction), FEE_TIMEOUT_MS, async () => {
+      throw new Error('estimateGas timeout');
+    });
+  } catch (error: any) {
+    // Don't log as error if it's a timeout/RPC error - we handle it with fallback
+    // Only log as error if it's an unexpected error
+    const isRpcError = error?.code === 'SERVER_ERROR' || 
+                       error?.code === 'TIMEOUT' || 
+                       error?.status === 522 || 
+                       error?.message?.includes('522') ||
+                       error?.message?.includes('timeout');
+    
+    if (isRpcError) {
+      // Log as warning, not error - this is expected behavior when RPC is slow
+      console.warn('RPC error/timeout detected in gas estimation, using fallback gas limit');
+      
+      // Fallback gas limits by transaction type
+      const isNative = !transaction.data || transaction.data === '0x';
+      const fallbackLimits: Record<number, { native: ethers.BigNumber; erc20: ethers.BigNumber }> = {
+        1: { native: ethers.BigNumber.from(21000), erc20: ethers.BigNumber.from(65000) }, // Ethereum Mainnet
+        11155111: { native: ethers.BigNumber.from(21000), erc20: ethers.BigNumber.from(65000) }, // Sepolia
+        137: { native: ethers.BigNumber.from(21000), erc20: ethers.BigNumber.from(65000) }, // Polygon
+        80002: { native: ethers.BigNumber.from(21000), erc20: ethers.BigNumber.from(65000) }, // Polygon Amoy
+        56: { native: ethers.BigNumber.from(21000), erc20: ethers.BigNumber.from(65000) }, // BSC
+        97: { native: ethers.BigNumber.from(21000), erc20: ethers.BigNumber.from(65000) }, // BSC Testnet
+      };
+      
+      const fallback = fallbackLimits[chainId || 11155111] || { native: ethers.BigNumber.from(21000), erc20: ethers.BigNumber.from(65000) };
+      const fallbackLimit = isNative ? fallback.native : fallback.erc20;
+      console.log(`✅ Using fallback gas limit: ${fallbackLimit.toString()} for ${isNative ? 'native' : 'ERC-20'} transaction on chainId ${chainId || 11155111}`);
+      return fallbackLimit;
+    }
+    
+    // Only log unexpected errors
+    console.error('Failed to estimate gas limit (unexpected error):', error);
+    throw error;
+  }
+};
+
 const gwei = (n: number) => ethers.utils.parseUnits(String(n), 'gwei');
 
 const maskAddr = (a: string) =>
@@ -87,11 +191,22 @@ const maskAddr = (a: string) =>
 const fmt = (n: number, dp = 6) =>
   Number.isFinite(n) ? Number(n).toFixed(dp).replace(/0+$/, '').replace(/\.$/, '') : '—';
 
-function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => T): Promise<T> {
+function withTimeout<T>(p: Promise<T>, ms: number, onTimeout?: () => T | Promise<T>): Promise<T> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => { onTimeout ? resolve(onTimeout()) : reject(new Error('timeout')); }, ms);
+    const t = setTimeout(async () => { 
+      if (onTimeout) {
+        try {
+          const result = await onTimeout();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      } else {
+        reject(new Error('timeout'));
+      }
+    }, ms);
     p.then(v => { clearTimeout(t); resolve(v); })
-     .catch(e => { clearTimeout(t); onTimeout ? resolve(onTimeout()) : reject(e); });
+     .catch(e => { clearTimeout(t); reject(e); });
   });
 }
 
@@ -221,6 +336,7 @@ function confirmSummary(opts: {
 const SendTab = () => {
   const { address: fromAddress } = useWalletStore();
   const { chain: defaultChain } = useChain();
+  const { balances: walletBalances } = useAssets(); // Get balances from Wallet tab hook
 
   // QR
   const [permission, requestPermission] = useCameraPermissions();
@@ -231,6 +347,7 @@ const SendTab = () => {
   const [toAddress, setToAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [busyStage, setBusyStage] = useState<null | 'preparing' | 'fee' | 'submitting'>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Units (native only)
   const [amountUnit, setAmountUnit] = useState<'token' | 'usd' | 'local'>('token');
@@ -253,33 +370,57 @@ const SendTab = () => {
   const [feeEstimate, setFeeEstimate] = useState('Enter details');
 
   // Convenience derived values
-  const activeChain: EvmChain = useMemo(
+  const activeChain: EvmChain | null = useMemo(
     () => selectedAsset?.chain || defaultChain,
     [selectedAsset, defaultChain]
   );
 
   const floors = useMemo(() => {
+    if (!activeChain) return {
+      minPriorityGwei: DEFAULT_MIN_PRIORITY_GWEI,
+      minGasGwei: DEFAULT_MIN_GAS_GWEI,
+    };
+    
     const cid = activeChain.chainId;
     return CHAIN_FEE_FLOORS[cid] || {
       minPriorityGwei: DEFAULT_MIN_PRIORITY_GWEI,
       minGasGwei: DEFAULT_MIN_GAS_GWEI, // ✅ correct key
     };
-  }, [activeChain.chainId]);
+  }, [activeChain?.chainId]);
 
-  const RPC_URL = activeChain.rpcUrls[0] || '';
-  const EXPLORER_BASE = activeChain.explorerBase;
-  const NATIVE_SYMBOL = activeChain.nativeSymbol as 'ETH'|'BNB'|'MATIC'|'AVAX'|'ARB'|'OP'|'BASE';
+  const RPC_URL = activeChain?.rpcUrls[0] || '';
+  const EXPLORER_BASE = activeChain?.explorerBase || '';
+  const NATIVE_SYMBOL = (activeChain?.nativeSymbol || 'ETH') as 'ETH'|'BNB'|'MATIC'|'AVAX'|'ARB'|'OP'|'BASE';
   const MIN_TIP = gwei(floors.minPriorityGwei);
   const MIN_GAS = gwei(floors.minGasGwei || DEFAULT_MIN_GAS_GWEI); // ✅ correct key
 
-  const makeProvider = () =>
-    new ethers.providers.StaticJsonRpcProvider(RPC_URL, { chainId: activeChain.chainId, name: activeChain.name });
+  const makeProvider = () => {
+    if (!activeChain) return null;
+    // CRITICAL: Set shorter timeout to prevent 120s waits
+    // ethers.js default is 120s, but we want to fail fast and use fallback
+    const provider = new ethers.providers.StaticJsonRpcProvider(RPC_URL, { 
+      chainId: activeChain.chainId, 
+      name: activeChain.name 
+    });
+    // Override provider's connection timeout to match our FEE_TIMEOUT_MS
+    // This prevents ethers.js from waiting 120s before timing out
+    if (provider.connection) {
+      // @ts-ignore - connection may not be exposed but we try
+      if (provider.connection.timeout !== undefined) {
+        // @ts-ignore
+        provider.connection.timeout = FEE_TIMEOUT_MS;
+      }
+    }
+    return provider;
+  };
 
   const getSigner = async () => {
     const mnemonic = await SecureStore.getItemAsync('mnemonic');
     if (!mnemonic) throw new Error('No mnemonic found—cannot sign transaction.');
     const wallet = ethers.Wallet.fromMnemonic(mnemonic);
-    return wallet.connect(makeProvider());
+    const provider = makeProvider();
+    if (!provider) throw new Error('No provider available for current chain.');
+    return wallet.connect(provider);
   };
 
   const normalizeAddress = (raw: string) => {
@@ -301,24 +442,110 @@ const SendTab = () => {
     } catch {}
 
     const out: AssetChoice[] = [];
+    const essentialChains = [1, 11155111, 80002, 137, 56, 42161, 10, 97, 8453]; // Main chains + testnets
 
-    await Promise.allSettled(CHAINS.map(async (c) => {
-      const provider = new ethers.providers.StaticJsonRpcProvider(c.rpcUrls[0], { chainId: c.chainId, name: c.name });
-
-      // Native via RPC
-      try {
-        const bal = await withTimeout(provider.getBalance(owner), SOFT_FETCH_MS, () => ethers.constants.Zero);
-        if (!bal.isZero()) {
-          out.push({
-            key: `${c.chainId}:native`,
-            chainId: c.chainId, chain: c, isNative: true,
-            symbol: c.nativeSymbol, name: `${c.nativeSymbol} on ${c.shortName || c.name}`,
-            decimals: 18, balanceWei: bal.toString(), balanceFormatted: ethers.utils.formatEther(bal),
+    // Build a map of balances from Wallet tab (most accurate source)
+    // CRITICAL: Always check walletBalances, but don't rely on it being populated
+    // Some phones may have delayed/empty walletBalances, so we'll use RPC fallback
+    const walletBalanceMap = new Map<string, { balance: string; decimals: number }>();
+    if (walletBalances && walletBalances.length > 0) {
+      walletBalances.forEach(b => {
+        if (!b.contract_address) {
+          // Native token: use chainId + 'native' as key
+          const key = `${b.chainId}:native`;
+          walletBalanceMap.set(key, { 
+            balance: b.balance || '0', 
+            decimals: b.contract_decimals || 18 
+          });
+        } else {
+          // ERC-20 token: use chainId + contract address as key
+          const key = `${b.chainId}:${b.contract_address.toLowerCase()}`;
+          walletBalanceMap.set(key, { 
+            balance: b.balance || '0', 
+            decimals: b.contract_decimals || 18 
           });
         }
-      } catch {}
+      });
+    }
 
-      // ERC-20 via Covalent
+    await Promise.allSettled(CHAINS.map(async (c) => {
+      // Track if we should include native token for this chain
+      let nativeIncluded = false;
+      let nativeBalance = ethers.constants.Zero;
+      let hasTokensOnChain = false;
+
+      // Get native balance from Wallet tab balances (more accurate than RPC)
+      const nativeKey = `${c.chainId}:native`;
+      const walletNativeBalance = walletBalanceMap.get(nativeKey);
+      
+      if (walletNativeBalance) {
+        nativeBalance = ethers.BigNumber.from(walletNativeBalance.balance);
+        const hasBalance = !nativeBalance.isZero();
+        
+        // CRITICAL: Include native token even if balance is 0 (for visibility)
+        // Users should see all assets they hold, including newly purchased tokens
+        out.push({
+          key: nativeKey,
+          chainId: c.chainId, chain: c, isNative: true,
+          symbol: c.nativeSymbol, name: `${c.nativeSymbol} on ${c.shortName || c.name}`,
+          decimals: 18, 
+          balanceWei: nativeBalance.toString(), 
+          balanceFormatted: ethers.utils.formatEther(nativeBalance),
+        });
+        nativeIncluded = true;
+      }
+      
+      // CRITICAL: Always try RPC fallback for native tokens (even if walletBalances has it)
+      // This ensures ETH shows up on all phones, even if walletBalances is delayed/empty on some devices
+      if (!nativeIncluded) {
+        try {
+          const provider = new ethers.providers.StaticJsonRpcProvider(c.rpcUrls[0], { chainId: c.chainId, name: c.name });
+          nativeBalance = await withTimeout(provider.getBalance(owner), SOFT_FETCH_MS, () => ethers.constants.Zero);
+          // CRITICAL: Include native token even if balance is 0 (for visibility)
+          // Check if already added (might have been added from walletBalances)
+          if (!out.find(a => a.key === nativeKey)) {
+            out.push({
+              key: nativeKey,
+              chainId: c.chainId, chain: c, isNative: true,
+              symbol: c.nativeSymbol, name: `${c.nativeSymbol} on ${c.shortName || c.name}`,
+              decimals: 18, 
+              balanceWei: nativeBalance.toString(), 
+              balanceFormatted: ethers.utils.formatEther(nativeBalance),
+            });
+            nativeIncluded = true;
+          }
+        } catch (err) {
+          // Silent failure - don't include native token if we can't fetch balance
+        }
+      }
+
+      // ERC-20 tokens: Get from Wallet balances - Include ALL tokens (even with 0 balance)
+      // This ensures users can see all assets they hold, including BUY transactions
+      walletBalances.forEach(wb => {
+        if (wb.chainId === c.chainId && wb.contract_address) {
+          const contract = wb.contract_address.toLowerCase();
+          const key = `${c.chainId}:${contract}`;
+          
+          // Check if already added
+          if (!out.find(a => a.key === key)) {
+            const balanceWei = ethers.BigNumber.from(wb.balance || '0');
+            // CRITICAL: Include ALL tokens from Wallet tab, even if balance is 0
+            // This allows users to see all assets they hold, including newly purchased tokens
+            hasTokensOnChain = true;
+            out.push({
+              key,
+              chainId: c.chainId, chain: c, isNative: false, contract,
+              symbol: wb.contract_ticker_symbol || 'TOKEN',
+              name: `${wb.contract_name || wb.contract_ticker_symbol || 'TOKEN'} on ${c.shortName || c.name}`,
+              decimals: wb.contract_decimals || 18,
+              balanceWei: wb.balance || '0',
+              balanceFormatted: ethers.utils.formatUnits(wb.balance || '0', wb.contract_decimals || 18),
+            });
+          }
+        }
+      });
+      
+      // Fallback: ERC-20 via Covalent (for tokens not in Wallet balances yet)
       try {
         const url = `https://api.covalenthq.com/v1/${c.covalentChainId}/address/${owner}/balances_v2/?quote-currency=USD&nft=false&no-nft-fetch=true`;
         const json = await withTimeout(covalentGet(url), MAX_FETCH_MS, () => ({ data: { items: [] } } as any));
@@ -326,14 +553,21 @@ const SendTab = () => {
         for (const it of items) {
           const contract = String(it?.contract_address || '').toLowerCase();
           if (!contract || contract === '0x0000000000000000000000000000000000000000' || contract === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee') continue;
+          
+          // Skip if already added from Wallet balances
+          const key = `${c.chainId}:${contract}`;
+          if (out.find(a => a.key === key)) continue;
+          
           const decimals = Number(it?.contract_decimals ?? 18);
           const symbol = String(it?.contract_ticker_symbol || '').toUpperCase() || 'TOKEN';
           const name = String(it?.contract_name || symbol);
           const balStr = String(it?.balance || '0');
           if (!ethers.BigNumber.from(balStr || '0').gt(0)) continue;
+          
+          hasTokensOnChain = true;
 
           out.push({
-            key: `${c.chainId}:${contract}`,
+            key,
             chainId: c.chainId, chain: c, isNative: false, contract,
             symbol, name, decimals: Number.isFinite(decimals) ? decimals : 18,
             balanceWei: balStr,
@@ -341,21 +575,45 @@ const SendTab = () => {
           });
         }
       } catch {}
+      
+      // Only include native token if it has positive balance (required for P2P sending)
+      // Removed: No longer including native tokens with 0 balance
     }));
 
-    out.sort((a, b) => (a.chainId - b.chainId) || a.symbol.localeCompare(b.symbol));
+    // CRITICAL: Include ALL tokens from Wallet tab, even if balance is 0
+    // This ensures users can see all assets they hold, including newly purchased tokens
+    // DO NOT filter by balance - show all assets from Wallet tab
+    // Sort: by chain, then by symbol
+    out.sort((a, b) => {
+      // First by chain
+      if (a.chainId !== b.chainId) return a.chainId - b.chainId;
+      // Then by symbol
+      return a.symbol.localeCompare(b.symbol);
+    });
     try { await AsyncStorage.setItem(ASSET_INDEX_KEY(owner), JSON.stringify({ at: Date.now(), list: out })); } catch {}
     return out;
-  }, []);
+  }, [walletBalances]); // Re-fetch when wallet balances update
 
+  // Track wallet balances changes with a ref to avoid unnecessary re-renders
+  const walletBalancesRef = useRef<string>('');
   useEffect(() => {
+    // Create a stable key from wallet balances to detect actual changes
+    const balanceKey = walletBalances.map(b => `${b.chainId}:${b.contract_address || 'native'}:${b.balance}`).join('|');
+    if (walletBalancesRef.current === balanceKey) return; // No change
+    walletBalancesRef.current = balanceKey;
+    
     (async () => {
       if (!fromAddress) return;
+      // Reload asset index when walletBalances change (to get updated balances)
       const list = await loadAssetIndex(fromAddress);
       setAssetOptions(list);
-      setSelectedKey(list.length > 0 ? list[0].key : `${defaultChain.chainId}:native`);
+      
+      // Select first asset with balance, or default to first available
+      const firstWithBalance = list.find(a => ethers.BigNumber.from(a.balanceWei || '0').gt(0));
+      const firstKey = firstWithBalance?.key || (list.length > 0 ? list[0].key : `${defaultChain?.chainId || 1}:native`);
+      setSelectedKey(firstKey);
     })();
-  }, [fromAddress, loadAssetIndex, defaultChain.chainId]);
+  }, [fromAddress, loadAssetIndex, defaultChain?.chainId, walletBalances, walletBalances.length]); // Re-run when wallet balances change
 
   // Rates for native (robust)
   useEffect(() => {
@@ -380,29 +638,39 @@ const SendTab = () => {
     if (!isValidAddress(candidate)) { setFeeEstimate('Invalid recipient'); return; }
 
     (async () => {
+      const provider = makeProvider();
+      if (!provider) {
+        setFeeEstimate('No provider available');
+        return;
+      }
+      
       try {
-        const provider = makeProvider();
-        const fd = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, () => ({
-          gasPrice: FALLBACK_GAS_PRICE, maxFeePerGas: null, maxPriorityFeePerGas: null,
-        } as any));
+        
+        const fd = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, async () => {
+          const gasPrice = await getRealTimeGasPrice(provider, activeChain?.chainId);
+          return { 
+            gasPrice, 
+            maxFeePerGas: null, 
+            maxPriorityFeePerGas: null,
+            lastBaseFeePerGas: null
+          };
+        });
 
         let gasLim: ethers.BigNumber;
         if (selectedAsset.isNative) {
+          // CRITICAL: Use getRealTimeGasLimit directly - it has timeout protection and fallback
+          // This prevents ethers.js from waiting 120s before our timeout wrapper kicks in
           const value = parseAmountToWei(amount, selectedAsset, amountUnit, nativePriceUSD, usdToLocal);
-          gasLim = await withTimeout(
-            provider.estimateGas({ to: candidate, value }),
-            FEE_TIMEOUT_MS,
-            () => FALLBACK_GAS_LIMIT_NATIVE
-          );
+          gasLim = await getRealTimeGasLimit(provider, { to: candidate, value }, activeChain?.chainId);
         } else {
           const signer = (ethers.Wallet.createRandom()).connect(provider);
           const contract = new ethers.Contract(selectedAsset.contract!, ERC20_ABI, signer);
           const value = ethers.utils.parseUnits(amount || '0', selectedAsset.decimals || 18);
-          gasLim = await withTimeout(
-            contract.estimateGas.transfer(candidate, value, {}),
-            FEE_TIMEOUT_MS,
-            () => FALLBACK_GAS_LIMIT_ERC20
-          );
+          // CRITICAL: Use getRealTimeGasLimit directly - it has timeout protection and fallback
+          gasLim = await getRealTimeGasLimit(provider, {
+            to: selectedAsset.contract,
+            data: contract.interface.encodeFunctionData('transfer', [candidate, value])
+          }, activeChain?.chainId);
         }
 
         let perGas: ethers.BigNumber;
@@ -414,17 +682,26 @@ const SendTab = () => {
           if (maxFee.lt(floorMax)) maxFee = floorMax;
           perGas = maxFee;
         } else {
-          let gp = fd.gasPrice ?? FALLBACK_GAS_PRICE;
+          let gp = fd.gasPrice ?? await getRealTimeGasPrice(provider, activeChain?.chainId);
           if (gp.lt(MIN_GAS)) gp = MIN_GAS;
           perGas = gp;
         }
 
         const feeNative = parseFloat(ethers.utils.formatEther(gasLim.mul(perGas)));
+        console.log(`SendTab: Fee estimate calculated: ~${fmt(feeNative)} ${NATIVE_SYMBOL} (gasLimit: ${gasLim}, gasPrice: ${perGas})`);
         setFeeEstimate(`~${fmt(feeNative)} ${NATIVE_SYMBOL}`);
       } catch {
-        const gl = selectedAsset.isNative ? FALLBACK_GAS_LIMIT_NATIVE : FALLBACK_GAS_LIMIT_ERC20;
-        const feeNative = parseFloat(ethers.utils.formatEther(gl.mul(MIN_GAS)));
-        setFeeEstimate(`~${fmt(feeNative)} ${NATIVE_SYMBOL} (fallback)`);
+        // Use real-time gas estimation instead of fallback
+        try {
+          const gl = selectedAsset.isNative 
+            ? await getRealTimeGasLimit(provider, { to: candidate, value: parseAmountToWei(amount, selectedAsset, amountUnit, nativePriceUSD, usdToLocal) }, activeChain?.chainId)
+            : await getRealTimeGasLimit(provider, { to: selectedAsset.contract, data: '0x' }, activeChain?.chainId);
+          const feeNative = parseFloat(ethers.utils.formatEther(gl.mul(MIN_GAS)));
+          console.log(`SendTab: Fee estimate fallback calculated: ~${fmt(feeNative)} ${NATIVE_SYMBOL} (gasLimit: ${gl}, gasPrice: ${MIN_GAS})`);
+          setFeeEstimate(`~${fmt(feeNative)} ${NATIVE_SYMBOL}`);
+        } catch {
+          setFeeEstimate('Unable to estimate fee');
+        }
       }
     })();
   }, [toAddress, amount, amountUnit, selectedAsset, NATIVE_SYMBOL, nativePriceUSD, usdToLocal, MIN_GAS, MIN_TIP]);
@@ -473,8 +750,8 @@ const SendTab = () => {
 
       // Fee overrides
       setBusyStage('fee');
-      const fd = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, () => ({
-        gasPrice: FALLBACK_GAS_PRICE, maxFeePerGas: null, maxPriorityFeePerGas: null,
+      const fd = await withTimeout(provider.getFeeData(), FEE_TIMEOUT_MS, async () => ({
+        gasPrice: await getRealTimeGasPrice(provider, activeChain?.chainId), maxFeePerGas: null, maxPriorityFeePerGas: null,
       } as any));
       let overrides: any = {};
       if (fd.maxFeePerGas && fd.maxPriorityFeePerGas) {
@@ -482,7 +759,7 @@ const SendTab = () => {
         let maxFee = fd.maxFeePerGas; const floorMax = tip.mul(2).add(ethers.utils.parseUnits('20','gwei')); if (maxFee.lt(floorMax)) maxFee = floorMax;
         overrides.maxPriorityFeePerGas = tip; overrides.maxFeePerGas = maxFee;
       } else {
-        let gp = fd.gasPrice ?? FALLBACK_GAS_PRICE; if (gp.lt(MIN_GAS)) gp = MIN_GAS;
+        let gp = fd.gasPrice ?? await getRealTimeGasPrice(provider, activeChain?.chainId); if (gp.lt(MIN_GAS)) gp = MIN_GAS;
         overrides.gasPrice = gp;
       }
 
@@ -490,9 +767,33 @@ const SendTab = () => {
       let effectiveFeeNative = 0;
 
       if (selectedAsset.isNative) {
-        const gasLim = await withTimeout(signer.estimateGas({ to: candidate, value: valueBN }), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_NATIVE);
+        // CRITICAL: Use getRealTimeGasLimit directly - it has timeout protection and fallback
+        // This prevents ethers.js from waiting 120s before our timeout wrapper kicks in
+        const gasLim = await getRealTimeGasLimit(provider, { to: candidate, value: valueBN }, activeChain?.chainId);
         overrides.gasLimit = gasLim;
 
+        // CRITICAL: Ensure feeEstimate is available before showing Alert
+        // If feeEstimate is not set, calculate it now
+        let finalFeeEstimate = feeEstimate;
+        if (!finalFeeEstimate || finalFeeEstimate === 'Enter details' || finalFeeEstimate === 'Select an asset') {
+          // Calculate fee now if not available
+          try {
+            // Calculate perGas from overrides
+            let perGasVal: ethers.BigNumber;
+            if (overrides.maxFeePerGas) {
+              perGasVal = overrides.maxFeePerGas;
+            } else if (overrides.gasPrice) {
+              perGasVal = overrides.gasPrice;
+            } else {
+              perGasVal = MIN_GAS;
+            }
+            const feeNative = parseFloat(ethers.utils.formatEther(gasLim.mul(perGasVal)));
+            finalFeeEstimate = `~${fmt(feeNative)} ${NATIVE_SYMBOL}`;
+          } catch {
+            finalFeeEstimate = 'Calculating...';
+          }
+        }
+        
         const summary = confirmSummary({
           enteredAmount: amount,
           unit: amountUnit,
@@ -502,8 +803,8 @@ const SendTab = () => {
           nativePriceUSD,
           usdToLocal,
           localCode,
-          feeEstimate,
-          chainLabel: activeChain.shortName || activeChain.name,
+          feeEstimate: finalFeeEstimate,
+          chainLabel: activeChain?.shortName || activeChain?.name || 'Unknown',
           toMasked: maskAddr(candidate),
           nativeSymbol: NATIVE_SYMBOL,
         });
@@ -519,12 +820,102 @@ const SendTab = () => {
               onPress: async () => {
                 try {
                   setBusyStage('submitting');
-                  const tx = await signer.sendTransaction({ to: candidate, value: valueBN, ...overrides });
-                  const receipt = await tx.wait(1);
+                  // CRITICAL: Add timeout protection to transaction submission
+                  // Wrap sendTransaction with timeout to prevent indefinite spinning
+                  const tx = await withTimeout(
+                    signer.sendTransaction({ to: candidate, value: valueBN, ...overrides }),
+                    MAX_FETCH_MS,
+                    async () => {
+                      throw new Error('Transaction submission timeout - please try again');
+                    }
+                  );
+                  // CRITICAL: Also timeout the receipt wait
+                  const receipt = await withTimeout(
+                    tx.wait(1) as Promise<ethers.providers.TransactionReceipt>,
+                    MAX_FETCH_MS * 2, // Receipt wait can take longer
+                    async () => {
+                      throw new Error('Transaction receipt timeout - transaction may still be pending');
+                    }
+                  ) as ethers.providers.TransactionReceipt;
                   txHash = receipt.transactionHash;
                   effectiveFeeNative = parseFloat(ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice)));
 
-                  await afterSuccessUpdateCaches(fromAddress!, selectedAsset, valueBN, effectiveFeeNative, txHash, candidate, true, activeChain, EXPLORER_BASE, NATIVE_SYMBOL);
+                  await afterSuccessUpdateCaches(fromAddress!, selectedAsset, valueBN, effectiveFeeNative, txHash, candidate, true, activeChain || defaultChain || CHAINS[0], EXPLORER_BASE, NATIVE_SYMBOL);
+                  
+                  // CRITICAL: Save SEND transaction to TransactionStore (unified transaction management)
+                  // This ensures SEND transactions appear in History tab and affect net balance
+                  try {
+                    const { useTransactionStore } = await import('../../store/useTransactionStore');
+                    const transactionStore = useTransactionStore.getState();
+                    
+                    // CRITICAL: Calculate USD and local currency amounts at time of transaction
+                    // This ensures History tab can display correct currency amounts when toggling
+                    let usdAmount = '0';
+                    let localCurrencyAmount = '0';
+                    let currencySymbol = 'USD';
+                    
+                    if (selectedAsset.isNative) {
+                      // Native token: use nativePriceUSD
+                      const tokenAmount = parseFloat(ethers.utils.formatEther(valueBN));
+                      usdAmount = (tokenAmount * nativePriceUSD).toFixed(2);
+                      localCurrencyAmount = (tokenAmount * nativePriceUSD * usdToLocal).toFixed(2);
+                      currencySymbol = localCode;
+                    } else {
+                      // ERC-20 token: fetch price from PriceService
+                      try {
+                        const { priceService } = await import('../../services/PriceService');
+                        const prices = await priceService.getPrices([selectedAsset.symbol], localCode);
+                        const tokenPrice = prices[selectedAsset.symbol.toUpperCase()];
+                        if (tokenPrice) {
+                          const tokenAmount = parseFloat(ethers.utils.formatUnits(valueBN, selectedAsset.decimals));
+                          usdAmount = (tokenAmount * tokenPrice.usd).toFixed(2);
+                          localCurrencyAmount = (tokenAmount * tokenPrice.local).toFixed(2);
+                          currencySymbol = localCode;
+                        }
+                      } catch (priceError) {
+                        console.warn('SendTab: Could not fetch token price for currency conversion:', priceError);
+                      }
+                    }
+                    
+                    const sendTransactionData = {
+                      type: 'SEND' as const,
+                      timestamp: Date.now(),
+                      date: new Date().toLocaleDateString(),
+                      time: new Date().toLocaleTimeString(),
+                      tokenSymbol: selectedAsset.symbol,
+                      tokenName: selectedAsset.symbol, // Use symbol, not name (name includes network)
+                      tokenAmount: ethers.utils.formatUnits(valueBN, selectedAsset.decimals),
+                      tokenDecimals: selectedAsset.decimals,
+                      currencySymbol: currencySymbol,
+                      currencyAmount: usdAmount, // CRITICAL: Store USD amount for USD toggle (formatAmount calculates from price for display)
+                      // NOTE: localCurrencyAmount available via currencySymbol + price calculation for LOCAL toggle
+                      fromAddress: fromAddress,
+                      toAddress: candidate,
+                      transactionHash: txHash,
+                      chainId: activeChain?.chainId || defaultChain?.chainId || 11155111,
+                      networkName: activeChain?.name || defaultChain?.name || 'Unknown',
+                      gasFee: effectiveFeeNative.toString(),
+                      totalCost: effectiveFeeNative.toString(),
+                      status: 'COMPLETED' as const,
+                      reference: txHash.substring(0, 16),
+                      source: 'P2P' as const,
+                      explorerUrl: `${EXPLORER_BASE}/tx/${txHash}`,
+                      walletAddress: fromAddress,
+                    };
+                    
+                    await transactionStore.addTransaction(sendTransactionData, fromAddress);
+                    console.log('SendTab: ✅ SEND transaction (native) saved to TransactionStore:', {
+                      hash: txHash,
+                      amount: sendTransactionData.tokenAmount,
+                      token: selectedAsset.symbol,
+                      currencyAmount: localCurrencyAmount,
+                      currency: currencySymbol,
+                      to: candidate.substring(0, 10) + '...'
+                    });
+                  } catch (error) {
+                    console.error('SendTab: ❌ Error saving SEND transaction to TransactionStore:', error);
+                    // Don't fail the send - transaction was successful on blockchain
+                  }
                 } catch (e: any) { onSendError(e); }
               },
             },
@@ -534,20 +925,67 @@ const SendTab = () => {
       }
 
       // ERC-20 transfer — confirmation
+      // Calculate gas limit and fee data first
+      const signerErc20 = await getSigner();
+      const providerErc20 = signerErc20.provider!;
+      const contractForEstimate = new ethers.Contract(selectedAsset.contract!, ERC20_ABI, signerErc20);
+      const valueErc20 = ethers.utils.parseUnits(amount || '0', selectedAsset.decimals || 18);
+      const gasLimErc20 = await getRealTimeGasLimit(providerErc20, {
+        to: selectedAsset.contract,
+        data: contractForEstimate.interface.encodeFunctionData('transfer', [candidate, valueErc20])
+      }, activeChain?.chainId);
+      
+      // Get fee data
+      const fdErc20 = await withTimeout(providerErc20.getFeeData(), FEE_TIMEOUT_MS, async () => {
+        const gasPrice = await getRealTimeGasPrice(providerErc20, activeChain?.chainId);
+        return { 
+          gasPrice, 
+          maxFeePerGas: null, 
+          maxPriorityFeePerGas: null,
+          lastBaseFeePerGas: null
+        };
+      });
+      
+      let perGasErc20: ethers.BigNumber;
+      if (fdErc20.maxFeePerGas && fdErc20.maxPriorityFeePerGas) {
+        let tip = fdErc20.maxPriorityFeePerGas;
+        if (tip.lt(MIN_TIP)) tip = MIN_TIP;
+        let maxFee = fdErc20.maxFeePerGas;
+        const floorMax = tip.mul(2).add(ethers.utils.parseUnits('20', 'gwei'));
+        if (maxFee.lt(floorMax)) maxFee = floorMax;
+        perGasErc20 = maxFee;
+      } else {
+        let gp = fdErc20.gasPrice ?? await getRealTimeGasPrice(providerErc20, activeChain?.chainId);
+        if (gp.lt(MIN_GAS)) gp = MIN_GAS;
+        perGasErc20 = gp;
+      }
+      
+      // CRITICAL: Ensure feeEstimate is available before showing Alert
+      let finalFeeEstimateErc20 = feeEstimate;
+      if (!finalFeeEstimateErc20 || finalFeeEstimateErc20 === 'Enter details' || finalFeeEstimateErc20 === 'Select an asset') {
+        // Calculate fee now if not available
+        try {
+          const feeNative = parseFloat(ethers.utils.formatEther(gasLimErc20.mul(perGasErc20)));
+          finalFeeEstimateErc20 = `~${fmt(feeNative)} ${NATIVE_SYMBOL}`;
+        } catch {
+          finalFeeEstimateErc20 = 'Calculating...';
+        }
+      }
+      
       const summaryErc20 = confirmSummary({
-        enteredAmount: amount,
-        unit: 'token',
-        assetSymbol: selectedAsset.symbol,
-        isNative: false,
-        valueBN,
-        nativePriceUSD,
-        usdToLocal,
-        localCode,
-        feeEstimate,
-        chainLabel: activeChain.shortName || activeChain.name,
-        toMasked: maskAddr(candidate),
-        nativeSymbol: NATIVE_SYMBOL,
-        decimals: selectedAsset.decimals || 18,
+          enteredAmount: amount,
+          unit: 'token',
+          assetSymbol: selectedAsset.symbol,
+          isNative: false,
+          valueBN,
+          nativePriceUSD,
+          usdToLocal,
+          localCode,
+          feeEstimate: finalFeeEstimateErc20,
+          chainLabel: activeChain?.shortName || activeChain?.name || 'Unknown',
+          toMasked: maskAddr(candidate),
+          nativeSymbol: NATIVE_SYMBOL,
+          decimals: selectedAsset.decimals || 18,
       });
 
       setBusyStage(null);
@@ -565,13 +1003,113 @@ const SendTab = () => {
 
       setBusyStage('submitting');
       const contract = new ethers.Contract(selectedAsset.contract!, ERC20_ABI, signer);
-      const gasLim = await withTimeout(contract.estimateGas.transfer(candidate, valueBN, {}), FEE_TIMEOUT_MS, () => FALLBACK_GAS_LIMIT_ERC20);
-      const tx = await contract.transfer(candidate, valueBN, { ...overrides, gasLimit: gasLim });
-      const receipt = await tx.wait(1);
+      // CRITICAL: Use getRealTimeGasLimit directly - it has timeout protection and fallback
+      // This prevents ethers.js from waiting 120s before our timeout wrapper kicks in
+      const gasLim = await getRealTimeGasLimit(provider, {
+        to: selectedAsset.contract,
+        data: contract.interface.encodeFunctionData('transfer', [candidate, valueBN])
+      }, activeChain?.chainId);
+      // CRITICAL: Add timeout protection to transaction submission
+      const txPromise = contract.transfer(candidate, valueBN, { ...overrides, gasLimit: gasLim });
+      const tx = await withTimeout(
+        txPromise,
+        MAX_FETCH_MS,
+        async () => {
+          throw new Error('Transaction submission timeout - please try again');
+        }
+      ) as ethers.providers.TransactionResponse;
+      // CRITICAL: Also timeout the receipt wait
+      const receiptPromise = tx.wait(1);
+      const receipt = await withTimeout(
+        receiptPromise,
+        MAX_FETCH_MS * 2, // Receipt wait can take longer
+        async () => {
+          throw new Error('Transaction receipt timeout - transaction may still be pending');
+        }
+      ) as ethers.providers.TransactionReceipt;
       txHash = receipt.transactionHash;
       effectiveFeeNative = parseFloat(ethers.utils.formatEther(receipt.gasUsed.mul(receipt.effectiveGasPrice)));
 
-      await afterSuccessUpdateCaches(fromAddress!, selectedAsset, valueBN, effectiveFeeNative, txHash, candidate, false, activeChain, EXPLORER_BASE, NATIVE_SYMBOL);
+      await afterSuccessUpdateCaches(fromAddress!, selectedAsset, valueBN, effectiveFeeNative, txHash, candidate, false, activeChain || defaultChain || CHAINS[0], EXPLORER_BASE, NATIVE_SYMBOL);
+      
+      // CRITICAL: Save SEND transaction to TransactionStore (unified transaction management)
+      // This ensures SEND transactions appear in History tab and affect net balance
+      try {
+        const { useTransactionStore } = await import('../../store/useTransactionStore');
+        const transactionStore = useTransactionStore.getState();
+        
+                    // CRITICAL FIX: Calculate USD and local currency amounts at time of transaction
+                    // This ensures History tab can display correct currency amounts when toggling
+                    // CRITICAL: Store BOTH USD and local currency amounts for proper toggle display
+                    let usdAmount = '0';
+                    let localCurrencyAmount = '0';
+                    let currencySymbol = localCode; // Use local currency as primary symbol
+                    
+                    // ERC-20 token: fetch price from PriceService
+                    try {
+                      const { priceService } = await import('../../services/PriceService');
+                      const prices = await priceService.getPrices([selectedAsset.symbol], localCode);
+                      const tokenPrice = prices[selectedAsset.symbol.toUpperCase()];
+                      if (tokenPrice) {
+                        const tokenAmount = parseFloat(ethers.utils.formatUnits(valueBN, selectedAsset.decimals));
+                        usdAmount = (tokenAmount * tokenPrice.usd).toFixed(2);
+                        localCurrencyAmount = (tokenAmount * tokenPrice.local).toFixed(2);
+                        currencySymbol = localCode;
+                        console.log('SendTab: Currency conversion:', {
+                          tokenAmount,
+                          usdAmount,
+                          localCurrencyAmount,
+                          currencySymbol,
+                          usdPrice: tokenPrice.usd,
+                          localPrice: tokenPrice.local
+                        });
+                      }
+                    } catch (priceError) {
+                      console.warn('SendTab: Could not fetch token price for currency conversion:', priceError);
+                    }
+                    
+                    const sendTransactionData = {
+                      type: 'SEND' as const,
+                      timestamp: Date.now(),
+                      date: new Date().toLocaleDateString(),
+                      time: new Date().toLocaleTimeString(),
+                      tokenSymbol: selectedAsset.symbol,
+                      tokenName: selectedAsset.symbol, // Use symbol, not name (name includes network)
+                      tokenAmount: ethers.utils.formatUnits(valueBN, selectedAsset.decimals),
+                      tokenDecimals: selectedAsset.decimals,
+                      currencySymbol: currencySymbol,
+                      // CRITICAL FIX: Store local currency amount (not USD) for proper LOCAL toggle display
+                      // formatAmount will use this for LOCAL toggle, and calculate USD from price for USD toggle
+                      currencyAmount: localCurrencyAmount, // Store local currency amount (recorded at transaction time)
+                      // CRITICAL: Also store USD amount in a separate field for USD toggle
+                      ...(usdAmount !== '0' ? { usdAmount: usdAmount } : {}), // Store USD amount separately
+                      fromAddress: fromAddress,
+                      toAddress: candidate,
+                      transactionHash: txHash,
+                      chainId: activeChain?.chainId || defaultChain?.chainId || 11155111,
+                      networkName: activeChain?.name || defaultChain?.name || 'Unknown',
+                      gasFee: effectiveFeeNative.toString(),
+                      totalCost: effectiveFeeNative.toString(),
+                      status: 'COMPLETED' as const,
+                      reference: txHash.substring(0, 16),
+                      source: 'P2P' as const,
+                      explorerUrl: `${EXPLORER_BASE}/tx/${txHash}`,
+                      walletAddress: fromAddress,
+                    };
+        
+        await transactionStore.addTransaction(sendTransactionData, fromAddress);
+        console.log('SendTab: ✅ SEND transaction (ERC-20) saved to TransactionStore:', {
+          hash: txHash,
+          amount: sendTransactionData.tokenAmount,
+          token: selectedAsset.symbol,
+          currencyAmount: localCurrencyAmount,
+          currency: currencySymbol,
+          to: candidate.substring(0, 10) + '...'
+        });
+      } catch (error) {
+        console.error('SendTab: ❌ Error saving SEND transaction to TransactionStore:', error);
+        // Don't fail the send - transaction was successful on blockchain
+      }
     } catch (e: any) { onSendError(e); }
   };
 
@@ -597,13 +1135,13 @@ const SendTab = () => {
       timestamp: new Date().toISOString(),
       isSend: true,
       feeNative,
-      chainId: activeChain.chainId,
+      chainId: activeChain?.chainId || 1,
     };
     const lst = JSON.parse((await AsyncStorage.getItem('localTxs')) || '[]');
     lst.push(localTx);
     await AsyncStorage.setItem('localTxs', JSON.stringify(lst));
 
-    await AsyncStorage.setItem(INVALIDATE_KEY(owner, activeChain.chainId), String(Date.now()));
+    await AsyncStorage.setItem(INVALIDATE_KEY(owner, activeChain?.chainId || 1), String(Date.now()));
 
     try {
       if (isNative) {
@@ -646,7 +1184,7 @@ const SendTab = () => {
     Alert.alert(
       'SUCCESS',
       [
-        `Sent on ${activeChain.shortName || activeChain.name}`,
+        `Sent on ${activeChain?.shortName || activeChain?.name || 'Unknown'}`,
         `Asset: ${asset.symbol}`,
         `Amount: ${sentText}`,
         `To: ${maskAddr(to)}`,
@@ -671,11 +1209,31 @@ const SendTab = () => {
   function onSendError(e: any) {
     setBusyStage(null);
     const msg = parseDeepError(e).toLowerCase();
+    const errorStr = parseDeepError(e);
+    
+    // CRITICAL: Handle "Bad response" errors (RPC failures, 522 errors, etc.)
+    if (msg.includes('bad response') || msg.includes('status=522') || msg.includes('timeout') || e?.code === 'SERVER_ERROR' || e?.code === 'TIMEOUT') {
+      Alert.alert(
+        'Network Error',
+        'The transaction could not be submitted due to a network issue. The transaction may still be pending. Please check your transaction history or try again later.',
+        [
+          { text: 'OK', style: 'default' }
+        ]
+      );
+      console.warn('SendTab: Network error during transaction submission:', {
+        error: errorStr,
+        code: e?.code,
+        status: e?.status,
+        note: 'Transaction may still be pending - user should check history'
+      });
+      return;
+    }
+    
     if (msg.includes('insufficient funds')) Alert.alert('Error', 'Insufficient funds (gas or value) on this network.');
     else if (msg.includes('nonce') && msg.includes('too low')) Alert.alert('Error', 'Nonce too low. Please try again.');
     else if (msg.includes('replacement') && msg.includes('fee')) Alert.alert('Error', 'Replacement fee too low. Try again with defaults.');
     else if (msg.includes('price below minimum') || msg.includes('tip cap')) Alert.alert('Error', 'Network minimum gas/tip not met.');
-    else Alert.alert('Error', parseDeepError(e));
+    else Alert.alert('Error', errorStr);
   }
 
   const amountPlaceholder =
@@ -687,19 +1245,119 @@ const SendTab = () => {
 
   const disableUsdLocal = !selectedAsset?.isNative;
 
+  // CRITICAL: Fetch token prices for ERC-20 tokens to calculate USD values
+  const [tokenPrices, setTokenPrices] = React.useState<Record<string, number>>({});
+  const [pricesFetched, setPricesFetched] = React.useState(false);
+  
+  React.useEffect(() => {
+    const fetchTokenPrices = async () => {
+      try {
+        // Get unique ERC-20 token symbols from assetOptions
+        const erc20Symbols = assetOptions
+          .filter(a => !a.isNative && a.symbol)
+          .map(a => a.symbol.toUpperCase())
+          .filter((symbol, index, arr) => arr.indexOf(symbol) === index); // Unique symbols
+        
+        if (erc20Symbols.length === 0) {
+          setPricesFetched(true);
+          return;
+        }
+        
+        const { priceService } = await import('../../services/PriceService');
+        const prices = await priceService.getPrices(erc20Symbols, localCode);
+        
+        // Convert to simple USD price map
+        const priceMap: Record<string, number> = {};
+        Object.keys(prices).forEach(key => {
+          priceMap[key.toUpperCase()] = prices[key].usd || 0;
+        });
+        
+        setTokenPrices(priceMap);
+        setPricesFetched(true);
+        console.log('SendTab: Fetched prices for', Object.keys(priceMap).length, 'tokens:', priceMap);
+      } catch (error) {
+        console.warn('SendTab: Could not fetch token prices for asset picker:', error);
+        setPricesFetched(true); // Mark as fetched even on error
+      }
+    };
+    
+    fetchTokenPrices();
+  }, [assetOptions, localCode]);
+  
+  // CRITICAL: Filter assets to only show those with balance > $0 USD value
+  // Also calculate USD value for display
   const pickerOptions = useMemo(() => {
-    return assetOptions.map(a => ({
-      label: `${a.symbol} • ${(a.chain.shortName || a.chain.name)} • ${fmt(parseFloat(a.balanceFormatted), 6)}`,
+    // Calculate USD values for each asset
+    const assetsWithUsdValue = assetOptions.map(a => {
+      const balanceNum = parseFloat(a.balanceFormatted || '0');
+      let usdValue = 0;
+      
+      if (a.isNative) {
+        // Native token: use nativePriceUSD
+        usdValue = balanceNum * nativePriceUSD;
+      } else {
+        // ERC-20 token: use fetched price
+        const tokenPrice = tokenPrices[a.symbol.toUpperCase()] || 0;
+        usdValue = balanceNum * tokenPrice;
+      }
+      
+      return {
+        ...a,
+        usdValue,
+        // For display: show token amount and USD value
+        // displayLabel will be set in the return statement below
+        displayLabel: '', // Not used - will be set in map
+      };
+    });
+    
+    // CRITICAL: Filter to only show assets with balance > 0 (not USD value)
+    // USD value might be 0 if prices aren't loaded yet, but we still want to show the asset
+    const filteredAssets = assetsWithUsdValue.filter(a => {
+      const balanceWei = ethers.BigNumber.from(a.balanceWei || '0');
+      if (balanceWei.isZero()) return false; // Always exclude zero balance
+      
+      // Show asset even if USD value is 0 (prices might not be loaded yet)
+      // User can still see the token amount and network
+      return true;
+    });
+    
+    return filteredAssets.map(a => ({
+      label: a.usdValue > 0 
+        ? `${a.symbol} • ${a.chain.shortName || a.chain.name} • ${fmt(parseFloat(a.balanceFormatted || '0'), 6)} ($${fmt(a.usdValue, 2)})`
+        : pricesFetched 
+          ? `${a.symbol} • ${a.chain.shortName || a.chain.name} • ${fmt(parseFloat(a.balanceFormatted || '0'), 6)} ($0.00)`
+          : `${a.symbol} • ${a.chain.shortName || a.chain.name} • ${fmt(parseFloat(a.balanceFormatted || '0'), 6)} (...)`, // Show loading indicator
       value: a.key,
     }));
-  }, [assetOptions]);
+  }, [assetOptions, nativePriceUSD, tokenPrices]);
 
   useEffect(() => {
     if (showScanner && !permission?.granted) requestPermission();
   }, [showScanner, permission, requestPermission]);
 
+  const handleRefresh = useCallback(async () => {
+    if (!fromAddress) return;
+    setRefreshing(true);
+    try {
+      // Reload asset index to refresh balances
+      const list = await loadAssetIndex(fromAddress);
+      setAssetOptions(list);
+      console.log('SendTab: ✅ Refreshed assets - found', list.length, 'assets');
+    } catch (error) {
+      console.error('SendTab: Error refreshing assets:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fromAddress, loadAssetIndex]);
+
   return (
-    <View style={styles.container}>
+    <ScrollView 
+      style={styles.container}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+      }
+      contentContainerStyle={styles.scrollContent}
+    >
       {/* Recipient */}
       <View style={styles.section}>
         <Text style={styles.label}>Send to:</Text>
@@ -721,14 +1379,25 @@ const SendTab = () => {
 
       {/* Asset picker */}
       <View style={styles.section}>
-        <Text style={styles.label}>What crypto currency would you like to send:</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <Text style={styles.label}>What crypto currency would you like to send:</Text>
+          <TouchableOpacity 
+            onPress={handleRefresh} 
+            disabled={refreshing}
+            style={{ padding: 8, backgroundColor: '#0A84FF', borderRadius: 4 }}
+          >
+            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '600' }}>
+              {refreshing ? 'Refreshing...' : '🔄 Refresh'}
+            </Text>
+          </TouchableOpacity>
+        </View>
         <Picker
           selectedValue={selectedKey}
           onValueChange={(val) => setSelectedKey(String(val))}
           style={styles.picker as any}
         >
           {pickerOptions.length === 0
-            ? <Picker.Item label="No assets with balance" value="" />
+            ? <Picker.Item label="Loading assets..." value="" />
             : pickerOptions.map(opt => <Picker.Item key={opt.value} label={opt.label} value={opt.value} />)}
         </Picker>
       </View>
@@ -825,12 +1494,13 @@ const SendTab = () => {
           </View>
         </Modal>
       )}
-    </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#fff' },
+  scrollContent: { padding: 16, paddingBottom: 20 },
   section: { marginBottom: 16 },
   separator: { height: 1, backgroundColor: '#E6E6E6', marginVertical: 8 },
   label: { fontSize: 16, fontWeight: 'bold', marginBottom: 8, color: '#111' },

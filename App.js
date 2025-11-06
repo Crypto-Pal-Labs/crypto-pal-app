@@ -5,6 +5,30 @@ import "@ethersproject/shims";
 import { Buffer } from "buffer";
 if (!global.Buffer) global.Buffer = Buffer;
 
+// Polyfill for Node.js modules (required by bitcoinjs-lib and its dependencies)
+// These need to be available before any modules that depend on them are loaded
+try {
+  // Events polyfill (needed by stream-browserify)
+  if (typeof global.events === 'undefined') {
+    const events = require('events');
+    global.events = events;
+  }
+  
+  // Stream polyfill (needed by bitcoinjs-lib dependencies)
+  if (typeof global.stream === 'undefined') {
+    try {
+      const stream = require('stream-browserify');
+      global.stream = stream;
+    } catch (e) {
+      // Fallback if stream-browserify fails to load
+      global.stream = {};
+    }
+  }
+} catch (e) {
+  // Ignore errors during polyfill setup - app will gracefully degrade
+  console.warn('Node.js polyfills setup warning (non-critical):', e.message);
+}
+
 import React, { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, StyleSheet, View, AppState } from "react-native";
 import * as SecureStore from "expo-secure-store";
@@ -20,6 +44,7 @@ import { canUseBiometrics, promptBiometric } from "./src/lib/biometrics";
 // Step 6: auto-lock imports
 import { useLockStore } from "./src/store/useLockStore";
 import { triggerReauth } from "./src/utils/reauth";
+import { TransactionDetectionService } from "./src/services/TransactionDetectionService";
 
 export default function App() {
   const { setAuthenticated, setHasMnemonic, setHasPin } = useAuthStore();
@@ -62,22 +87,49 @@ export default function App() {
         if (hasMn && hasP) {
           // Returning user → try biometric if enabled
           if (biometricEnabled && (await canUseBiometrics())) {
-            const res = await promptBiometric("Unlock Crypto Pal");
-            if (res.success) {
-              // Skip PIN and go straight to the app
+            try {
+              // Add a small delay to ensure the activity is ready
+              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              const res = await promptBiometric("Unlock Crypto Pal");
+              if (res.success) {
+                // Skip PIN and go straight to the app
+                const currentAddress = await getWalletAddress();
+                if (currentAddress) {
+                  setAddress(currentAddress);
+                  // Start monitoring for incoming transactions
+                  TransactionDetectionService.startMonitoring(currentAddress);
+                }
+                setInitialRoute({ name: "AppTabs" });
+              } else {
+                // Fallback to PIN
+                const currentAddress = await getWalletAddress();
+                if (currentAddress) {
+                  setAddress(currentAddress);
+                  // Start monitoring for incoming transactions
+                  TransactionDetectionService.startMonitoring(currentAddress);
+                }
+                setInitialRoute({ name: "Pin", params: { isSetup: false } });
+              }
+            } catch (biometricError) {
+              console.log("Biometric authentication failed, falling back to PIN:", biometricError);
+              // Fallback to PIN on any biometric error
               const currentAddress = await getWalletAddress();
-              if (currentAddress) setAddress(currentAddress);
-              setInitialRoute({ name: "AppTabs" });
-            } else {
-              // Fallback to PIN
-              const currentAddress = await getWalletAddress();
-              if (currentAddress) setAddress(currentAddress);
+              if (currentAddress) {
+                setAddress(currentAddress);
+                // Start monitoring for incoming transactions
+                TransactionDetectionService.startMonitoring(currentAddress);
+              }
               setInitialRoute({ name: "Pin", params: { isSetup: false } });
             }
           } else {
             // No biometrics (or disabled) → PIN as before
             const currentAddress = await getWalletAddress();
-            if (currentAddress) setAddress(currentAddress);
+            if (currentAddress) {
+              setAddress(currentAddress);
+              // Start monitoring for incoming transactions
+              TransactionDetectionService.startMonitoring(currentAddress);
+            }
             setInitialRoute({ name: "Pin", params: { isSetup: false } });
           }
         } else {
@@ -169,6 +221,8 @@ export default function App() {
     return () => {
       sub.remove();
       clearInterval(timer);
+      // Stop transaction monitoring when app is closed
+      TransactionDetectionService.stopMonitoring();
     };
   }, []);
 

@@ -16,6 +16,13 @@ if (isProdBuild && !looksValid) {
   throw new Error('[BUILD] Invalid EXPO_PUBLIC_COVALENT_KEY. It must start with "cqt_".');
 }
 
+// CoinGecko API key validation
+const coinGeckoKey = process.env.EXPO_PUBLIC_COINGECKO_API_KEY || 'CG-LDY1yCcPNnvXG6vnd1TpLQe2';
+const coinGeckoKeyValid = coinGeckoKey.startsWith('CG-');
+if (isProdBuild && !coinGeckoKeyValid) {
+  console.warn('[BUILD] Invalid EXPO_PUBLIC_COINGECKO_API_KEY. It should start with "CG-".');
+}
+
 // --- Compute the Basic auth string Covalent clients often expect
 const covalentBasicB64 = looksValid ? Buffer.from(`${covalentKey}:`).toString('base64') : '';
 
@@ -58,6 +65,11 @@ module.exports = ({ config }) => ({
     COVALENT_BASIC_B64: covalentBasicB64, // <— satisfies b64Len>0 check
     COVALENT_X_API_KEY: covalentKey,      // handy if any client uses X-API-Key
 
+    // CoinGecko API keys
+    EXPO_PUBLIC_COINGECKO_API_KEY: coinGeckoKey,
+    EXPO_PUBLIC_COINGECKO_API_KEY_2: coinGeckoKey,
+    EXPO_PUBLIC_COINGECKO_API_KEY_3: coinGeckoKey,
+
     // Feature switch: network enabled in prod always, and in dev only if key looks valid
     FEATURES: { NETWORK_ENABLED: isProdBuild ? true : looksValid },
 
@@ -81,6 +93,10 @@ module.exports = ({ config }) => ({
     EXPO_PUBLIC_POLYGONSCAN_API_KEY: pick('EXPO_PUBLIC_POLYGONSCAN_API_KEY', 'POLYGONSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
     POLYGONSCAN_API_KEY:         pick('EXPO_PUBLIC_POLYGONSCAN_API_KEY', 'POLYGONSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
     
+    // CoinGecko API keys for real-time pricing
+    EXPO_PUBLIC_COINGECKO_API_KEY: pick('EXPO_PUBLIC_COINGECKO_API_KEY', 'COINGECKO_API_KEY', ''),
+    COINGECKO_API_KEY:             pick('EXPO_PUBLIC_COINGECKO_API_KEY', 'COINGECKO_API_KEY', ''),
+    
     // Additional API keys for transaction history
     EXPO_PUBLIC_ETHERSCAN_API_KEY: pick('EXPO_PUBLIC_ETHERSCAN_API_KEY', 'ETHERSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
     ETHERSCAN_API_KEY:             pick('EXPO_PUBLIC_ETHERSCAN_API_KEY', 'ETHERSCAN_API_KEY', '3ZDGCZ3PUPRPH24CY39WBF5U2HJWJXPG6M'),
@@ -97,6 +113,11 @@ module.exports = ({ config }) => ({
 
     EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL: pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
     POLYGON_MAINNET_RPC_URL:             pick('EXPO_PUBLIC_POLYGON_MAINNET_RPC_URL', 'POLYGON_MAINNET_RPC_URL', 'https://polygon-rpc.com'),
+    
+    // Netlify Functions (for local development)
+    // CRITICAL: Set this to your computer's IP address when testing on physical device with Expo Go
+    // Use 'localhost' if testing on emulator/simulator
+    EXPO_PUBLIC_NETLIFY_DEV_IP: pick('EXPO_PUBLIC_NETLIFY_DEV_IP', 'NETLIFY_DEV_IP', '192.168.1.2'),
 
     // EAS project linking
     eas: {

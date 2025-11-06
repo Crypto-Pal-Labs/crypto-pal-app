@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, waitFor } from '../../helpers/testUtils';
-import HistoryTab from '../../../screens/HistoryTab';
+import StableHistoryTab from '../../../screens/StableHistoryTab';
 import { mockData } from '../../helpers/mockData';
 
 // Mock the hooks
@@ -21,7 +21,7 @@ jest.mock('../../../store/useWalletStore', () => ({
 
 describe('HistoryTab - Error Detection', () => {
   it('should render history tab with transactions', async () => {
-    const { getByText } = render(<HistoryTab />);
+    const { getByText } = render(<StableHistoryTab />);
 
     // Check if main elements are rendered
     expect(getByText('Transaction History')).toBeTruthy();
@@ -41,7 +41,7 @@ describe('HistoryTab - Error Detection', () => {
       }),
     }));
 
-    const { getByTestId } = render(<HistoryTab />);
+    const { getByTestId } = render(<StableHistoryTab />);
     expect(getByTestId('loading-indicator')).toBeTruthy();
   });
 
@@ -56,7 +56,7 @@ describe('HistoryTab - Error Detection', () => {
       }),
     }));
 
-    const { getByText } = render(<HistoryTab />);
+    const { getByText } = render(<StableHistoryTab />);
     expect(getByText('Failed to fetch transactions')).toBeTruthy();
   });
 
@@ -71,7 +71,7 @@ describe('HistoryTab - Error Detection', () => {
       }),
     }));
 
-    const { getByText } = render(<HistoryTab />);
+    const { getByText } = render(<StableHistoryTab />);
     expect(getByText('No transactions yet')).toBeTruthy();
   });
 
@@ -104,7 +104,7 @@ describe('HistoryTab - Error Detection', () => {
     }));
 
     // This should handle malformed data - potential bug!
-    const { getByText } = render(<HistoryTab />);
+    const { getByText } = render(<StableHistoryTab />);
     expect(getByText('Transaction History')).toBeTruthy();
     // TODO: Add data validation for malformed transactions
   });
@@ -121,7 +121,7 @@ describe('HistoryTab - Error Detection', () => {
       }),
     }));
 
-    const { getByTestId } = render(<HistoryTab />);
+    const { getByTestId } = render(<StableHistoryTab />);
     
     // This should handle refresh errors - potential bug!
     const refreshButton = getByTestId('refresh-button');
@@ -143,7 +143,7 @@ describe('HistoryTab - Error Detection', () => {
       }),
     }));
 
-    const { getByText } = render(<HistoryTab />);
+    const { getByText } = render(<StableHistoryTab />);
     
     // This should handle network switching - potential bug!
     expect(getByText('Transaction History')).toBeTruthy();
@@ -167,7 +167,7 @@ describe('HistoryTab - Error Detection', () => {
     }));
 
     // This should handle large lists - potential bug!
-    const { getByText } = render(<HistoryTab />);
+    const { getByText } = render(<StableHistoryTab />);
     expect(getByText('Transaction History')).toBeTruthy();
     // TODO: Add pagination or virtualization for large lists
   });
@@ -192,7 +192,7 @@ describe('HistoryTab - Error Detection', () => {
     }));
 
     // This should handle filtering errors - potential bug!
-    const { getByText } = render(<HistoryTab />);
+    const { getByText } = render(<StableHistoryTab />);
     expect(getByText('Transaction History')).toBeTruthy();
   });
 });

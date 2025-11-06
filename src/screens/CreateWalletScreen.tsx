@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { saveMnemonic, getMnemonic, getWalletAddress } from '../utils/wallet'; // Updated for getMnemonic
 import { useWalletStore } from '../store/useWalletStore';
 import { useAuthStore } from '../store/useAuthStore'; // Added for setHasMnemonic
+import { clearAllCachedData } from '../utils/cacheUtils';
 import { RootStackParamList } from '../types/navigation';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -18,6 +19,10 @@ export default function CreateWalletScreen() {
 
   const handleCreate = async () => {
     try {
+      // CRITICAL: When creating NEW wallet, clear EVERYTHING including transactions
+      // This is a fresh start, so old transaction history should be removed
+      await clearAllCachedData(false); // false = clear transactions too
+      
       const wallet = ethers.Wallet.createRandom();
       const phrase = wallet.mnemonic.phrase;
       console.log('Generating mnemonic:', phrase); // Debug

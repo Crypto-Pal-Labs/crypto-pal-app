@@ -6,3 +6,13 @@
   command = ""
   # Publish the contents of docs/ (now your root)
   publish = "."
+
+[functions]
+  # Functions live outside the docs base; point relatively from docs/
+  directory = "../netlify/functions"
+
+[build.environment]
+  # Placeholders; set real values in Netlify UI or CI
+  TRANSAK_ENV = "staging"
+  REFERRER_DOMAIN = "cryptopal.app"
+  REDIRECT_URL = "https://cryptopal.app/transak/return"
